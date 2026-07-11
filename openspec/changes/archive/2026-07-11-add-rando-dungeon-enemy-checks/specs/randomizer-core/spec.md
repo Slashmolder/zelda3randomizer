@@ -1,4 +1,4 @@
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Enemy drop check setting has a dungeon-enemy tier
 
@@ -9,8 +9,8 @@ strings, file select, and the native window.
 #### Scenario: Dungeon is requested with supported small keys
 - **WHEN** `enemy_drop_checks=Dungeon` and effective small keys are Wild/Retro or
   Dungeon
-- **THEN** derived settings keep `enemy_drop_checks=Dungeon` when neither door shuffle
-  nor enemy shuffle is active
+- **THEN** derived settings keep `enemy_drop_checks=Dungeon` when enemy shuffle is
+  inactive, including under supported door shuffle
 
 #### Scenario: Dungeon is requested with vanilla small keys
 - **WHEN** `enemy_drop_checks=Dungeon` but effective small keys are vanilla
@@ -18,7 +18,8 @@ strings, file select, and the native window.
 
 #### Scenario: Dungeon is requested with door shuffle
 - **WHEN** `enemy_drop_checks=Dungeon` and door shuffle is active
-- **THEN** derived settings normalize `enemy_drop_checks` to `Keys`
+- **THEN** derived settings keep `enemy_drop_checks=Dungeon` and install the generated
+  door x ordinary-enemy bridge
 
 #### Scenario: Dungeon is requested with enemy shuffle
 - **WHEN** `enemy_drop_checks=Dungeon` and enemy shuffle is active

@@ -1177,6 +1177,15 @@ def enemy_can_reach_from_base(candidate: dict, dungeon: int, base_pred: str,
             if pot_count >= int(pot_need):
                 pot_pred = throwable_pots_predicate
         if pot_pred:
+            # A shuffled pot is itself a one-shot location. Until the logic
+            # model carries per-pot consumption/disjointness, do not let the
+            # same pot both grant a prerequisite item and later act as the
+            # throwable that proves this enemy kill. POT_KEYS_ON() is the
+            # shared effective-pot-sanity predicate (including the cave-
+            # entrance forced-off rule), so the counted route remains usable
+            # only when pots are vanilla and inventory combat is the sole
+            # fallback while any pot tier is active.
+            pot_pred = and_predicate(["NOT POT_KEYS_ON()", pot_pred])
             kill_branches.append(pot_pred)
     else:
         pot_count = len(pot_rows.get(room, []))
@@ -1242,7 +1251,8 @@ def dungeon_candidate_key(row: dict) -> tuple[int, int]:
     return (int(row["room"]), int(row["source_slot"]))
 
 
-def collect_scripted_spawn_candidates(assets: dict[str, bytes]) -> tuple[list[dict], Counter]:
+def collect_scripted_spawn_candidates(
+        assets: dict[str, bytes]) -> tuple[list[dict], Counter, list[dict]]:
     try:
         sprites = assets["kDungeonSprites"]
         offsets = parse_u16le_array(assets["kDungeonSpriteOffs"])
@@ -1251,16 +1261,27 @@ def collect_scripted_spawn_candidates(assets: dict[str, bytes]) -> tuple[list[di
 
     rows: list[dict] = []
     excluded: Counter = Counter()
+    excluded_rows: list[dict] = []
     for room in range(len(offsets)):
         for list_index, y, x, typ in sprite_entries(sprites, offsets, room):
             if x < 0xE0:
                 continue
             spec = SCRIPTED_SPAWN_SPECS.get(typ)
             if spec is None:
-                if typ == 0x1A:
-                    excluded["bomb_trap_not_enemy"] += 1
-                else:
-                    excluded["unsupported_scripted_spawner"] += 1
+                reason = ("bomb_trap_not_enemy" if typ == 0x1A else
+                          "unsupported_scripted_spawner")
+                excluded[reason] += 1
+                excluded_rows.append({
+                    "room": room,
+                    "parent_source_slot": int(list_index),
+                    "overlord_type": typ,
+                    "parent_y": y,
+                    "parent_x": x,
+                    "runtime_identity": (
+                        f"scripted-parent:0x{room:03X}:{list_index}:0x{typ:02X}"
+                    ),
+                    "reason": reason,
+                })
                 continue
             for child_index in range(int(spec["child_count"])):
                 rows.append({
@@ -1279,7 +1300,17 @@ def collect_scripted_spawn_candidates(assets: dict[str, bytes]) -> tuple[list[di
                         f"scripted:0x{room:03X}:{list_index}:0x{typ:02X}:{child_index}"
                     ),
                 })
-    return rows, excluded
+    excluded_rows.sort(
+        key=lambda r: (int(r["room"]), int(r["parent_source_slot"]),
+                       int(r["overlord_type"])))
+    excluded_identities = [str(r["runtime_identity"]) for r in excluded_rows]
+    if len(excluded_identities) != len(set(excluded_identities)):
+        die("scripted-spawn exclusion identities are not unique")
+    if len(excluded_rows) != sum(excluded.values()):
+        die(
+            "scripted-spawn exclusion rows/counts drifted: "
+            f"{len(excluded_rows)} rows != {sum(excluded.values())} counted")
+    return rows, excluded, excluded_rows
 
 
 def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
@@ -1461,7 +1492,8 @@ def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
         })
         boss_emitted += 1
 
-    scripted_rows, scripted_excluded_counts = collect_scripted_spawn_candidates(assets)
+    scripted_rows, scripted_excluded_counts, scripted_excluded_rows = (
+        collect_scripted_spawn_candidates(assets))
     scripted_emitted = 0
     for candidate in sorted(
             scripted_rows,
@@ -1649,6 +1681,23 @@ def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
         rows.append(row)
         underworld_all_tier_emitted += 1
 
+    # Conservative pot-consumption guard. Every emitted throwable-pot branch
+    # must carry the effective pots-off predicate both in its audit metadata
+    # and in the compiled kill expression. This catches a future generator
+    # refactor that accidentally restores the pot-sanity double count.
+    for row in rows:
+        pot_branch = row.get("throwable_pots_can_reach")
+        if not pot_branch:
+            continue
+        if "NOT POT_KEYS_ON()" not in str(pot_branch):
+            die(
+                "throwable-pot route is missing the effective pots-off guard: "
+                f"location {row.get('id')} {row.get('name')}")
+        if str(pot_branch) not in str(row.get("kill_predicate") or ""):
+            die(
+                "throwable-pot route metadata drifted from the kill predicate: "
+                f"location {row.get('id')} {row.get('name')}")
+
     underworld_all_tier_total = automatic_all_tier_emitted + underworld_all_tier_emitted
     dungeon_emitted = sum(
         1 for r in rows if r.get("domain") == "dungeon" and not r.get("all_tier_only"))
@@ -1699,7 +1748,7 @@ def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
             },
             "kill_logic": [
                 "dungeon: per-source inventory predicate",
-                "dungeon: OR thrown-pot kill route when engine damage tables show liftable pots deal normal HP damage",
+                "dungeon: OR thrown-pot kill route when engine damage tables show liftable pots deal normal HP damage and effective pot shuffle is off",
                 "dungeon: thrown-pot route requires at least the generated pots_needed count in the room",
                 "dungeon all-tier: key-banned/flying killable sources reuse the same modeled room access as dungeon checks and emit only when enemy_drop_checks=all",
                 "underworld all-tier: reviewed room access plus per-source or binding-specific inventory/thrown-pot kill route",
@@ -1727,6 +1776,7 @@ def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
             "emitted_overworld_count": overworld_emitted,
             "emitted_boss_count": boss_emitted,
             "emitted_scripted_spawn_count": scripted_emitted,
+            "excluded_scripted_spawn_source_count": len(scripted_excluded_rows),
             "excluded_count": (
                 sum(doc_excluded_counts.values()) + sum(overworld_excluded_counts.values()) +
                 sum(scripted_excluded_counts.values())
@@ -1738,6 +1788,9 @@ def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
             "audit_only_no_room_predicate_rooms": len(audit_only_by_room),
             "source_types": len(source_types),
             "rows_with_throwable_pot_route": sum(1 for r in rows if r.get("throwable_pots_can_reach")),
+            "rows_with_pot_shuffle_guarded_throwable_route": sum(
+                1 for r in rows
+                if "NOT POT_KEYS_ON()" in str(r.get("throwable_pots_can_reach") or "")),
             "rows_pot_killable_by_damage_table": sum(1 for r in rows if r.get("throwable_pots_required") is not None),
             "rows_with_special_inventory_kill": sum(1 for r in rows if r.get("inventory_kill_source") == "source_type_special"),
             "reviewed_all_tier_no_key_depth_count": sum(
@@ -1753,6 +1806,7 @@ def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
             "scripted_spawn": dict(sorted(scripted_excluded_counts.items())),
         },
         "enemy_checks": rows,
+        "scripted_spawn_exclusions": scripted_excluded_rows,
         "out_of_scope_no_key_depth": [
             {
                 "room": int(r["room"]),

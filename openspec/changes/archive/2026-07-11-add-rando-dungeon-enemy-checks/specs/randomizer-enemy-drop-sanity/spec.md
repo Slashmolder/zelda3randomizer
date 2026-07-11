@@ -80,16 +80,16 @@ neutral gold check glint.
 - **THEN** the pickup attempts to render the real placed item
 - **AND** live carrier markers do not overwrite the pickup icon while it is active
 
-### Requirement: Door shuffle disables ordinary dungeon-enemy rows
+### Requirement: Door shuffle composes with ordinary dungeon-enemy rows
 
-Requested `enemy_drop_checks=dungeon` SHALL degrade to effective `keys` when door
-shuffle is active, because the door bridge currently models forced key-drop
-sources only.
+Requested `enemy_drop_checks=dungeon` SHALL remain effective when door shuffle is
+active. Generated door x ordinary-enemy bridge rows SHALL carry the reviewed source
+predicates and participate in door-layout digest/replay identity.
 
 #### Scenario: Door shuffle requests dungeon
 - **WHEN** settings request `enemy_drop_checks=dungeon` and `door_shuffle=basic`
-- **THEN** derived settings use effective `enemy_drop_checks=keys` and ordinary
-  `Enemy` rows are inactive
+- **THEN** derived settings keep effective `enemy_drop_checks=dungeon` and ordinary
+  `Enemy` rows remain active through the generated door bridge
 
 ### Requirement: Enemy shuffle disables ordinary dungeon-enemy rows
 

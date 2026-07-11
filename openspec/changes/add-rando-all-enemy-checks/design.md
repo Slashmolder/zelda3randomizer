@@ -86,8 +86,9 @@ The initial compatibility table is:
 - boss shuffle: keep `All`; boss/miniboss checks bind to the destination event and
   coexist with existing boss rewards, unless another rule lowers the effective tier
   further;
-- pot shuffle: compose; generated thrown-pot routes must continue proving ordering
-  sound;
+- pot shuffle: compose conservatively; generated thrown-pot routes are active only
+  when effective pot shuffle is off, while pot-sanity seeds use the reviewed
+  inventory-combat route until per-source throwable consumption is modeled;
 - entrance shuffle, including cave entrance shuffle: normalize requested `All` to
   `Dungeon` until all-enemy overworld/domain reachability is modeled against the
   entrance graph, unless another rule lowers the effective tier further; existing
@@ -179,6 +180,9 @@ Kill routes are source-specific:
 - multi-hit thrown-object routes must count required hits exactly, so an enemy that
   needs two pots is logical only when at least two reachable pots or equivalent
   throwables are available;
+- generated thrown-pot routes require effective pot shuffle to be off. This avoids
+  treating one shuffled pot as both a prerequisite item check and a later weapon;
+  active pot-sanity seeds retain the inventory-combat branch instead;
 - special vulnerabilities, invulnerability phases, armor, environmental constraints,
   and weapon immunities require explicit curated predicates.
 
@@ -211,11 +215,12 @@ are included in `DoorShuffleLayout` generation, the accepted door layout digest,
 sidecar activation, and snapshot type-5 replay validation so bridge drift fails
 closed like pot and forced enemy-drop bridge drift.
 
-Pot shuffle composes with `all` through shared logic predicates and thrown-pot kill
-routes. Pot routes may use only reachable pots that remain available before the
-enemy check is collected. Pot-sanity item checks and enemy kill routes must not
-double-count the same pot as both an already-required item check and a future thrown
-weapon unless the room state makes that ordering sound.
+Pot shuffle composes with `all` conservatively. Generated thrown-pot kill routes are
+guarded by the shared effective-pots-off predicate. When any effective pot-sanity
+tier is active, those routes are disabled and enemy checks use their reviewed
+inventory-combat branch. This prevents a shuffled pot from being counted both as an
+already-required item check and as a future thrown weapon without introducing a
+per-source consumption model.
 
 Enemy shuffle composes with forced-key `Keys` only in the first all-enemy change.
 Requested `All` normalizes to the highest lower tier allowed by existing derived

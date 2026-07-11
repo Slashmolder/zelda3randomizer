@@ -404,6 +404,7 @@
     <ClCompile Include="src\rando\seed_shape.c" />
     <ClCompile Include="src\rando\rando_spoiler.c" />
     <ClCompile Include="src\rando\rando_hints.c" />
+    <ClCompile Include="src\rando\rando_dialogue.c" />
     <ClCompile Include="src\rando\chains_runtime.c" />
     <ClCompile Include="src\rando\door_runtime.c" />
     <ClCompile Include="src\rando\door_tables.gen.c" />

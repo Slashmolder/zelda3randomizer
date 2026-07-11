@@ -38,6 +38,7 @@
 #include "terrain_lookup.h"  // (screen, pos) -> LOC_*; add-rando-grass-rock-shuffle
 #include "direct_grant_icons.h"  // kDirectGrantIcons[] (Phase B Slice 9)
 #include "rando_hints.h"  // Rando_ClearHints (Phase B Slice 5)
+#include "rando_dialogue.h"  // randomized reward-aware NPC text
 #include "shuffle_entrance.h"  // Phase C entrance shuffle (overlay + self-check)
 #include "inverted_entrances.h"  // #82 static Inverted entrance/exit override
 #include "inverted_maps.h"  // InvertedHoleBlocks_Install (no-art Ganon pit shadow)
@@ -133,6 +134,14 @@ static bool rando_trap_decoy_icon(uint16 item_id, uint16 location_id,
 // (Heap-resident per design — NOT in g_ram. See proposal.md "Impact".)
 // ---------------------------------------------------------------------------
 static uint32 g_reachability_state_counter;
+
+uint16 Rando_GiftThiefLocationForRoom(uint16 room_id) {
+  switch (room_id) {
+  case 0x11E: return LOC_Hype_Cave_NPC;
+  case 0x123: return LOC_Mini_Moldorm_Cave_NPC;
+  default:    return 0xFFFFu;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Rando_OnLocationCheck — universal dispatcher (tasks.md §6.1).
@@ -5667,6 +5676,12 @@ static void Rando_DungeonIdSelfCheck(void) {
     fprintf(stderr, "Rando_SelfCheck: game->rando dungeon mapping mismatch\n");
     exit(2);
   }
+  if (Rando_MapDisplayDungeonFromGameDungeon(kGameDungeon_HyruleCastle) != kRandoDungeon_HyruleCastleEscape ||
+      Rando_MapDisplayDungeonFromGameDungeon(kGameDungeon_HyruleCastleEscape) != kRandoDungeon_HyruleCastleEscape ||
+      Rando_MapDisplayDungeonFromGameDungeon(kGameDungeon_HyruleCastleTower) != kRandoDungeon_HyruleCastleTower) {
+    fprintf(stderr, "Rando_SelfCheck: map-display dungeon mapping mismatch\n");
+    exit(2);
+  }
   if (Rando_KeySlotFromRawPalace(2) != kGameDungeon_HyruleCastleEscape ||
       Rando_KeySlotFromRawPalace(16) != kGameDungeon_SkullWoods ||
       Rando_KeySlotFromRawPalace(0xff) != kGameDungeon_None) {
@@ -5729,6 +5744,17 @@ void Rando_SelfCheck(void) {
     exit(2);
   }
   Rando_DungeonIdSelfCheck();
+
+  // Both randomized generous-guy rooms share the gift-thief sprite handler.
+  // Keep this full-room mapping covered so a low-byte-only comparison cannot
+  // silently route a different 0x23 room to Mini Moldorm Cave's NPC check.
+  if (Rando_GiftThiefLocationForRoom(0x11E) != LOC_Hype_Cave_NPC ||
+      Rando_GiftThiefLocationForRoom(0x123) != LOC_Mini_Moldorm_Cave_NPC ||
+      Rando_GiftThiefLocationForRoom(0x127) != 0xFFFFu ||
+      Rando_GiftThiefLocationForRoom(0x223) != 0xFFFFu) {
+    fprintf(stderr, "Rando_SelfCheck: gift-thief room mapping mismatch\n");
+    exit(2);
+  }
 
   // add-rando-pot-sanity Phase 4 — Rando_GetPotLocation (room,pos4)->LOC binary
   // search: the table must be strictly sorted by (room<<16|pos4) and every entry
@@ -7966,6 +7992,7 @@ void Rando_RunAllSelfChecks(void) {
   RandoSnapshotTail_SelfCheck();
   TextField_SelfCheck();
   Hints_SelfCheck();
+  RandoDialogue_SelfCheck();
   Entrance_SelfCheck();
   InvertedEntrances_SelfCheck();
   Rando_EntranceContaminationSelfCheck();  // digest vs Inverted-owned asset 126

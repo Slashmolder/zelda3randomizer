@@ -924,9 +924,9 @@ static const char *const kReferenceSaves[] = {
 };
 
 // Dev diagnostic (bound to F12 in main.c): print the key link/module/world
-// state to stderr and dump raw g_ram + PPU VRAM/OAM/CGRAM to files next to the
-// executable. Used to root-cause spawn softlocks (the state line) and GFX
-// corruption (vram/oam). No gameplay effect; safe to leave in.
+// state to stderr and dump raw runtime, save, randomizer, and PPU state to files
+// next to the executable. Used to root-cause progression/spawn bugs (WRAM/SRAM
+// plus checked bitmap) and GFX corruption (VRAM/OAM/CGRAM). No gameplay effect.
 void ZeldaDumpDebugState(void) {
   fprintf(stderr,
     "[DUMP] module=%02X sub=%02X handler_state=%02X anim_steps=%02X "
@@ -940,11 +940,18 @@ void ZeldaDumpDebugState(void) {
     overworld_screen_index, g_ram[0xF357], g_ram[0xF353], g_ram[0xF359]);
   FILE *f;
   if ((f = fopen("dump_gram.bin", "wb")))  { fwrite(g_zenv.ram, 1, 0x20000, f); fclose(f); }
+  if ((f = fopen("dump_sram.bin", "wb")))  { fwrite(g_zenv.sram, 1, 0x2000, f); fclose(f); }
+  if ((f = fopen("dump_rando_checked.bin", "wb"))) {
+    fwrite(g_rando_checked_bitmap, 1, kRandoCheckedBitmapBytes, f);
+    fclose(f);
+  }
   if ((f = fopen("dump_vram.bin", "wb")))  { fwrite(g_zenv.ppu->vram, 2, 0x8000, f); fclose(f); }
   if ((f = fopen("dump_oam.bin", "wb")))   { fwrite(g_zenv.ppu->oam, 2, 0x110, f); fclose(f); }
   if ((f = fopen("dump_cgram.bin", "wb"))) { fwrite(g_zenv.ppu->cgram, 2, 0x100, f); fclose(f); }
   Rando_DumpHintDebug(dialogue_message_index);  // dev: hint-table state -> dump_hints.txt
-  fprintf(stderr, "[DUMP] wrote dump_gram.bin / dump_vram.bin / dump_oam.bin / dump_cgram.bin / dump_hints.txt\n");
+  fprintf(stderr, "[DUMP] wrote dump_gram.bin / dump_sram.bin / "
+                  "dump_rando_checked.bin / dump_vram.bin / dump_oam.bin / "
+                  "dump_cgram.bin / dump_hints.txt\n");
 }
 
 void SaveLoadSlot(int cmd, int which) {

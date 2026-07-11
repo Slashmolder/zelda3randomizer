@@ -56,7 +56,7 @@ locations:
   # ===========================================================================
   - { id: 18, name: "Desert Palace - Big Chest",              region: DesertPalace, type: BigChest, vanilla_item: PowerGlove,            source: "app/Region/Standard/DesertPalace.php:55" }
   - { id: 19, name: "Desert Palace - Map Chest",              region: DesertPalace, type: Chest,    vanilla_item: Map_DesertPalace,      source: "app/Region/Standard/DesertPalace.php:56" }
-  - { id: 20, name: "Desert Palace - Torch",                  region: DesertPalace, type: Dash,     vanilla_item: Boots,                 source: "app/Region/Standard/DesertPalace.php:57" }
+  - { id: 20, name: "Desert Palace - Torch",                  region: DesertPalace, type: Dash,     vanilla_item: SmallKey_DesertPalace, source: "app/Region/Standard/DesertPalace.php:57" }
   - { id: 21, name: "Desert Palace - Big Key Chest",          region: DesertPalace, type: Chest,    vanilla_item: BigKey_DesertPalace,   source: "app/Region/Standard/DesertPalace.php:58" }
   - { id: 22, name: "Desert Palace - Compass Chest",          region: DesertPalace, type: Chest,    vanilla_item: Compass_DesertPalace,  source: "app/Region/Standard/DesertPalace.php:59" }
   - { id: 23, name: "Desert Palace - Boss",                   region: DesertPalace, type: Drop,     vanilla_item: BossHeartContainer,    source: "app/Region/Standard/DesertPalace.php:60" }

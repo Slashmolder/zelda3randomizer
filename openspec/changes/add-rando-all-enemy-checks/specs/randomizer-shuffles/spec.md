@@ -33,9 +33,10 @@ entrance graph. Until then, requested `All` SHALL normalize to `Dungeon` unless
 another rule lowers the effective tier further. Existing cave-entrance pot/key
 derived rules still apply before this normalization.
 
-Pot-shuffle thrown-object routes SHALL use only reachable throwables whose ordering
-does not double-count the same pot as both a required pot-sanity item check and a
-future thrown weapon.
+Generated thrown-pot routes SHALL require effective pot shuffle to be off. While any
+effective pot-sanity tier is active, enemy checks SHALL fall back to their reviewed
+inventory-combat routes so no shuffled pot can be counted both as a required item
+check and a future thrown weapon.
 
 #### Scenario: Drop shuffle remains prize-pack-only
 - **WHEN** `drop_shuffle` and effective `enemy_drop_checks=all` are both active
@@ -71,5 +72,5 @@ future thrown weapon.
 #### Scenario: Pot route does not double-count required pot check
 - **WHEN** a pot must be lifted to collect a required pot-sanity item before an enemy
   check
-- **THEN** that same pot does not count as a future thrown weapon for the same enemy
-  check branch
+- **THEN** the thrown-pot route is inactive for that enemy check
+- **AND** the reviewed inventory-combat route remains required

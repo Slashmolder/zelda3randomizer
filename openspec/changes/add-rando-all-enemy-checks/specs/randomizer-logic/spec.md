@@ -21,9 +21,9 @@ Thrown-object routes SHALL be allowed when engine damage data shows that the thr
 object can damage the source and the reachable area contains enough usable throwables
 to deal lethal damage. If a source requires N thrown-pot hits, the route SHALL require
 at least N reachable pots or equivalent throwables; one pot SHALL NOT satisfy a
-two-pot kill. Each thrown-object branch SHALL record the specific throwable source
-set or an equivalent disjoint-count proof so logic cannot count the same pot as both
-a required pot-sanity item check and a future thrown weapon before the enemy check.
+two-pot kill. Generated thrown-pot branches SHALL additionally require effective pot
+shuffle to be off. While any effective pot-sanity tier is active, those branches
+SHALL be disabled and the enemy SHALL require its reviewed inventory-combat route.
 
 #### Scenario: Inventory kill route
 - **WHEN** an emitted all-enemy source has a reviewed inventory-based kill route
@@ -42,14 +42,15 @@ a required pot-sanity item check and a future thrown weapon before the enemy che
 #### Scenario: Required pot item cannot also be weapon
 - **WHEN** a pot's placed item is required before an enemy check and lifting that pot
   consumes the throwable needed for the enemy kill route
-- **THEN** that pot does not count toward the thrown-object branch for that enemy
-  check
+- **THEN** effective pot sanity disables the thrown-pot branch for that enemy check
+- **AND** the reviewed inventory-combat route remains required
 
 #### Scenario: Independent pot item and weapon ordering
 - **WHEN** an enemy's thrown-pot route uses pots that are not needed as prior
   pot-sanity item checks for that same branch
-- **THEN** logic MAY count those pots as weapons if the damage and count
-  requirements are met
+- **THEN** the current conservative model still disables that route while effective
+  pot sanity is active
+- **AND** a future per-source consumption model MAY safely restore the route
 
 #### Scenario: Unknown kill route blocks honest all
 - **WHEN** no conservative kill route can be modeled for a finite enemy source

@@ -316,6 +316,8 @@ changing every existing seed. This SHALL be verified by a corpus regen with a
   pot receives a placement entry, draws fill RNG, or enters the digest — registry
   growth alone does not change the placement table
 
+## MODIFIED Requirements
+
 ### Requirement: Pot keys are first-class shuffled checks under shuffled key modes
 
 A dungeon's POT keys SHALL be genuine randomizer checks — a key pot can hold any placed

@@ -67,10 +67,10 @@ the number of pot hits required. That branch is emitted only when the room has a
 least that many reachable liftable pots in `pots.gen.yaml`, so a two-pot kill
 does not become logical with only one pot.
 
-Door shuffle currently degrades requested `enemy_drop_checks=dungeon` to effective
-`keys`. The generated door x enemy-drop bridge only models forced key sources,
-not arbitrary ordinary enemies, so ordinary `Enemy` rows stay disabled under door
-shuffle until a non-key door-region bridge is designed and validated.
+Door shuffle keeps requested `enemy_drop_checks=dungeon` active. Codegen emits the
+reviewed door x ordinary-enemy bridge rows, source predicates, and digest/replay
+identity consumed by the door layout, so ordinary `Enemy` rows remain reachable and
+fillable under the shuffled topology.
 
 Enemy shuffle also degrades requested `enemy_drop_checks=dungeon` to effective
 `keys`. Source-slot identity remains stable enough for forced-key checks, but the
@@ -86,8 +86,8 @@ The setting is a three-value selector:
 - `dungeon`
 
 The effective value may be lower than the requested value after derived settings
-are applied. Vanilla small-key mode becomes `off`; door shuffle turns requested
-`dungeon` into effective `keys`; enemy shuffle also turns requested `dungeon`
+are applied. Vanilla small-key mode becomes `off`; door shuffle preserves requested
+`dungeon` through its generated bridge; enemy shuffle turns requested `dungeon`
 into effective `keys`.
 
 Enemy check markers reuse `[Graphics] EnemyDropMarker`. `item` draws the placed

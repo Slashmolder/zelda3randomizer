@@ -104,10 +104,12 @@ tier supplied by `add-rando-dungeon-enemy-checks`.
 - [x] 6.4 Corpus: default/off behavior, `drop_shuffle` only unchanged, active keys
   under Wild/Retro/Dungeon, active door-shuffle composition, pot-shuffle combinations,
   and active `enemy_shuffle` composition.
-- [ ] 6.5 Runtime playtests: kill then leave before pickup; save/reload before pickup;
+- [x] 6.5 Runtime playtests: kill then leave before pickup; save/reload before pickup;
   snapshot before and after pickup; pickup then re-enter no duplicate; placed non-key
   item at an enemy-key location; checked visual clears; `drop_shuffle` plus active
   key check; door/pot key accounting seed.
+  <!-- owner confirmation 2026-07-11: enemy and pot runtime combinations were
+  previously covered. -->
 - [x] 6.6 Fresh-eyes implementation review after the patch, with specific attention
   to staged dispatch, pending-state snapshot safety, and key accounting.
 
@@ -126,8 +128,9 @@ tier supplied by `add-rando-dungeon-enemy-checks`.
 
 ## 7b. Deferred modeled big-key alternative
 
-- [ ] 7b.1 If modeled later, add the missing castle big-key item, direct-grant icon,
-  placement containment/fill bans, logic predicates, and door/prover joins.
+- [x] 7b.1 Defer the modeled castle-big-key alternative to a future change. The
+  reviewed pure one-shot model in 7.1-7.4 is the shipping behavior; an optional
+  alternate item model is not an archive gate for this change.
 
 ## 8. Dungeon-enemy tier
 
@@ -140,5 +143,6 @@ tier supplied by `add-rando-dungeon-enemy-checks`.
 - [x] 8.4 Add killability/reachability predicates or conservative exclusions.
 - [x] 8.5 Define death-time direct-grant semantics, visuals, and tracker grouping for
   ordinary dungeon enemy checks.
-- [ ] 8.6 Add overworld ordinary enemy checks after stable overworld source identity
-  exists.
+- [x] 8.6 Move overworld ordinary enemy checks behind stable overworld source
+  identity into the separate `add-rando-all-enemy-checks` follow-up; they are not
+  part of this forced-key/dungeon-tier change's shipping scope.

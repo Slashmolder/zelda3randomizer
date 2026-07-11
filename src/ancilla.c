@@ -6673,12 +6673,17 @@ void AddBirdTravelSomething(uint8 a, uint8 y) {  // 89951d
     link_cant_change_direction &= ~1;
     ancilla_L[k] = 1;
 
+    // The initial Z velocity is paired with the bird's fixed horizontal speed
+    // so its arc reaches z=0 exactly as it reaches Link. Raising only Z velocity
+    // for cutscene fast-forward makes the 8-bit height wrap past zero; the draw
+    // path then treats it as a large negative offset and both riders disappear.
+    // Fast-forward the surrounding dwell/fade, but preserve this arrival arc.
     if (enhanced_features0 & kFeatures0_ExtendScreen64) {
       // todo: tune these better so the angle of attack is better
-      ancilla_z_vel[k] = CutsceneFastForwardEnabled() ? 82 : 58;
+      ancilla_z_vel[k] = 58;
       ancilla_z[k] = -105;
     } else {
-      ancilla_z_vel[k] = CutsceneFastForwardEnabled() ? 64 : 40;
+      ancilla_z_vel[k] = 40;
       ancilla_z[k] = -51;
     }
     ancilla_step[k] = 2;

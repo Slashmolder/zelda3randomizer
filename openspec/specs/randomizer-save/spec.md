@@ -121,7 +121,11 @@ Three activation-time validation gates are carve-outs from the warn-only rule, e
 
 When reading a slot, the loader SHALL iterate only the bitmap bits in the range `[0, placement_table_size / 2)` — corresponding to the locations the writing binary actually placed. Bits beyond that range SHALL NOT be interpreted as "newer-registry locations not checked yet"; they SHALL be ignored entirely.
 
-For a newer binary reading an older slot, the new locations beyond `placement_table_size / 2` SHALL be treated as **unchecked** (default state for never-visited locations), not as "zero bit means unchecked." The distinction matters: if the bitmap was stored slightly larger than the writing binary's `placement_table_size / 2` for forward-compat, those extra zero bits would be indistinguishable from "checked" if the reader assumed the bitmap covered the new registry too.
+For a newer binary reading an older slot, the new locations beyond `placement_table_size / 2` SHALL be treated as **unchecked** (default state for never-visited locations). A reader MUST treat beyond-prefix locations as unchecked because they did not exist when the slot was written, and MUST NOT infer their state from bitmap bytes that may extend past `placement_table_size / 2` for byte alignment. (Bit polarity: a set bit means checked and a clear bit means unchecked, per `src/rando/rando.c`; the point is that beyond-prefix bits carry no authoritative information, not that "clear == checked.")
+
+The pot-sanity expansion (location registry growing to ~1127 IDs) rides this existing per-slot, `placement_table_size`-keyed sizing with **no on-disk format change**: a pot-shuffle slot simply has a larger `placement_table_size` and a correspondingly larger bitmap. Only the in-memory working buffers (`kRandoCheckedBitmapBytes`, the placement arrays) grow to the 2048 ceiling; the wire format is unchanged.
+
+**Compatibility is one-directional.** The append-only ID rule (`Embedded placement table — upgrade safety`) lets a **newer binary read an older slot** (the older slot is a valid prefix of the larger registry; the new IDs default unchecked). The reverse is **NOT supported**: a pre-pot-shuffle (512-era) binary reading a pot-expanded slot sees a `placement_table_size` larger than its fixed buffers and **rejects the slot non-destructively** (the size/bounds validation refuses it; that 512-era binary's snapshot tail likewise rejects a `placement_table_bytes` past its `512 × 2 = 1024` cap — the current pot-capable tail's cap is `kRandoLocationCapacity × 2`). There is no forward-compat for old binaries without an added compat layer (out of scope) — the slot is refused and the paired `sram.dat` save is treated as plain vanilla, file untouched.
 
 #### Scenario: Newer binary reading older slot ignores beyond-prefix bitmap bits
 - **WHEN** a binary with `current_registry_locations = 216` reads a slot with `placement_table_size = 424` (212 locations) and the bitmap is sized for the slot's registry
@@ -130,6 +134,14 @@ For a newer binary reading an older slot, the new locations beyond `placement_ta
 #### Scenario: Bitmap sizing formula
 - **WHEN** a slot is written with `placement_table_size = S` bytes (S/2 locations)
 - **THEN** the bitmap occupies `(S / 2 + 7) >> 3` bytes; reading the bitmap iterates `S / 2` bits
+
+#### Scenario: Pot-shuffle slot round-trips with the larger registry
+- **WHEN** a `pot_shuffle = All` slot with ~1127 placed locations is written and read back by a pot-capable binary
+- **THEN** `placement_table_size` reflects all placed locations, the bitmap is `(placement_table_size / 2 + 7) >> 3` bytes, and the round-trip is lossless
+
+#### Scenario: Old binary refuses a pot-expanded slot (one-directional compat)
+- **WHEN** a pre-pot-shuffle (512-era) binary loads a sidecar whose slot has a `placement_table_size` implying ~1127 locations
+- **THEN** the slot fails size/bounds validation and is refused non-destructively (the file is untouched and the paired `sram.dat` slot is treated as plain vanilla); the old binary does NOT read pot IDs beyond its registry
 
 ### Requirement: Downgrade-then-re-upgrade safety
 
@@ -445,4 +457,52 @@ The sidecar SHALL grow by a new format version (file `format_version` 8) that (a
 #### Scenario: v7 sidecar files still load
 - **WHEN** a `format_version` 7 sidecar (37-byte ext block, 29-byte settings blob, no terrain fields) is read by a v8-writing binary
 - **THEN** the file loads through format-version gating; the 29-byte settings blob zero-extends to 30 so both terrain axes read `off` and the guard is not consulted; the next write upgrades the file to v8
+
+### Requirement: Snapshot persists the rando checked-location bitmap
+
+The F-key developer snapshot (`StateRecorder`, which does a full `g_ram` dump-restore — NOT input replay) SHALL also persist and restore `g_rando_checked_bitmap`, a C global that lives OUTSIDE `g_ram` and is therefore invisible to the snapshot's RAM dump. Without it, saving and reloading a snapshot loses which locations are checked. Pots uniquely require this: a checked chest/NPC sets a persistent vanilla SNES flag (captured by the `g_ram` dump), but a checked **pot** has NO vanilla flag — its only record is the rando bitmap, so a snapshot reload would un-check every broken pot (re-granting it / re-showing its un-checked glint).
+
+This SHALL be a new TLV in the snapshot tail (`rando_snapshot_tail.{c,h}`, type 3 `CheckedBitmap`): a flat `kRandoCheckedBitmapBytes` copy written after the existing TLVs and restored by `memset`-then-`fread min(length, kRandoCheckedBitmapBytes)` — backward-compatible (an older snapshot without the TLV restores an all-clear bitmap; a larger payload is truncated). `--rando-selftest` SHALL round-trip the bitmap through the tail.
+
+#### Scenario: A broken pot stays checked across a snapshot reload
+- **WHEN** the player breaks an in-scope pot, takes an F-key snapshot, then replays it
+- **THEN** the pot is still marked checked — the type-3 CheckedBitmap TLV round-trips `g_rando_checked_bitmap` — so the pot does not re-grant and draws no un-checked glint (it stays checked)
+
+#### Scenario: Older snapshot without the TLV restores cleanly
+- **WHEN** a snapshot written before the CheckedBitmap TLV existed is replayed
+- **THEN** the loader recognizes the absent TLV and restores an all-clear bitmap (no crash, no stale check state)
+
+### Requirement: Enemy-drop checked state and snapshot safety
+
+Enemy-drop check locations SHALL use the existing checked-location bitmap and
+placement-table sizing model. Newer binaries SHALL read older slots with no enemy-drop
+ids as valid prefixes and default the setting to `Off`. Older binaries that cannot
+hold a larger placement table or checked bitmap SHALL refuse expanded slots
+non-destructively according to `Embedded placement table - upgrade safety` and
+`Checked-location bitmap read invariant`.
+
+Transient in-room enemy-drop identity SHALL be snapshot-safe. Phase 1 stores the
+carrier source slot in existing snapshot-persisted sprite state and recomputes the
+location id from the generated `(room, source_slot, drop_kind)` lookup at pickup time.
+If a later phase adds a separate pending table, that table SHALL either live in
+reserved `g_ram` captured by F-key snapshots or be serialized in a snapshot-tail TLV.
+Plain save/reload before pickup MAY recompute the unchecked state from the generated
+registry when the room reloads.
+
+#### Scenario: Older slot loads with enemy-drop checks off
+- **WHEN** a pre-enemy-drop sidecar slot is loaded by a newer binary
+- **THEN** `enemy_drop_checks` defaults to `Off`, no enemy-drop checked bits are
+  required, and the slot loads through the normal prefix-compatible path
+
+#### Scenario: Snapshot before pickup preserves retry semantics
+- **WHEN** the player snapshots after killing an active forced-key carrier but before
+  collecting the drop, then restores the snapshot
+- **THEN** the pending location identity is restored or recomputed, the location is
+  still unchecked, and the drop/check remains collectable exactly once
+
+#### Scenario: Old binary refuses expanded slot safely
+- **WHEN** an older binary reads a slot whose placement table or checked bitmap exceeds
+  its supported capacity
+- **THEN** it refuses the slot non-destructively rather than truncating enemy-drop
+  checked state
 

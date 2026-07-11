@@ -65,5 +65,7 @@
 - [ ] 5.4 Capture F12 dumps for room `0x72` with multiple enemy-marker placed
   items and confirm marker charnums stay within `0xF0..0xFF` with no `0x24/0x34`
   exact-marker references.
-- [ ] 5.5 Playtest dense rooms with multiple live markers, spawned drops, pot glints,
+- [x] 5.5 Playtest dense rooms with multiple live markers, spawned drops, pot glints,
   custom-art items, and receipt/direct-grant transitions.
+  <!-- owner confirmation 2026-07-11: enemy and pot marker combinations were
+  previously playtested. The separate F12 charnum proof in 5.4 remains. -->

@@ -483,7 +483,6 @@ static void Panel_Controls(void) {
       RowsForBase(kKeys_RandoMapTrackerWindow, false);
       RowsForBase(kKeys_RandoRevealSpoiler, false);
       RowsForBase(kKeys_WarpToSpawn, false);
-      RowsForBase(kKeys_SoftResetToSpawn, false);
       ImGui::TreePop();
     }
   }
@@ -509,7 +508,6 @@ static void Panel_Controller(void) {
       RowsForBase(kKeys_RandoMapTrackerWindow, true);
       RowsForBase(kKeys_RandoRevealSpoiler, true);
       RowsForBase(kKeys_WarpToSpawn, true);
-      RowsForBase(kKeys_SoftResetToSpawn, true);
       ImGui::TreePop();
     }
   }

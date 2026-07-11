@@ -72,9 +72,9 @@ static const uint16 kDefaultKbdControls[kKeys_Total] = {
   N, N, N, N, N, C(SDLK_i), C(SDLK_c), C(SDLK_m),
   // OpenSettings — backquote `` ` `` opens the native game-config window.
   _(SDLK_BACKQUOTE),
-  // Seed QoL local actions: WarpToSpawn, SoftResetToSpawn.
+  // Seed QoL local action: WarpToSpawn.
   // Default unbound.
-  N, N,
+  N,
   // DumpDebugState — F12 writes the developer state dump.
   _(SDLK_F12),
 };
@@ -118,8 +118,8 @@ static const KeyNameId kKeyNameId[] = {
   S(RandoItemTrackerWindow), S(RandoCheckTrackerWindow), S(RandoMapTrackerWindow),
   // Native game-config window toggle (config mode). INI key "OpenSettings".
   S(OpenSettings),
-  // Seed QoL local actions.
-  S(WarpToSpawn), S(SoftResetToSpawn),
+  // Seed QoL local action.
+  S(WarpToSpawn),
   // Developer state dump. INI key "DumpDebugState" (default F12).
   S(DumpDebugState),
 };

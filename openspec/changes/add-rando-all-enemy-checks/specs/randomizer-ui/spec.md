@@ -31,10 +31,11 @@ SHALL show the effective value or the specific rejection reason.
 
 Spoilers, trackers, reachability panels, and autotracker output SHALL include every
 generated all-tier location and group it by a stable player-usable source domain:
-dungeon room, reviewed underworld room, or overworld area/screen in the current
-implementation, with boss arena and scripted parent domains reserved for future
-source registries. Location names SHALL distinguish duplicate enemy types in the
-same group by coordinates, source slot, or another stable disambiguator.
+dungeon room, reviewed underworld room, overworld area/screen, boss arena, or
+scripted parent. Flat machine-readable placement rows MAY carry this grouping as
+region/domain metadata rather than nested JSON. Location names SHALL distinguish
+duplicate enemy types in the same group by coordinates, source slot, or another
+stable disambiguator.
 
 #### Scenario: Duplicate enemy type in one area
 - **WHEN** two emitted all-enemy locations use the same enemy type in the same

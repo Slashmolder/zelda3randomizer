@@ -982,3 +982,132 @@ The assumed-fill placer SHALL use the placed-item collecting reachability model 
 - **WHEN** `npc_souls=off`
 - **THEN** the fill-model choice, attempt acceptance, and placement digest are byte-identical to pre-feature behavior for every settings combination
 
+### Requirement: Pot-shuffle canonical settings axis
+
+The `RandoSettings` struct SHALL gain an enum axis `pot_shuffle` with values
+`Off` (0), `Keys` (1), `Contents` (2), `All` (3), defaulting to `Off`. In the
+canonical serialization (the input to `SHA-256()` for `settings_hash` and to the
+v2 share-string encoder) it SHALL be packed as a **3-bit field split
+non-contiguously** — canonical byte `[26]` bits 6-7 (the low 2 bits) plus `[27]`
+bit 7 (the high bit), the LAST free bits at length 28. (Three bits, not two,
+because a 4th tier `Subset` (4) is reserved for a later phase; `[27]` bits 2-3 are
+NOT free — `trap_categories` owns them.) `kSettingsCanonicalLen` SHALL stay
+**28**; no existing field's offset, width, or value changes and no size-coupling
+cascade is triggered (`canonical-size-coupling`).
+
+Because `pot_shuffle` defaults to `Off` (all three bits 0) and the off path draws
+no fill RNG and adds no active locations:
+- **Default-settings seeds keep a byte-identical `settings_hash`** (the canonical
+  bytes are unchanged for the default tuple), and
+- **all existing seeds keep a byte-identical `placement_digest_hex`** (pot
+  locations are excluded from the active graph and the digest when off; see
+  `randomizer-pot-sanity / Pot-shuffle Off is placement-byte-identical`).
+
+Adding the axis SHALL advance `kGeneratorVersion`: it version-locks a new
+live-runtime axis (an older binary surfaces the upgrade warning rather than
+silently mis-handling a pot-shuffle slot), and a seed with `pot_shuffle != Off`
+serializes non-zero bits, changing that seed's `settings_hash`. The corpus
+regenerates (manifest `generator_version` advances); because no existing corpus
+seed enables `pot_shuffle`, every regenerated digest SHALL be byte-identical to
+the pre-change baseline, validated by a 3-way diff against `main`.
+
+The `All` tier introduces a **Literally Nothing** filler item (`ITEM_Nothing`,
+appended to `item_registry.yaml`) placed at empty-pot checks via a **dedicated
+pre-pass** (NOT the junk rotation) so it can never land on a real location; its
+behavior is specified normatively in `randomizer-pot-sanity / Literally Nothing
+filler for empty pots`.
+
+#### Scenario: Default hash and all placement identical with pot-shuffle off
+- **WHEN** `pot_shuffle` is added and a default-settings seed is generated on the
+  new binary
+- **THEN** the seed's `settings_hash` AND `placement_digest_hex` are byte-identical
+  to the pre-change baseline (canonical length stays 28, the default bits are 0);
+  the corpus regenerates only its manifest version
+
+#### Scenario: kGeneratorVersion bump + backward load
+- **WHEN** the axis is added
+- **THEN** `kGeneratorVersion` advances and a slot written by the prior version
+  loads on the new binary with the one-time informational warning (per
+  `randomizer-save / Embedded placement table — upgrade safety`)
+
+#### Scenario: Selecting a tier changes only that seed's settings hash
+- **WHEN** `pot_shuffle` is set to `Contents` for a seed
+- **THEN** that seed's `settings_hash` changes (the packed bits become non-zero)
+  while a pot-shuffle-`Off` seed with the same other axes keeps the baseline hash
+
+### Requirement: Enemy-drop-check canonical settings axis
+
+The `RandoSettings` struct SHALL gain an enum axis `enemy_drop_checks` with values
+`Off` (0), `Keys` (1), and `Dungeon` (2). The canonical serialization
+SHALL append one byte after the existing settings layout for this axis, bumping
+`kSettingsCanonicalLen`. Existing shorter canonical blobs and share strings SHALL
+deserialize with `enemy_drop_checks = Off`.
+
+Adding this byte SHALL update every fixed-length coupling point: v2 share-string
+encode/decode and settings-length/CRC validation, sidecar slot settings replay,
+snapshot settings TLV replay, suppressed-spoiler fixed settings length, UI ini
+persistence, expected canonical/hash selfchecks, and the regression-corpus manifest.
+`kGeneratorVersion` SHALL advance because non-off enemy-drop checks are a new
+generation/runtime axis.
+
+Derived rules SHALL normalize `enemy_drop_checks` to `Off` when effective small keys
+are vanilla. Wild/Retro and Dungeon small-key modes SHALL keep `Keys` effective.
+Vanilla-door Wild/Retro and Dungeon small-key modes SHALL keep `Dungeon` effective.
+Door shuffle's forced Dungeon mode SHALL keep `Keys` effective and SHALL downgrade a
+raw `Dungeon` request to `Keys` until ordinary enemy rows have a door-region bridge.
+`enemy_shuffle` SHALL compose with the forced-key `Keys` tier and SHALL downgrade a
+raw `Dungeon` request to `Keys` until ordinary enemy logic can consume per-seed shuffled
+type and HP data. This normalization SHALL be applied to the canonical copy used
+for the settings hash and to every effective accessor used by placement, logic,
+UI, spoiler, and runtime.
+
+#### Scenario: Old settings decode as off
+- **WHEN** a pre-enemy-drop share string or canonical settings blob is decoded
+- **THEN** `enemy_drop_checks` defaults to `Off` and all existing settings fields keep
+  their prior values
+
+#### Scenario: Selecting keys changes the settings hash only when effective
+- **WHEN** `enemy_drop_checks = Keys` and effective small keys are in a supported mode
+- **THEN** the appended canonical byte is non-zero and the settings hash changes
+  relative to `Off`
+
+#### Scenario: Vanilla key mode normalizes enemy-drop checks off
+- **WHEN** `enemy_drop_checks = Keys` but effective small keys are vanilla
+- **THEN** derived settings serialize as `Off`, and placement/runtime behavior is
+  byte-identical to enemy-drop checks off
+
+#### Scenario: Dungeon key mode keeps enemy-drop checks active
+- **WHEN** `enemy_drop_checks = Keys` and effective small keys are Dungeon
+- **THEN** derived settings keep `enemy_drop_checks = Keys`
+
+#### Scenario: Door shuffle keeps enemy-drop checks active
+- **WHEN** `enemy_drop_checks = Keys` and `door_shuffle = basic`
+- **THEN** derived settings serialize with `enemy_drop_checks = Keys` because door
+  shuffle forces effective Dungeon small keys
+
+#### Scenario: Dungeon tier downgrades under door shuffle
+- **WHEN** `enemy_drop_checks = Dungeon` and `door_shuffle = basic`
+- **THEN** derived settings serialize with `enemy_drop_checks = Keys`
+
+#### Scenario: Dungeon tier downgrades under enemy shuffle
+- **WHEN** `enemy_drop_checks = Dungeon` and `enemy_shuffle = true`
+- **THEN** derived settings serialize with `enemy_drop_checks = Keys`
+
+### Requirement: Dungeon-enemy emission must fit existing location capacity
+
+The implementation SHALL prove that ordinary dungeon-enemy checks fit
+`kRandoLocationCapacity` together with every other generated location type before
+those checks are emitted as locations.
+
+#### Scenario: Emitted rows fit capacity
+- **WHEN** the generated ordinary dungeon enemy registry is present
+- **THEN** selfchecks verify the emitted `Enemy` location count matches the
+  runtime lookup count and the total generated location count fits the active
+  capacity
+
+#### Scenario: Emitted rows would exceed capacity
+- **WHEN** generated ordinary enemy-check rows would exceed
+  `kRandoLocationCapacity`
+- **THEN** codegen or selfcheck SHALL fail rather than producing a truncated
+  location table
+

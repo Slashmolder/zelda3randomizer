@@ -122,6 +122,15 @@ static inline uint8 Rando_RandoDungeonFromGameDungeon(uint8 game_dungeon) {
                            : (uint8)kRandoDungeon_None;
 }
 
+// Hyrule Castle proper uses its own live engine dungeon slot, but its map and
+// randomizer checks belong to the shared Hyrule Castle Escape / Sewers bucket.
+// Keep the general game->rando conversion strict and fold only map displays.
+static inline uint8 Rando_MapDisplayDungeonFromGameDungeon(uint8 game_dungeon) {
+  return game_dungeon == kGameDungeon_HyruleCastle
+             ? (uint8)kRandoDungeon_HyruleCastleEscape
+             : Rando_RandoDungeonFromGameDungeon(game_dungeon);
+}
+
 static inline uint8 Rando_PrizeRandoDungeonFromGameDungeon(uint8 game_dungeon) {
   uint8 rando_dungeon = Rando_RandoDungeonFromGameDungeon(game_dungeon);
   switch (rando_dungeon) {

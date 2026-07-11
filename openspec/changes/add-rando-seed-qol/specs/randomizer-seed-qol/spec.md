@@ -98,12 +98,15 @@ comparator stays clean.
 
 The game SHALL provide options to skip or auto-advance recurring animated
 sequences — the crystal/pendant prize-get, the Ganon's-Tower crystal barrier, the
-pyramid-opening, the Agahnim intro, the Zelda escort dialogue, and the death /
+pyramid-opening, the post-Agahnim defeat transition, the Zelda escort dialogue, and the death /
 game-over fade — and to speed (not re-time the destination of) the mirror-warp and
 flute-travel animations. Each fast-path SHALL preserve **every** progression flag,
 SRAM byte, and side effect the vanilla sequence performs (skip the *animation*,
-never the *flag*): a fast-forwarded sequence MUST leave `g_ram`/SRAM in the exact
-state the full sequence would. The overworld/dungeon **screen-scroll** transition
+never the *flag*): at a common settled checkpoint, a fast-forwarded sequence MUST
+leave the live save block, serialized SRAM, randomizer checked bitmap, progression
+flags, and destination/player state identical to the full sequence. Frame counters,
+the feature bit, animation/audio timers, and render scratch are excluded from that
+comparison. The overworld/dungeon **screen-scroll** transition
 timing SHALL NOT be changed by this feature. Story-dialogue fast-forward SHALL be
 allowlisted to known Standard intro / Uncle / Zelda escort / Sanctuary / post-Agahnim
 messages and SHALL NOT auto-select choices or apply to randomizer hint-tile messages.
@@ -116,7 +119,7 @@ messages and SHALL NOT auto-select choices or apply to randomizer hint-tile mess
   identically — only the animation is shortened
 
 #### Scenario: Flag-setting story cutscenes keep their flags
-- **WHEN** the Agahnim intro or Zelda escort fast-path runs
+- **WHEN** the post-Agahnim defeat transition or Zelda escort fast-path runs
 - **THEN** every progression bit the vanilla sequence sets is set, so downstream
   triggers behave identically to an un-skipped playthrough
 
@@ -139,8 +142,8 @@ messages and SHALL NOT auto-select choices or apply to randomizer hint-tile mess
 ### Requirement: Quick reset / warp-to-spawn with a race toggle
 
 The game SHALL provide a "warp to spawn" action that returns the player to the
-active slot's start point without the Save-and-Quit → file-select round-trip, plus
-a soft-reset-to-spawn hotkey. The destination SHALL be the slot's start point
+active slot's start point without the Save-and-Quit → file-select round-trip. The
+destination SHALL be the slot's start point
 (`which_starting_point` via the `kStartingPoint_*[]` load), the same spawn a fresh load
 uses. The warp SHALL **reuse the existing Save-and-Quit spawn path** rather than a
 re-derived branch, leaving every progression flag that path sets/clears in its post-S&Q

@@ -29,8 +29,9 @@ identities, not the line offsets. Decision labels (D1…) are referenced from
   timer clamp at that site.
 - **Cutscene state machines are submodule chains with progression flags read at
   entry.** `sram_progress_indicator` (`g_ram+0xF3C5`, SRAM-persisted) is the master
-  progress gate (e.g. set to 2 after Agahnim, `src/misc.c` ~:630). The Agahnim intro
-  runs under the KillAgahnim module (`src/misc.c` ~:782); the death/game-over fade is
+  progress gate (Zelda's Sanctuary sequence advances it to 2; the Master Sword
+  advances it to 3). The post-Agahnim defeat transition runs under the
+  `KillAgahnim` module (`src/misc.c`); the death/game-over fade is
   `Module12_GameOver` (`src/messaging.c` ~:620) advancing `submodule_index`/
   `subsubmodule_index`; the GT crystal barrier is visual-only keyed on
   `link_has_crystals` (`g_ram+0xF37A`); pyramid-opening is driven by
@@ -112,7 +113,7 @@ contiguous):
 F3's **text draw speed** is a global `zelda3.ini` selector (`text_speed`:
 normal/fast/instant), NOT a bit — a multi-level value doesn't fit the mask; the
 `kFeatures0_FastFanfare` bit covers the recommendable get-hold compression. F5
-adds `kKeys_WarpToSpawn` / `kKeys_SoftResetToSpawn` command IDs. Rando-only features
+adds a `kKeys_WarpToSpawn` command ID. Rando-only features
 (F1, and F5/F7 which read slot state) additionally gate on
 `(enhanced_features1 & kFeatures1_RandomizerActive)`. Where a behavior would perturb
 the side-by-side comparator, it is also gated `!ZeldaIsEmulatorAttached()` per the
@@ -158,11 +159,14 @@ side-by-side comparator clean. Fanfare
 
 Per-cutscene fast-paths gate on `kFeatures0_CutsceneFastForward` and compress
 submodule dwell / zero per-stage timers so the module logic still executes every
-flag-setting stage. **Invariant:** after a fast-forwarded sequence, `g_ram`+SRAM are
-in the exact state the full sequence produces — verified by an F12 dump compare
-(fast vs. vanilla) per cutscene. Covered sequences: prize-get, GT crystal barrier
-(visual-only; trivial), pyramid-opening, Agahnim intro (KillAgahnim module), Zelda
-escort dialogue, death/game-over fade (`Module12_GameOver`). Story-dialogue
+flag-setting stage. **Invariant:** at the same settled checkpoint after a fast or
+vanilla run, the live save block, serialized SRAM, randomizer checked bitmap,
+progression flags, and destination/player state match. Frame counters, the FF bit,
+animation/audio timers, and render scratch are intentionally excluded because the
+fast path necessarily executes fewer frames. F12 emits WRAM, SRAM, and the checked
+bitmap for this comparison. Covered sequences: post-prize victory, GT crystal-barrier
+final dwell (visual-only), pyramid opening, post-Agahnim defeat transition
+(`KillAgahnim`), and death/game-over pre-menu holds. Story-dialogue
 fast-forward is an explicit allowlist (opening Zelda telepathy, Uncle, Zelda escort /
 Sanctuary, and post-Agahnim story messages): it may auto-advance `Waitkey`/end-message
 pages, but it does not auto-select choices or apply to hint-tile ids. Mirror-warp and
@@ -180,8 +184,8 @@ a diverted branch (with its stale-flag hazards: `death_var4/5`, `savegame_is_dar
 `sram_progress_indicator`, Inverted DW forcing) is a days-costly bug class. So
 `Warp_ToSpawn()` drives the SAME save-then-load-start sequence (or invokes the existing
 start-point loader directly after a save), preserving every flag `Death_Func15` sets or
-clears. The `kKeys_WarpToSpawn` and `kKeys_SoftResetToSpawn` hotkeys both trigger the
-same audited spawn-path routine; gated on `kFeatures0_WarpToSpawn` +
+clears. The `kKeys_WarpToSpawn` hotkey triggers the audited spawn-path routine;
+gated on `kFeatures0_WarpToSpawn` +
 rando-active + `Rando_HasActiveSettings()` where slot state is read. Off (default) =
 vanilla S&Q, no hotkey. The Game Settings control carries the race-legality note (the
 toggle is the ban seam). **This is the highest-risk feature — 5.1 is a flag-audit task,

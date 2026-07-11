@@ -567,14 +567,16 @@ static void at_build_catalog(AtStr *s) {
 // Client + server state.
 // ---------------------------------------------------------------------------
 #define AT_MAX_CLIENTS 8
-#define AT_CLIENT_BUF  (128 * 1024)  // per-client outbound backlog cap; overflow => drop slow client
+#define AT_CLIENT_BUF_INITIAL (128 * 1024)
+#define AT_CLIENT_BUF_MAX     (4 * 1024 * 1024)  // hard ceiling for a genuinely stuck client
 
 typedef struct AtClient {
   at_sock sock;
   bool in_use;
   bool need_full;  // freshly accepted; still owes the catalog + first snapshot
   int head, tail;  // pending-send window into buf
-  char *buf;       // heap, AT_CLIENT_BUF; allocated on accept, freed on drop/shutdown
+  int cap;
+  char *buf;       // heap, grows on demand through AT_CLIENT_BUF_MAX
 } AtClient;
 
 static struct {
@@ -602,19 +604,34 @@ static void at_drop_client(AtClient *c) {
   c->in_use = false;
   c->need_full = false;
   c->head = c->tail = 0;
+  c->cap = 0;
   c->sock = AT_BAD_SOCK;
 }
 
-// Queue bytes for a client. Compacts any partially-sent prefix first; returns
-// false when the backlog would exceed AT_CLIENT_BUF (caller drops the client —
-// it is too slow / stuck to keep up).
+// Queue bytes for a client. Compacts any partially-sent prefix first, then grows
+// the backlog as needed. The location catalog used to fit the original 128 KiB
+// allocation, but terrain/enemy check registries can push it well beyond that;
+// dropping a fresh subscriber there makes the wire protocol unusable. Keep the
+// small initial allocation and grow only clients that need it, with a hard cap
+// that still drops a genuinely slow/stuck subscriber.
 static bool at_client_queue(AtClient *c, const char *data, int len) {
   if (c->head > 0) {
     memmove(c->buf, c->buf + c->head, (size_t)(c->tail - c->head));
     c->tail -= c->head;
     c->head = 0;
   }
-  if (c->tail + len > AT_CLIENT_BUF) return false;
+  if (len < 0 || c->tail > AT_CLIENT_BUF_MAX - len) return false;
+  int need = c->tail + len;
+  if (need > c->cap) {
+    int cap = c->cap;
+    while (cap < need && cap < AT_CLIENT_BUF_MAX)
+      cap *= 2;
+    if (cap < need) return false;
+    char *p = (char *)realloc(c->buf, (size_t)cap);
+    if (!p) return false;
+    c->buf = p;
+    c->cap = cap;
+  }
   memcpy(c->buf + c->tail, data, (size_t)len);
   c->tail += len;
   return true;
@@ -667,7 +684,7 @@ static void at_accept_pending(void) {
       if (!g_at.clients[i].in_use) { slot = i; break; }
     if (slot < 0) { at_close(cs); continue; }  // at capacity — refuse this connection
 
-    char *buf = (char *)malloc(AT_CLIENT_BUF);
+    char *buf = (char *)malloc(AT_CLIENT_BUF_INITIAL);
     if (!buf) { at_close(cs); continue; }
 
     at_set_nonblocking(cs);
@@ -677,6 +694,7 @@ static void at_accept_pending(void) {
     c->in_use = true;
     c->need_full = true;
     c->head = c->tail = 0;
+    c->cap = AT_CLIENT_BUF_INITIAL;
     c->buf = buf;
   }
 }
@@ -800,9 +818,9 @@ void AutoTracker_ServiceFrame(void) {
         if (!c->in_use) continue;
         if (c->need_full) {
           if (!at_send_handshake(c, snap.p, snap.len)) {
-            // Only reachable if the catalog+snapshot exceeds AT_CLIENT_BUF (the
-            // catalog is ~30 KB today vs a 128 KB cap) or under allocation
-            // failure — make a future regression loud rather than a silent drop.
+            // Only reachable if the catalog+snapshot exceeds the hard ceiling or
+            // allocation fails — make a future regression loud rather than a
+            // silent drop.
             fprintf(stderr, "[AutoTracker] handshake too large for client buffer; "
                             "dropping subscriber.\n");
             at_drop_client(c);

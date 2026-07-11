@@ -602,3 +602,84 @@ Boss-soul suppression SHALL act on the sprite species loaded through the boss-sh
 - **WHEN** the player enters a boss room for Trinexx or Kholdstare without the matching soul
 - **THEN** the parent and all room-data secondary sprites (arms, shell) are suppressed together
 
+### Requirement: Dungeon chains axis and mutual exclusion
+
+The settings surface SHALL expose a `dungeon_chains` boolean axis (default off)
+packed into the existing canonical entrance-axis byte without changing the
+canonical settings length. `apply_derived_rules` SHALL normalize `dungeon_chains`
+to off unless ALL of the following hold: no entrance-shuffle axis is active,
+`door_shuffle` is vanilla, `boss_shuffle` is off, the world state is Open or
+Standard, and the logic tier is NoGlitches. Normalization is one-directional:
+enabling `dungeon_chains` SHALL never coerce another axis; conflicting axes win
+and chains yields. The default-off packing SHALL leave existing canonical
+serializations and settings hashes byte-identical.
+
+#### Scenario: Chains force in-dungeon keys
+
+- **WHEN** `dungeon_chains` remains on through normalization
+- **THEN** small keys and big keys serialize as in-dungeon mode, regardless of
+  their requested raw modes
+
+#### Scenario: Chains yields to entrance shuffle
+
+- **WHEN** `dungeon_chains` is requested together with any entrance-shuffle axis
+- **THEN** `apply_derived_rules` normalizes `dungeon_chains` to off before
+  serialization, and the canonical settings reflect what was actually generated
+
+#### Scenario: Chains yields to incompatible world states and tiers
+
+- **WHEN** `dungeon_chains` is requested with Inverted or Retro world state, a
+  glitched logic tier, `door_shuffle == basic`, or `boss_shuffle` on
+- **THEN** `dungeon_chains` normalizes to off
+
+#### Scenario: Compatible settings keep chains on
+
+- **WHEN** `dungeon_chains` is requested with Open world state, NoGlitches, and
+  no entrance/door/boss shuffle active
+- **THEN** `dungeon_chains` remains on through normalization and is reflected in
+  the settings hash
+
+#### Scenario: Default is hash-stable
+
+- **WHEN** settings leave `dungeon_chains` at its default (off)
+- **THEN** the canonical serialization and `settings_hash` are byte-identical to
+  builds predating the axis
+
+### Requirement: Enemy-drop checks and existing shuffle interactions
+
+Enemy-drop checks SHALL be orthogonal to `drop_shuffle`. `drop_shuffle` continues to
+randomize the non-forced prize-pack table. An active enemy-drop check bypasses that
+table and grants the item placed at its location; it SHALL NOT also emit the vanilla
+forced small key or a prize-pack substitute.
+
+`enemy_shuffle` SHALL compose with forced-key enemy-drop checks. Enemy shuffle may
+substitute the real sprite type, but it SHALL NOT reorder the dungeon sprite-list
+entry, shuffle the forced-key marker, or change the runtime source slot used by
+the generated enemy-drop lookup. Active forced-key enemy-drop checks SHALL continue
+to resolve by `(room, source_slot, drop_kind)`, not by substituted enemy type.
+Ordinary dungeon-enemy checks SHALL be disabled by downgrading requested
+`enemy_drop_checks = Dungeon` to effective `Keys` while enemy shuffle is active,
+because placement does not currently know the shuffled enemy type or HP scaling.
+
+Pot shuffle MAY compose with enemy-drop checks in Wild/Retro mode through the
+generated reach predicates and existing pot behavior. Pot shuffle SHALL also compose
+with Dungeon enemy-drop checks through combined free-drop accounting. Door shuffle
+SHALL compose with enemy-drop checks through the generated door x enemy-drop bridge:
+active enemy DROP rows are removed from vanilla free-drop accounting and counted as
+itemized key sources when their door regions are reached.
+
+#### Scenario: Drop shuffle affects only non-check drops
+- **WHEN** `drop_shuffle` and active enemy-drop keys are both enabled
+- **THEN** non-check enemy prize-pack drops use the shuffled prize table, while active
+  enemy-drop checks grant their placed item and do not emit a prize-pack substitute
+
+#### Scenario: Enemy shuffle preserves source-slot identity
+- **WHEN** `enemy_shuffle` is active and the user requests `enemy_drop_checks = Keys`
+- **THEN** effective settings keep enemy-drop checks active in supported key modes,
+  and each forced-drop source resolves through its vanilla room/source-slot lookup
+
+#### Scenario: Door shuffle models itemized enemy drops
+- **WHEN** door shuffle and enemy-drop checks are requested together
+- **THEN** effective settings keep enemy-drop checks active and the door layout digest
+  includes the active enemy-drop bridge digest
+

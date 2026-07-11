@@ -59,14 +59,14 @@ every feature ends at a buildable, playtestable checkpoint.
   dungeon small-key / map / compass "get" holds.
 - **F4 — Cutscene & transition fast-forward.** Skip or auto-advance the recurring
   animations: crystal/pendant prize-get, the GT crystal-barrier, the
-  pyramid-opening, the Agahnim intro, the Zelda escort dialogue, and the
+  pyramid-opening, the post-Agahnim defeat transition, the Zelda escort dialogue, and the
   death / game-over fade. **The load-bearing invariant: skip the *animation*,
-  never the *flag*.** Several of these set progression bits (Agahnim intro, Zelda
+  never the *flag*.** Several of these set progression bits (post-Agahnim, Zelda
   escort, prize-get); a skip that drops one is a run-killer far worse than the time
   saved, so each cutscene's fast-path must preserve every flag/SRAM write the
   vanilla path performs. Per-cutscene, so it lands incrementally.
 - **F5 — Quick reset / warp-to-spawn.** A "warp to your spawn point" that skips the
-  Save-and-Quit → file-select round-trip, plus a soft-reset-to-spawn hotkey. S&Q
+  Save-and-Quit → file-select round-trip. S&Q
   is already a routing tool in ALTTP; this is a routing feature, not just comfort.
   **Cleanly toggleable for race legality** — an instant reposition is close to a
   movement exploit, so a race org can ban it.

@@ -43,8 +43,9 @@ Derived rules SHALL apply this compatibility table:
   and updates digest/corpus expectations;
 - boss shuffle: requested `All` remains `All`; boss/miniboss checks bind to the
   destination event and coexist with the existing boss reward path;
-- pot shuffle composes with `All`; generated thrown-pot kill routes must continue
-  proving their required reachable pot count and ordering soundness;
+- pot shuffle composes with `All`; generated thrown-pot kill routes require
+  effective pot shuffle to be off, while active pot-sanity seeds use the reviewed
+  inventory-combat branch so a shuffled pot cannot be counted twice;
 - entrance shuffle, including cave entrance shuffle: requested `All` normalizes to
   `Dungeon` until all-tier overworld/domain reachability is modeled against the
   entrance graph, unless another rule lowers the effective tier further; existing

@@ -26113,26 +26113,36 @@ void NiceThiefWithGift(int k) {  // 9ef038
     if (Sprite_ShowSolicitedMessage(k, 0x176) & 0x100)
       sprite_ai_state[k] = 1;
     break;
-  case 1:
-    if (!(dung_savegame_state_bits & 0x4000)) {
+  case 1: {
+    // The generous guys in Hype Cave and Mini Moldorm Cave share this sprite
+    // handler. In a live rando slot, their canonical checked bits are the
+    // source of truth: this prevents a stale vanilla room bit from hiding an
+    // uncollected placement and prevents a missing room bit from re-granting a
+    // placement already persisted in the sidecar. Other rooms and vanilla play
+    // retain the original room-bit behavior.
+    uint16 gift_loc = 0xFFFFu;
+    if ((enhanced_features1 & kFeatures1_RandomizerActive) && Rando_IsActive())
+      gift_loc = Rando_GiftThiefLocationForRoom(dungeon_room_index);
+    bool already_claimed = (gift_loc != 0xFFFFu)
+                               ? Rando_IsLocationChecked(gift_loc)
+                               : (dung_savegame_state_bits & 0x4000) != 0;
+    if (!already_claimed) {
       dung_savegame_state_bits |= 0x4000;
       sprite_ai_state[k] = 2;
       // The gift thief (subtype2==2) grants a hard-coded 300-rupee LttP code
-      // (0x46) in vanilla. ALTTPR maps the Hype Cave room (286 / 0x11E) to
-      // LOC_Hype_Cave_NPC (vanilla pool item Rupee100). Only that room is a
-      // shuffled ALTTPR location; the other subtype2==2 thief rooms (low-byte
-      // 0x23/0x27 via SpritePrep_Shopkeeper's kShopKeeperWhere) are not ALTTPR
-      // locations, so they keep vanilla behavior. Match the full 16-bit room
-      // index so a low-byte collision with a non-Hype room can't misfire.
+      // (0x46) in vanilla. ALTTPR maps Hype Cave (0x11E) and Mini Moldorm Cave
+      // (0x123) to distinct shuffled NPC locations. Other subtype2==2 thief
+      // rooms keep vanilla behavior; Rando_GiftThiefLocationForRoom matches
+      // full 16-bit room ids so low-byte collisions cannot misroute a check.
       uint8 give = 0x46;
-      if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
-          dungeon_room_index == 0x11E) {
+      if (gift_loc != 0xFFFFu) {
         // Pass 0xFFFF as the registry id (chest/shop convention): the slot is
         // always overridden when present in the table and falls back to the
-        // vanilla 300-rupee code (0x46) when absent. Passing the real Rupee100
-        // id instead would mis-grant 300 rupees if a seed placed Rupee100 here.
+        // vanilla 300-rupee code (0x46) when absent. Passing either location's
+        // registry fallback instead would mis-grant 300 rupees when a seed
+        // placed that same registry item here.
         uint8 placed_lttp =
-            Rando_DispatchVanillaGrant(LOC_Hype_Cave_NPC, 0xFFFFu, 0x46);
+            Rando_DispatchVanillaGrant(gift_loc, 0xFFFFu, 0x46);
         if (Rando_ShouldSkipReceive(placed_lttp)) {
           // Direct-grant placement (HalfMagic / prize bit / Triforce piece /
           // progressive) already wrote the item; skip Link_ReceiveItem and
@@ -26151,6 +26161,7 @@ void NiceThiefWithGift(int k) {  // 9ef038
       sprite_ai_state[k] = 0;
     }
     break;
+  }
   case 2:
     sprite_ai_state[k] = 0;
     break;

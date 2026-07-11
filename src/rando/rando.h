@@ -16,7 +16,7 @@
 // kGeneratorVersion — bumped per tasks.md §13.6 whenever placement output
 // could change. The bump triggers regression-corpus regeneration.
 // ---------------------------------------------------------------------------
-#define kGeneratorVersion 132u  // randomizer generation performance: incremental soul-collection reachability
+#define kGeneratorVersion 134u  // prevent pot-sanity checks from double-counting thrown-pot kill routes
 // The share-string binary layout packs version into 1 byte
 // (rando_share.h: ShareString.version is uint8). Compile-time enforce
 // kGeneratorVersion ≤ 255 so silent truncation can't ship.
@@ -58,6 +58,11 @@ extern uint8 g_assets_hash[32];
 //   }
 // ---------------------------------------------------------------------------
 uint16 Rando_OnLocationCheck(uint16 location_id, uint16 vanilla_item_id);
+
+// Resolve the two randomized gift-thief cave rooms to their canonical NPC
+// locations. Returns 0xFFFF for every other room so the shared vanilla handler
+// can retain its original 300-rupee behavior there.
+uint16 Rando_GiftThiefLocationForRoom(uint16 room_id);
 
 uint32 Rando_CurrentPotRegistryDigest(void);
 uint16 Rando_CurrentPotRegistryCount(void);

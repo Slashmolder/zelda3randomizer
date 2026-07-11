@@ -212,7 +212,7 @@ immediately before any bump/commit (concurrent-drift discipline).
       chains-standard-fast-ganon, chains-prize-open-fast-ganon,
       chains-forced-keys-items, and chains-hunt-none; removed labels 0; existing
       settings/seed changes 0; existing placement/sphere digest changes 0. -->
-- [ ] 7.3 Playtest matrix (merge gate; corpus is blind to both seams): chain-0
+- [x] 7.3 Playtest matrix (merge gate; corpus is blind to both seams): chain-0
       boss door (pendant boss AND crystal boss); 3+ hop chain; DP as a chain
       element (side-door exit → ledge → back-door boss approach, then the aux
       round-trip still couples the later main-door exit to origin); TR as a
@@ -283,7 +283,10 @@ immediately before any bump/commit (concurrent-drift discipline).
       Dark World mirror route, then crossed DP's boss seam with no armed chain
       session. Runtime fell through to Lanmolas while the spoiler/logic expected
       DP's chain successor; chains now synthesize the matching DP aux exit room
-      as the origin at that unarmed DP boss seam. -->
+      as the origin at that unarmed DP boss seam.
+
+      Owner confirmation 2026-07-11: the complete dungeon-chain playtest matrix is
+      considered covered after the fixes and retests above. -->
 - [x] 7.4 Remove all bring-up diagnostics (g_ram counters) before merge.
       <!-- done 2026-07-05: removed the EP->DP spike hook, public
       ChainsRuntimeDebug API, Debug-tab dungeon-chain spike controls/readout,
@@ -301,10 +304,11 @@ immediately before any bump/commit (concurrent-drift discipline).
       RandoSnapshotTail_SelfCheck coverage for in-flight session restore.
       git diff --check, openspec validate dungeon-chains --strict, MSVC Release
       build, --rando-selftest, and WSL make zelda3 green. -->
-- [ ] 7.6 Reconcile design.md + spec deltas against as-built source; update
+- [x] 7.6 Reconcile design.md + spec deltas against as-built source; update
       `docs/randomizer.md`; `openspec archive dungeon-chains --yes` on the
-      branch; squash-merge. <!-- partial 2026-07-05: design.md, spec deltas,
+      branch; squash-merge. <!-- design.md, spec deltas,
       and docs/randomizer.md are reconciled to the as-built terminal reward gate,
       chain snapshot session restore, settings UI, sidecar/snapshot persistence,
-      and corpus/version evidence. Archive and squash-merge remain gated on 7.3
-      owner playtest. -->
+      and corpus/version evidence. Owner confirmed the complete playtest matrix
+      on 2026-07-11; the implementation is already integrated in local main, so
+      archive is the remaining durable close-out action. -->

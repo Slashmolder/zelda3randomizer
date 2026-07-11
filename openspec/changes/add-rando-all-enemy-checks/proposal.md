@@ -2,11 +2,11 @@
 
 `enemy_drop_checks=dungeon` is intentionally not "all enemies". It covers the
 forced enemy-key checks plus a conservative set of ordinary dungeon enemy checks
-whose identity, logic, and persistence have been reviewed. That is the right
-shipping boundary for the current feature, but the option name "all" should be
-reserved for a stronger future contract.
+whose identity, logic, and persistence have been reviewed. The shipped `all` tier
+extends that boundary across every finite authored source domain this change can
+model safely.
 
-The future `all` tier should mean every finite, authored enemy source that can be
+The `all` tier means every finite, authored enemy source that can be
 killed and modeled safely. Non-killable actors such as thieves, NPC-like sprites,
 hazards, projectiles, and unbounded farmable spawns are not valid checks, but every
 killable finite enemy source needs either an emitted location or an explicit audited
@@ -14,7 +14,7 @@ reason why it cannot be modeled yet.
 
 ## What Changes
 
-- Add a future `enemy_drop_checks=all` tier above `dungeon`.
+- Add `enemy_drop_checks=all` as a distinct shipping tier above `dungeon`.
 - Generate a complete enemy-source audit across dungeon rooms, overworld areas,
   bosses/minibosses, and finite scripted spawn groups.
 - Emit randomizer locations for every audited finite killable enemy source whose
@@ -24,7 +24,8 @@ reason why it cannot be modeled yet.
 - Add stable runtime identity and persistence for overworld and scripted enemy
   sources, matching the source-slot identity model already used for dungeon enemies.
 - Require per-source kill logic, including weapon routes and counted thrown-object
-  routes when enough reachable pots/rocks/throwables exist.
+  routes when enough reachable pots exist. Thrown-pot routes are conservatively
+  disabled while pot sanity is active so a shuffled pot cannot be counted twice.
 - Expose `all` only when it really means all compatible emitted killable sources for
   the selected settings. In incompatible setting combinations, the effective value
   must visibly degrade or generation must reject the seed; it must never silently mean

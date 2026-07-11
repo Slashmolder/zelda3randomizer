@@ -21,6 +21,7 @@
 #include "assets.h"
 #include "rando/dungeon_ids.h"
 #include "rando/rando_hints.h"
+#include "rando/rando_dialogue.h"
 
 static void WorldMap_AddSprite(int spr, uint8 big, uint8 flags, uint8 ch, uint16 x, uint16 y);
 static bool WorldMap_CalculateOamCoordinates(Point16U *pt);
@@ -154,22 +155,27 @@ static bool Text_ShouldFastForwardStoryDialog(void) {
     return false;
 
   // Non-interactive Standard/escape/Aga story text. Randomizer hints stay manual.
+  // Keep these ids grounded at their Sprite_Show* call sites: nearby dialogue
+  // rows include ordinary NPC conversations that must remain player-controlled.
   switch (dialogue_message_index) {
-  case 0x0e:  // Uncle leaving Link's house.
-  case 0x0f:  // Uncle's gift.
+  case 0x0d:  // Uncle leaves Link's house.
+  case 0x0e:  // Uncle's gift.
+  case 0x17:  // Priest greets rescued Zelda.
   case 0x18:  // Sanctuary: Zelda is safe.
   case 0x19:  // Sanctuary priest's long quest explanation.
   case 0x1c:  // Zelda already abducted / castle prompt.
+  case 0x1d:  // Zelda's long Sanctuary response.
   case 0x1e:  // Zelda at Sanctuary.
-  case 0x20:  // Opening Zelda telepathy.
+  case 0x1f:  // Opening Zelda telepathy.
+  case 0x20:  // Opening Zelda telepathy follow-up.
   case 0x21:  // Opening hidden path hint.
   case 0x22:  // Throne-room passage.
   case 0x23:  // Push the throne shelf.
+  case 0x24:  // Post-choice: leave Zelda's cell.
   case 0x25:  // Leaving Zelda's cell.
   case 0x26:  // Zelda explains Agahnim.
   case 0x29:  // Sanctuary attack telepathy.
   case 0x2a:  // Sewers near Sanctuary.
-  case 0x2b:  // Sanctuary door switch.
   case 0x35:  // Post-Agahnim story state.
   case 0x36:  // Dark World Sahasrahla telepathy.
     return true;
@@ -2047,6 +2053,37 @@ void DungeonMap_ScrollFloors() {  // 8aea7f
     dungmap_var2 = 0;
 }
 
+enum { kDungeonMapRandoDigitTileBase = 0xf0 };
+
+// The dungeon-map OBJ sheet contains only floor digits 1..8 at chars 0x1e..0x25;
+// chars 0x26/0x27 are map-border pieces, not 9/0. Upload a complete decimal font
+// into the same objTileAdr2 scratch range used by the mutually-exclusive rando
+// HUD/marker overlays. Those overlays reload their tiles after the map closes.
+static const uint8 kDungeonMapRandoDigitRows[10][8] = {
+  {0x3c, 0x66, 0x6e, 0x76, 0x66, 0x66, 0x3c, 0x00}, // 0
+  {0x18, 0x38, 0x18, 0x18, 0x18, 0x18, 0x7e, 0x00}, // 1
+  {0x3c, 0x66, 0x06, 0x0c, 0x18, 0x30, 0x7e, 0x00}, // 2
+  {0x3c, 0x66, 0x06, 0x1c, 0x06, 0x66, 0x3c, 0x00}, // 3
+  {0x0c, 0x1c, 0x3c, 0x6c, 0x7e, 0x0c, 0x0c, 0x00}, // 4
+  {0x7e, 0x60, 0x7c, 0x06, 0x06, 0x66, 0x3c, 0x00}, // 5
+  {0x1c, 0x30, 0x60, 0x7c, 0x66, 0x66, 0x3c, 0x00}, // 6
+  {0x7e, 0x06, 0x0c, 0x18, 0x30, 0x30, 0x30, 0x00}, // 7
+  {0x3c, 0x66, 0x66, 0x3c, 0x66, 0x66, 0x3c, 0x00}, // 8
+  {0x3c, 0x66, 0x66, 0x3e, 0x06, 0x0c, 0x38, 0x00}, // 9
+};
+
+static void DungeonMap_UploadRandoDigitTiles(void) {
+  for (int digit = 0; digit < 10; digit++) {
+    uint16 *tile = &g_zenv.vram[0x5000 + (kDungeonMapRandoDigitTileBase + digit) * 16];
+    for (int row = 0; row < 8; row++) {
+      uint8 pixels = kDungeonMapRandoDigitRows[digit][row];
+      // Palette index 6: planes 1 and 2 set, matching the vanilla map digits.
+      tile[row] = (uint16)pixels << 8;
+      tile[row + 8] = pixels;
+    }
+  }
+}
+
 static int DungeonMap_DrawRandoCheckCount(int spr_pos) {
   if (ZeldaIsEmulatorAttached())
     return spr_pos;
@@ -2056,11 +2093,13 @@ static int DungeonMap_DrawRandoCheckCount(int spr_pos) {
     return spr_pos;
 
   uint8 game_dungeon = Rando_GameDungeonFromRawPalace((uint8)cur_palace_index_x2);
-  uint8 rando_dungeon = Rando_RandoDungeonFromGameDungeon(game_dungeon);
+  uint8 rando_dungeon = Rando_MapDisplayDungeonFromGameDungeon(game_dungeon);
   uint16 checked = 0, total = 0;
   Rando_DungeonCheckCounts(rando_dungeon, &checked, &total);
   if (total == 0)
     return spr_pos;
+
+  DungeonMap_UploadRandoDigitTiles();
 
   uint16 remaining = (checked < total) ? (uint16)(total - checked) : 0;
   if (remaining > 999)
@@ -2077,7 +2116,7 @@ static int DungeonMap_DrawRandoCheckCount(int spr_pos) {
   int x = 0xd8 - n * 8;
   for (int i = 0; i < n; i++) {
     SetOamPlain(&oam_buf[spr_pos++], (uint8)(x + i * 8), 0x20,
-                (uint8)(0x1e + digits[i]), 0x3d, 0);
+                (uint8)(kDungeonMapRandoDigitTileBase + digits[i]), 0x3d, 0);
   }
   return spr_pos;
 }
@@ -2526,6 +2565,11 @@ void Text_LoadCharacterBuffer() {  // 8ec4e2
   // menu structure are all handled normally; this only swaps the location word's
   // font-byte run. No-op for any non-menu id / non-Inverted slot.
   Rando_RewriteInvertedSpawnMenu(dialogue_message_index, messaging_text_buffer);
+  // Randomized NPC/drop rewards must not keep claiming that the player won the
+  // vanilla item. This post-decode pass can preserve selected vanilla tutorial
+  // tails (notably King Zora's whirlpool explanation) while replacing the
+  // reward-specific wording. It is a strict no-op outside an active rando slot.
+  Rando_RewriteRewardDialogue(dialogue_message_index, messaging_text_buffer);
   dialogue_msg_read_pos = 0;
 }
 

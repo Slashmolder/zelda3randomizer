@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 132  # digest-neutral performance bump
+generator_version: 134  # all-enemy thrown-pot routes require effective pot shuffle off
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -33,56 +33,56 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, traps: low }
     seed: "0x0000000000000068"
     label: "traps-low-open-fast-ganon"
-    expected_digest: "00198d3feb5ccdd60b9a1698c2b92acdbeb0801b97f7c6e1d06ff24a79f0684f"
-    expected_sphere_digest: "eacea34ca964ab2b1a9c4a035e453816631386b896e4adfb76e58e848365272e"
+    expected_digest: "b8dac72b9fe200319628ffa08a72300f022e7b167d673e26dafc6c992c7d8504"
+    expected_sphere_digest: "63ab061865e1442a92fe212eea02760436bff7286420a741cbf783c0504387da"
   - settings: { mode.state: open, goal: fast_ganon, traps: medium }
     seed: "0x0000000000000069"
     label: "traps-medium-open-fast-ganon"
-    expected_digest: "0166c0b509baa5feea4f100ac19d6bdb4ee17463929e720d6db2c1ec8cd3059d"
-    expected_sphere_digest: "cd46a7ac1e362247fe30642e47919b3818ba37832153a682ee94f57bf87b2159"
+    expected_digest: "be25a0b5a38ebb2cfc91586096cec9620b095e62fcda3a287855efb065d734bf"
+    expected_sphere_digest: "0bc86cf0fc407d6ab93603a0074fb8efdd28abe8a394b181de19e7c611f48e35"
   - settings: { mode.state: open, goal: fast_ganon, traps: high }
     seed: "0x000000000000006A"
     label: "traps-high-open-fast-ganon"
-    expected_digest: "19bc19687b161c11468320d3caa7783aeefaf62e9bb7ad05964446a374355258"
-    expected_sphere_digest: "1cc5a4370a76bd18d585a613e25f236cea08db0d5d774e1a46dda7d26479cd96"
+    expected_digest: "dc8204fd2b29d459d0e5d0e058b8982806a9105e98879a7846a230112b080cc6"
+    expected_sphere_digest: "3acd48181f0e4df22818c9eb1b942da272bc30d66f5fd44dd258948194a736e4"
   # 7-goal × 4-world-state × dungeon-mode matrix — captured against
   # kGeneratorVersion=4 with the vanilla-mode pre-grant fix landed.
   # All entries verified goal_completable=true at capture time.
   - settings: { mode.state: open, goal: fast_ganon }
     seed: "0x0000000000000001"
     label: "a1-open-fast-ganon-default"
-    expected_digest: "4cefc373881d3f7fdc877dc85e2fa4ae3797cc98df6559aa401cc32df4bfbafe"
-    expected_sphere_digest: "1ed3c8a603fa1ea0d43a34dc745e5c453a6d8488503e8ee37be8ae6f45097708"
+    expected_digest: "7407749a02460f47e9b36663bb2152792b9f8f8c3197b66a96e10c4da9e6b47f"
+    expected_sphere_digest: "68311ba9df9ecdfa50b2cc9ebb5e6cd13bf777a4e3c6b1cf71c722c2671a12ec"
   - settings: { mode.state: open, goal: dungeons }
     seed: "0x0000000000000002"
     label: "a1-open-dungeons"
-    expected_digest: "0c2d20673cf9f6a0a2596197df207d35523c7b30d7d65b350fe4cde7bfed8cb7"
-    expected_sphere_digest: "6c0fc1340fa27ebed1623135685569cc0ad26013529a4564091e12096a54cfd7"
+    expected_digest: "2466644a7795d31b3d1d68f1b5e2a52684b6ae0430d545a25ac8676b583032bb"
+    expected_sphere_digest: "4299028758e3bf56602e7a4225c7aaec0d7ac185a153f20d316e83b465f7b1cd"
   - settings: { mode.state: standard, goal: fast_ganon }
     seed: "0x0000000000000003"
     label: "a1-standard-fast-ganon"
-    expected_digest: "85d77f95a363da868be543086fa6c2f4db50cc9c7107165237a3b9614ae4e613"
-    expected_sphere_digest: "f8b51594e393d0f955721b76e2cb2b0fa99b792376ad4e15c02d91dd68dd8327"
+    expected_digest: "b9564f1f23541a052f3ee99b8a9893aacbb296183b02303a95216f5336ef119f"
+    expected_sphere_digest: "6c1b8c2b4cc08c46e828019dd47c6862f21578d19a58b759b25752f5f457788c"
   - settings: { mode.state: open, goal: pedestal }
     seed: "0x0000000000000004"
     label: "a1-open-pedestal"
-    expected_digest: "cc0fb79a02ff81ccd7aefc2d953f60dc6b35ecfc5f919f50c94abb81b29c657f"
-    expected_sphere_digest: "9fe0059c510c9658ff1240e19e2e34bfbbdabd9fc98b3250a9b875c79f07731c"
+    expected_digest: "9232509e6b0f4a395503f9e56663a08f8147c48eb20973f9a848dcd418abcb7b"
+    expected_sphere_digest: "1e44c30e8bd7c4fdbdff422ca0fa81dd0e912f53c5f262a33199f05f7828c71e"
   - settings: { mode.state: open, goal: "triforce-hunt", pieces_required: 20, pieces_placed: 30 }
     seed: "0x0000000000000005"
     label: "a1-open-triforce-hunt"
-    expected_digest: "e1745ba3624845cf50ff46b02b1557d4c4896f196eed3e5c9b03cd285101c3f4"
-    expected_sphere_digest: "a338192ac0810097ec8e8f8d6bfefdc2889e739b4ea7a127cf7fe0bdb9239373"
+    expected_digest: "1d6cf25ac32b13694dc1547e3ba343c0af343b340b9feef02565fb7928b2a082"
+    expected_sphere_digest: "091167956233fc1a595d0a8b9add0308c1b8ec62f4e7570c7de0225c7ed6200c"
   - settings: { mode.state: open, goal: ganonhunt, pieces_required: 20, pieces_placed: 30 }
     seed: "0x0000000000000006"
     label: "a1-open-ganonhunt"
-    expected_digest: "9134eee410501d528c0c10806a82c43897422c9ce60ee65a3b7cb2e40a358ea1"
-    expected_sphere_digest: "0ce80d7e86fccbb8cf5230592757dc4c547ccd2fe8d403a2cedbd7e42c5766fe"
+    expected_digest: "e1f53e8535648246cd527b2a121ab7338c9dff8fff6a64de7610cbfa13b7c3b9"
+    expected_sphere_digest: "0635b45b85b63e1abd57863949a5a9f22e6884c28c3c054d6188c088d238b2af"
   - settings: { mode.state: open, goal: completionist }
     seed: "0x0000000000000007"
     label: "a1-open-completionist"
-    expected_digest: "bb953ce06d7d440c987a22aa554740b03970c36222f122ead4ce570a08242cd5"
-    expected_sphere_digest: "ad07692c042e1bea0a0255770eb0c8e58fa0eb34f5e71fd5e7de032e8d863da0"
+    expected_digest: "1907ac1956f602cba8feb64d90a05478300feba33a7ae2df0ae91e1ecddaaf69"
+    expected_sphere_digest: "7f0377ec110b960acd8f829105dcd0c4dc765d0fed5939e8e244b86ed174da21"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: dungeon, dungeon_items.big_keys: dungeon, dungeon_items.maps: dungeon, dungeon_items.compasses: dungeon }
     seed: "0x0000000000000008"
     label: "a1-open-dungeon-keys-all"
@@ -92,13 +92,13 @@ entries:
   - settings: { mode.state: standard, goal: dungeons }
     seed: "0x0000000000000010"
     label: "a1-standard-dungeons"
-    expected_digest: "2d3c82ab07045e7494989ceb6305ef3c7963122f63e5bda42e3c890cca24ac88"
-    expected_sphere_digest: "9a9b81a821b3b3c180daeeb9f396b645b4331c59074eea956e7f01673c1b242e"
+    expected_digest: "7038211ae95614adbd34ccc58d20656e40bfb581f54bccf6f4af7c85fd442605"
+    expected_sphere_digest: "76a6d165da6a530cd1e69497585b2162f7bdb991804597c0b9951369624ce652"
   - settings: { mode.state: standard, goal: pedestal }
     seed: "0x0000000000000011"
     label: "a1-standard-pedestal"
-    expected_digest: "88560348262d4a115d2af828fcea95a6c2d1408ec909a41968b6dfe3edfb215f"
-    expected_sphere_digest: "c88f09e401a30863c7f94c408f73ab2b563d1a37553b266be25b06ae53d89424"
+    expected_digest: "17053b4bd4176ffe7bd83851fd90c319f72aebab2cc1473ee389610d1b322e3a"
+    expected_sphere_digest: "f28390d147a3f151a4fe3e0a1d0bcaee61ef4fc9c7f0b177f69460f7751d2c9b"
   # Standard triforce-hunt beatable-only coverage. The accessibility gate itself
   # is covered by the slot-path/invariant guards; this corpus row pins the
   # canonical settings encoding and placement digest for a standard hunt seed
@@ -106,13 +106,13 @@ entries:
   - settings: { mode.state: standard, goal: "triforce-hunt", pieces_required: 20, pieces_placed: 30, accessibility: none }
     seed: "0x0000000000000014"
     label: "a1-standard-triforce-hunt-beatable"
-    expected_digest: "2b15a48eb63a5a9dbcbb99201dd4620036e1c236539a7a30d7d9e8a98cd6a005"
-    expected_sphere_digest: "60f679516493087762ad2b695e47e8d4a97447982564b8754921453a16168b81"
+    expected_digest: "b41f6b6b9cf64a7907c3cf8074fd8919b1eb101614dc714a999066c38fde95f2"
+    expected_sphere_digest: "7b1fb874ad7f6dbf669d850a99c7217c1a370c6ccdc255dd35aabd8e78ffd0fb"
   - settings: { mode.state: standard, goal: completionist }
     seed: "0x0000000000000013"
     label: "a1-standard-completionist"
-    expected_digest: "73c2838a5b2e842d7cc5f96bb404d2f0aaea78dfa77c44f2063a8ce8696a3b60"
-    expected_sphere_digest: "609c9c6a625be7a9884005226524c42a153ed36b471fab0e475f3cacf1c5bb1a"
+    expected_digest: "465961e1d2088ba132b25e1300fdd0b29cbdbbda7bc649c0563f5c0a45d20a58"
+    expected_sphere_digest: "fc4f526bf1571043a29eb07fdbf515aae8df479fd06236be67410eb9cbf46fc6"
   - settings: { mode.state: retro, goal: ganon }
     seed: "0x0000000000000014"
     label: "a1-retro-ganon"
@@ -127,33 +127,33 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, crystals.ganon: 4, crystals.tower: 4 }
     seed: "0x0000000000000016"
     label: "a1-open-fg-crystals-4"
-    expected_digest: "71749c155c899428c84d83dd6926ddcf6b45c0d64258d5f10a5e0ebec32aca56"
-    expected_sphere_digest: "47861098914ad8831b17a003a3f802bdd4b27a0599a2e90ee77985ed2ca191a7"
+    expected_digest: "5fb2d5785ea11577916f42b17fc75443b1bb369cb13bf1ad9caa2ddc4464c93b"
+    expected_sphere_digest: "dc348416f15de52b9755500c5b6b32168f2197b91b0b33916809e8aaf03a292b"
   - settings: { mode.state: open, goal: fast_ganon, crystals.ganon: 5, crystals.tower: 7 }
     seed: "0x0000000000000017"
     label: "a1-open-fg-crystals-5-7"
-    expected_digest: "24b103e04415892bf3c85124928565d645fd2b1eeaba3f2473ed1b2221a13eb2"
-    expected_sphere_digest: "17083910c51e65be536fe91a5fdc9b94c4704a30a79f4a7d17b59dae7677ce1c"
+    expected_digest: "be48bdb4036e357257242788575d4698ae999ef0b3ed39fd1a3e70096271e150"
+    expected_sphere_digest: "7f04b441399d080713bb57147b85a6763c8bb4a6f8df0e34062b839d4c9e9589"
   - settings: { mode.state: open, goal: fast_ganon, crystals.ganon: 2, crystals.tower: 0 }
     seed: "0x0000000000000018"
     label: "a1-open-fg-crystals-2-0"
-    expected_digest: "7d70cb410a45841b648a16740ed4a0655087c7226ed143e1ee1ee59830d56342"
-    expected_sphere_digest: "2aa27872ebb73a852506634199a98abccc2e84a00c6cef935ec298caa2d5c80d"
+    expected_digest: "a4e39f06a8e20b3cced3e51b8351b7202e340a35e5a0d656d61e95e8c369e99e"
+    expected_sphere_digest: "d962137af363689f2fe180b7ce6f949d8af897316a5dd7ad4ec5a2395b6ab274"
   # item_pool difficulty variations.
   - settings: { mode.state: open, goal: fast_ganon, item_pool: easy }
     seed: "0x0000000000000020"
     label: "a1-open-fg-pool-easy"
-    expected_digest: "7909ad5b4196761886f875e74fc225df2747503ced93acb8caa5c48142076702"
-    expected_sphere_digest: "cf7de18936ba8be45a0fc81f48270129ddf09632786124b63950d99bb825e793"
+    expected_digest: "df1e60be106e38dab25b7ff17a9d1872ae48a1317cb2af274a23ce4835c57277"
+    expected_sphere_digest: "5d49fa4da686b83dadff01853502549a8a6944d3e116a5117bb64c41aff6e306"
   - settings: { mode.state: open, goal: fast_ganon, item_pool: hard }
     seed: "0x0000000000000021"
     label: "a1-open-fg-pool-hard"
-    expected_digest: "1c005a662d0eecb20c19ac56dea16943683180e51d570bf461a6fc80254740dd"
-    expected_sphere_digest: "ed22a0ee031731ef824e6c7874b15c383c918c6af2a41d5eb1e9d9e04889079b"
+    expected_digest: "44c4f6f581c7b14ae752d9daba734625c93bd6be796d70f969b871164cf0f7fc"
+    expected_sphere_digest: "ca87274e54b0b923d6ad574a608b24c8a3cbd0cfbcbe26a10527fe2b1ecb86d7"
   - settings: { mode.state: open, goal: fast_ganon, item_pool: expert }
     seed: "0x0000000000000022"
     label: "a1-open-fg-pool-expert"
-    expected_digest: "dc09d4b8df5da866bbd5b2c74913b64ca8a2e90e79f9a11a8d626fe44b22c7ab"
+    expected_digest: "7fbbb4408cce3cf39354298b6fba01efa2b2f94410e5876ae1facfcb9c38cd2e"
     expected_sphere_digest: "539e5e06194081c846f6c3036cd3d7299c5d6a1c54c62bc6d5a0c35ec0367c3a"
   # Other settings axes. Accessibility tiers (ALTTPR three-way): `items` is the
   # default exercised by most entries above; `locations` and `none`/"beatable
@@ -163,33 +163,33 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, accessibility: locations }
     seed: "0x0000000000000023"
     label: "a1-open-fg-acc-locations"
-    expected_digest: "786380c0d214442cdda2295bae9460ad53fa2db50d6107c18069f1f5b9c8c173"
+    expected_digest: "b33fb59c28c3905b28dd064439807224072136e03c140151a5234b4b9d3f4ac0"
     expected_sphere_digest: "15aa95ff9b3f9bb1f5e05ec4202a171be348da757eee872ad0391dd6327e9252"
   - settings: { mode.state: open, goal: fast_ganon, accessibility: none }
     seed: "0x0000000000000077"
     label: "a1-open-fg-acc-beatable"
-    expected_digest: "5f5e8813c4c1fbf3c42258e3de2ea97d90054e1f8d94cd23d396c2d2c02b9ea3"
-    expected_sphere_digest: "194886601f625daffbae5ab564f98915a18595cb2dc0b23a0e7c7b37861b0d0d"
+    expected_digest: "ad3a179a1d7ed8ef39590495e51facd36b57bdca29f976e4903ed2bb815b655a"
+    expected_sphere_digest: "a2d44186585e828935652b961699bfd92c75afc583ddac94160faa42cc7cc49f"
   - settings: { mode.state: open, goal: fast_ganon, mode.weapons: assured }
     seed: "0x0000000000000024"
     label: "a1-open-fg-weapons-assured"
-    expected_digest: "7bd929a2d5120f72b68dd0397a672f1d104033edb946e2b80ce8b5a938b00bdf"
-    expected_sphere_digest: "16845f6275a37c71c188c46f276dfcca68fde4398eb4d52f5f6cebf4bf54eee4"
+    expected_digest: "690b5be133a11a38cacc054c94f26eceb48baff0e7a70634c76bd4b45aeb7725"
+    expected_sphere_digest: "1fe3b092aa9796f063522c790df97b046101422b737d4edc4df7f2eac9f52303"
   - settings: { mode.state: open, goal: fast_ganon, prize_shuffle: false }
     seed: "0x0000000000000025"
     label: "a1-open-fg-no-prize-shuffle"
-    expected_digest: "812accbc234aeff1d7248feb5e21cee82a171781825ff03f4d1eb3e5880e9076"
-    expected_sphere_digest: "c31b5033fbfbf93b6b1b5a7bd25d1594a9c66e00e7006a0403ee3167a9a12ba5"
+    expected_digest: "e69c72769749546a0de35ef92a758415f20ca1e82db8642680df819a7e85760f"
+    expected_sphere_digest: "0d601ee96101d91308fb091796aae90441596a2e4c5fdbc175e6bbd1aa00317d"
   - settings: { mode.state: open, goal: fast_ganon, medallion_shuffle: false }
     seed: "0x0000000000000026"
     label: "a1-open-fg-no-medallion-shuffle"
-    expected_digest: "4af4416e7d374fc9432eb2d270fe2b19323d4da71d6882e193755f4a4710db7d"
-    expected_sphere_digest: "b46fc74efde565051d6428faf16e2fecd9518bfe97b3b7411b3e55f0ae48082f"
+    expected_digest: "f32a7913b872632f741ad0e9635e43d470b6a272b29c545da4bab2429842c5e4"
+    expected_sphere_digest: "0a32378b43efbbab12b1abb0844259e2177745daf1e5201766a030b972aaba42"
   - settings: { mode.state: open, goal: fast_ganon, prize_shuffle: false, medallion_shuffle: false }
     seed: "0x0000000000000027"
     label: "a1-open-fg-no-shuffles"
-    expected_digest: "0da5abfac9756eb1aa7a93db81af6db9700b7f1b83526a72acc107220cc6eafc"
-    expected_sphere_digest: "82e3f67135ec6593ecb8a193d8d7315bcb3e26b7ef0f5db9734cd33e80abae2d"
+    expected_digest: "c82879b35c85216b30eeba3c6bd772d93181325a9c54b21b638b25c434008b93"
+    expected_sphere_digest: "9831f5954fcd4a3a5fe10fe806013843a9608c72cbc1dc3cbc20841a6422ea56"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, dungeon_items.big_keys: wild }
     seed: "0x0000000000000028"
     label: "a1-open-fg-wild-keys"
@@ -203,94 +203,94 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, race_mode: true }
     seed: "0x0000000000000030"
     label: "a1-open-fg-race-mode"
-    expected_digest: "d864dfe2ec9340860732570c01066d1d8955ed7d193fd8b9c6a42c5551b23a4c"
-    expected_sphere_digest: "f4bbf1f3b4896b1576f882d52521e3bd769a2b3d573967fb79b235d6a7af0833"
+    expected_digest: "371c0b3296c11e9115c26f10623c0932299a281a4eb27acd475bfa3b250310b8"
+    expected_sphere_digest: "a94af7023e9636675e2769ba5b9331fe51ff2489c353132d6e9dde53eb8c3cc8"
   # Triforce-Hunt parameter variations.
   - settings: { mode.state: open, goal: "triforce-hunt", pieces_required: 25, pieces_placed: 30 }
     seed: "0x0000000000000031"
     label: "a1-th-25-of-30"
-    expected_digest: "2945dc0aa492115bc336b934acab41fe3e4bc03f1f7bd285def2a594f61c318b"
-    expected_sphere_digest: "793525d981a233b06025c4f886202f5b831a16e1c1d9ffa746ad28f9c6b80ee8"
+    expected_digest: "2ff1c3016a1b5b23a50141f7e7262ab2bd71a652b3ce6d0e617802c14fa74df6"
+    expected_sphere_digest: "a14e6691fef5a5a56a5bf90fd7c88b054c9d2f4b8f6fd5998654e10e6645be0a"
   - settings: { mode.state: open, goal: "triforce-hunt", pieces_required: 10, pieces_placed: 15 }
     seed: "0x0000000000000032"
     label: "a1-th-10-of-15"
-    expected_digest: "c8b4ac07784f915b0481b236cb49ad4ef0aa1dece6e18bb1fbfbada2224a38d5"
-    expected_sphere_digest: "6bcf146ebc09610fa8defcf6e6a9e44815bc07a0b17a6e47d36a377c698d2798"
+    expected_digest: "0b324d612938b03e90a24ae15bbf25fd6e6e4a922067451b5763f0a00364e7ea"
+    expected_sphere_digest: "0a8cabb921c0145bd4bb2b29054e6b97722a3285597e1cb2e36000a9e41c0af6"
   - settings: { mode.state: open, goal: "triforce-hunt", pieces_required: 30, pieces_placed: 30 }
     seed: "0x0000000000000033"
     label: "a1-th-30-of-30"
-    expected_digest: "52fc3170096d5cbb48f012d80ea51e1f7cc48253eb01e007c5df5f980b509a76"
-    expected_sphere_digest: "90277e1a885bbd09e71ad2928fff52317a253a502aa160f5af2dbdf06460ff2e"
+    expected_digest: "b5e4e0791324248f9f096a17fe4b6a2325ed8d58b5fca4f15b4944027a5fcf46"
+    expected_sphere_digest: "6b56e0105e1c88738e9694195d380a8cce32c98ab06870322595aa0b8e506609"
   # Edge-case seed values.
   - settings: { mode.state: open, goal: fast_ganon }
     seed: "0x000000000000CAFE"
     label: "a1-seed-0xCAFE"
-    expected_digest: "bbf65f159cf6a8d73e47f0e2bbc58767389948d28c54611945887c25f0d9ebaf"
-    expected_sphere_digest: "00ed6b4aedc72e620d13541345f462ea4abff0b802591159f138221ee0ad7ef5"
+    expected_digest: "e64fb24c7a821a19d4e77bd614c31a106bdcafcb93e61a687a7187b8d6e39d6f"
+    expected_sphere_digest: "87bdc622f1d034c2d3b78ef8e8cb257677d1bb06c6e6a1c600b2ea75fc7d1c2d"
   - settings: { mode.state: open, goal: fast_ganon }
     seed: "0x0000000000000100"
     label: "a1-seed-0x100"
-    expected_digest: "ad39c1ee7c73e809eb4b25de51998f2ded376b13aac7510ef8a28bd741ba2aee"
-    expected_sphere_digest: "7cbad0fff0069e76ebc6d8d7635d8bfca57af3a7a073ed4ab2167a83651b2b25"
+    expected_digest: "21def67d54c7002fbeda3033af8a757ac12374d5ecb8d896f2cf9dec894052ab"
+    expected_sphere_digest: "4a8953396f198330b8b0b0c0df4860c2068fe7a4d161d3623084478f07bd5076"
   - settings: { mode.state: open, goal: fast_ganon }
     seed: "0xFFFFFFFFFFFFFFFF"
     label: "a1-seed-large"
-    expected_digest: "28586b12b61c9221a18e28cf3fd16a893658176f4b729a632194aea392b89240"
-    expected_sphere_digest: "5858e93ae1cbfa40fa40c29dd2b458906c1809698e6457b0f2b3b9a8d73b3ae0"
+    expected_digest: "76718a75154bc146554991e05b3fbcb05bb48721ecfdef411b6b50e83c18806a"
+    expected_sphere_digest: "9017fc51737b0df99a0ee32a98a62e746731e913bf0d8991152bcc84249f3f41"
   # Goal=ganon (full Defeat Ganon — requires Aga 2 reachable).
   - settings: { mode.state: open, goal: ganon }
     seed: "0x0000000000000040"
     label: "a1-open-ganon"
-    expected_digest: "546fd1f6ba1f67a72f193ff5962cc8ff5287b0c8f42152992ce905ba8d18b305"
-    expected_sphere_digest: "91d9bdc7adb8cc33885bb688b3b54afb89b8afe3a7aa5ba4128cc8a18de6333e"
+    expected_digest: "505d811a22aa17dc8d0f967d77e8aea84c74f14f7bbe4d169f32f6d8468f4051"
+    expected_sphere_digest: "74c55f86092bad865b31efac590861bea3d55421d2c0c2d09ac32c7dc356f55e"
   - settings: { mode.state: standard, goal: ganon }
     seed: "0x0000000000000041"
     label: "a1-standard-ganon"
-    expected_digest: "e835e95ca1fc689f5dbc65f6522855c42f351e0a3e953c1e803591640c051a8f"
-    expected_sphere_digest: "d147c36236541d85cfdb5d2cb14be5b4f1f2bc18b66b10650d3528c54dfe7abd"
+    expected_digest: "fdb94e7ce214ad93a88e13fdd857541bf5286a7363403081948be699d97daf28"
+    expected_sphere_digest: "366be6da35f9bce0d7842fb095c1013596a6e281a203b40ae2a98e7812197dc5"
   # More crystals.* coverage.
   - settings: { mode.state: open, goal: fast_ganon, crystals.ganon: 0, crystals.tower: 0 }
     seed: "0x0000000000000042"
     label: "a1-open-fg-crystals-0-0"
-    expected_digest: "dbea5e33f31a69391788c04a3e3b93543e29a7dfd77226e25c426d0702c0dd1a"
-    expected_sphere_digest: "7f8af36923534004befb0311e7989a03fd22b8fcca97449919fad372a115a9a8"
+    expected_digest: "af1e625fc47276d99246e5ff2768b20418e70b422ab2155ef1f43a6dfd509954"
+    expected_sphere_digest: "27c5566cf6c7621662df6b34a9050d452bf23c436b1e6a5ff5485e6ca0b2731d"
   - settings: { mode.state: open, goal: fast_ganon, crystals.ganon: 7, crystals.tower: 0 }
     seed: "0x0000000000000043"
     label: "a1-open-fg-crystals-7-0"
-    expected_digest: "9ab2f6b8f2940839d8ed7ec9aa522370539b4fe9986c783f6d698c489e319b25"
-    expected_sphere_digest: "3ef3740e34de5b9ccb7798854e063a825c528dab4ab103af6b24e7820f97efbf"
+    expected_digest: "a41960fef88675fe16bd49ddebec3de1407b9d6e7f9de9b2ddc9779c42b8fbf9"
+    expected_sphere_digest: "4c1f4cf39a024468c0f4bd81bbc5469f8c15703cef8d05787958d2fec3b1485a"
   - settings: { mode.state: open, goal: fast_ganon, crystals.ganon: 3, crystals.tower: 3 }
     seed: "0x0000000000000044"
     label: "a1-open-fg-crystals-3-3"
-    expected_digest: "5ef104aa94289c988448f0fe206dd0c69091eafa9049fbe636ea95d67fd9ac7a"
-    expected_sphere_digest: "faceb4b6ccf964088cda985e7c5afe8fdf226e3719966687344f66c2af64104e"
+    expected_digest: "a4e05e2e8a57e093d5dcea1d357ea6a206b409507898343d3df7392ed02b24a2"
+    expected_sphere_digest: "7c8854578d06ce68d2a06537b08a0fc9db9ec195212cb43dc9abfddf94bcb715"
   # Seed-space coverage (large / small / multibyte values).
   - settings: { mode.state: open, goal: fast_ganon }
     seed: "0x1234567890ABCDEF"
     label: "a1-seed-multibyte"
-    expected_digest: "b762ee694198b3be0cd01976a4625c0156638e31e7ae5cf479b48b9b2e259015"
-    expected_sphere_digest: "5df227642e7db450c5bf2e4ad515c1da68be13272b99c0d1dc6b2090a327dde9"
+    expected_digest: "69a07cefea3b7dd7a3c32486b044387c513e036b7cd6f4e9f2405832831006ec"
+    expected_sphere_digest: "844bba808128887c8fdb24f01bc6aa9f45ce183ebb4c6ed3086f3308f70a6838"
   - settings: { mode.state: open, goal: fast_ganon }
     seed: "0x000000000F4243"
     label: "a1-seed-prime"
-    expected_digest: "1b37e346291e71c035fc754fe209179f777be4c6d886dd86bbf1d53767dc989c"
-    expected_sphere_digest: "6a0ea6167848843f6c5521c90a81dbea5ccf3522c1d53b31cd8ff0512b707dab"
+    expected_digest: "9f35565aebe3580d47e6f227a1605143a49b240d129ad37db591ccb5923d51df"
+    expected_sphere_digest: "d17330a9d9568987b20da62001488a3b33495ac2fa9e76c9405b918b5713d15c"
   - settings: { mode.state: open, goal: fast_ganon }
     seed: "0x0000000000000000"
     label: "a1-seed-zero"
-    expected_digest: "6ec0f00286ca4714996788bf520b07270bb404e2729b36f7a87f7fb40206c902"
-    expected_sphere_digest: "0c5a19a9f57ce5929c436fb449651e7aa4518755ac1eab6951318e4ee17e616f"
+    expected_digest: "234d3b10deb1920dc1e76ded13afa9318640b26ca802dba518579ed3909b2358"
+    expected_sphere_digest: "065a02998dafa80c953ba56115af6c4d4cb420f42a5a219095f0375cb9c59b96"
   # Cross-axis interactions.
   - settings: { mode.state: standard, goal: fast_ganon, item_pool: hard }
     seed: "0x0000000000000050"
     label: "a1-standard-fg-pool-hard"
-    expected_digest: "f51e30e84c2542d9b991fae285ce3625b3aedb851ce2ed3290ac3b8f655a164c"
-    expected_sphere_digest: "29f55558740e0fdac51a6071d344f97c81b1289df682ec96a0a515299e97586b"
+    expected_digest: "7dec94704a793623c5cb78fdd787cf1a98a4fec03ee21c4c1c9e55b8c2f25a65"
+    expected_sphere_digest: "794ba6c1426dd662fa3dea717e0ef0a7e01226f8efcb15bbd8922d32795eefb9"
   - settings: { mode.state: open, goal: "triforce-hunt", item_pool: expert, pieces_required: 15, pieces_placed: 20 }
     seed: "0x0000000000000051"
     label: "a1-th-expert-pool"
-    expected_digest: "c5a39345792994eb3d8b9fe91e8f82282ea097e81e5d5df5d00b137d63f2e90f"
-    expected_sphere_digest: "690590629b9e7cb05911bef770b0712873bb6ea53c1b60e2bfbe76f5b163e4b8"
+    expected_digest: "919aad17258426d3c2866a89d51b651e0f5c37b8cc31d8fcb6e5d693fd86e399"
+    expected_sphere_digest: "cd701ec8a27a0c1627ad5a5099baedcceb4719d673cf1b185800b1a400fad500"
 
   # Celebrity seeds — named for easier diagnosis when a future change
   # diverges. Each label is the headline-grade description of what the seed
@@ -298,23 +298,23 @@ entries:
   - settings: { mode.state: open, goal: dungeons, item_pool: normal }
     seed: "0x4144454144"   # "ADEAD" — placeholder
     label: "celebrity-all-bosses-12min"
-    expected_digest: "2d92fc801641c52fea223b8ce93c1909bab85fe7b4744db33dbddd171d11680d"
-    expected_sphere_digest: "1bdd59d95ebf6d20f9ec76d58d424c7ce90ed2d8d5ba8a937f5c2b71e325c440"
+    expected_digest: "58562a0c666b7810e640693b62ba4d1b0e67c445f4a5f4576a9de2308a616dc7"
+    expected_sphere_digest: "e7ba7160633fbc4a8963b0af5e7ced93ddd97d55f1f4b41eaa948e3df2d8df54"
   - settings: { mode.state: standard, goal: ganonhunt, pieces_required: 20, pieces_placed: 30 }
-    seed: "0x534B5953"   # "SKYS"
+    seed: "0x534B5954"   # "SKYT"; v133 reselect from SKYS after the Desert torch pin changed the vanilla-key RNG stream
     label: "celebrity-standard-ganon-hunt"
-    expected_digest: "99623520268ad57fbaa2497c2e1afaa4ad2a716c44bc014bf2bb72b58c0af6c9"
-    expected_sphere_digest: "4679d72d3829c639f6f9d403fbbbce2a23956a420337dfff98df27d49497049a"
+    expected_digest: "432ae4e84eb8ca53cb5e2960eb8e4ea1e54718bc3a1de782ae2447708bd6853a"
+    expected_sphere_digest: "7565ab1f965fe8f83373dbf1806ae4d18e37a751f12d9d1b8f929f96b407677d"
   - settings: { mode.state: open, goal: completionist, item_pool: hard }
     seed: "0xC0FFEE"
     label: "celebrity-completionist-open"
-    expected_digest: "e149bb3c1fbded3cf471c01f9d1a60166c74b08ce199f1c2960b42b0b6347636"
-    expected_sphere_digest: "5c18804e0d6a4c58f6ea47e41985ebccc397023d04f8b74dba0f51e80fba0758"
+    expected_digest: "28c2b36c1813bc3c7818bc7ef64dc5080e9b08dd586fc530ea88fa7a75f875c1"
+    expected_sphere_digest: "4ba0ed0dbe0cbbc9fbf9c6ce14f35c01592bd9fe822f51a359c2cfd6f51a22a9"
   - settings: { mode.state: open, goal: pedestal, mode.weapons: assured }
     seed: "0xDEADBEEF"
     label: "celebrity-pedestal-rush"
-    expected_digest: "43f8bd16c24c69d84d5e94a3c8cb5f817e5f30283bd496b5665da68af91c3ea8"
-    expected_sphere_digest: "bf7c52b9e1ed8c39326b9cf4ae7a7e6b629735dcf5dd9a5b2781fdfabf486b90"
+    expected_digest: "50cf173ea1ce1bc96a02022dda1f4a1806293e43096acbba4d8ace7efb0fab1b"
+    expected_sphere_digest: "ad427265563798f89896d78dc23527e8c7b500fecb600ef9e187a445beaf9188"
   - settings: { mode.state: retro, goal: completionist }
     seed: "0x52455452"   # "RETR"
     label: "celebrity-retro-completionist"
@@ -327,13 +327,13 @@ entries:
   - settings: { mode.state: inverted, goal: fast_ganon }
     seed: "0x0000000000C0FFEE"
     label: "b-inverted-fast-ganon"
-    expected_digest: "a5c453ab70662647ada7af82a4ea0a70866280faf7e6c0b3dea01e3d7130d9e9"
-    expected_sphere_digest: "59fd1566c0f41023b0d30354f5929ae1b29361909d20bc5cdbf94e2e8c4943bb"
+    expected_digest: "8755ff22f31f3f62612b0ecd53c932d4e5a077bfb8a0641e06ce09ffc4b4bbb6"
+    expected_sphere_digest: "59b0aef948b4673f416aed8a13ad6494f72e1ec461d79f2c51f8fc4d135d8c3c"
   - settings: { mode.state: inverted, goal: ganon, crystals.ganon: 7, crystals.tower: 7 }
     seed: "0xDEADBEEF"
     label: "b-inverted-ganon-7-7"
-    expected_digest: "129b90789f1980c49cdf6e5868bad908d2037281359ce2daf62b50fabae76601"
-    expected_sphere_digest: "133e659aa8b12f6ba83ba72bbcde08c03851d5d84fa376dd187e1316e7935db8"
+    expected_digest: "0d9dbba7230bc3043866f8cd2b1e7c680f74c0aaf964c59a6a2a7ca0c8834af6"
+    expected_sphere_digest: "ffb34326e9afe5aa63faf9e05154836662fe818d6a18753ca3335a2cd41471a7"
   # Phase B Slice 6 §7.4 — race-mode round-trip entries. Each generates a
   # ZRSR race-mode file; run_rando_corpus's reveal sub-path overwrites it
   # with full JSON and parses placement_digest_hex from the revealed meta
@@ -344,18 +344,18 @@ entries:
   - settings: { mode.state: standard, goal: fast_ganon, crystals.ganon: 7, crystals.tower: 7, race_mode: true }
     seed: "0x12345678ABCDEF01"
     label: "b-race-standard-fast-ganon"
-    expected_digest: "f1edd13ba941b443d54ba95229a8743d2bac6272b59169fcdee28622fd68f16b"
-    expected_sphere_digest: "ec76062bb9ccb4d15f1aeef3d589bffa49793b490653231898d8d1659faf6814"
+    expected_digest: "820b8b769aef561ffbc7c9e415e5654240c6e2f13e5c4d3619edacf2e355738c"
+    expected_sphere_digest: "2f7737ad86279fc0a3515dc97a6bfe59b7d03a23d1a401eef61a12cf5b96b084"
   - settings: { mode.state: open, goal: ganon, crystals.ganon: 7, crystals.tower: 7, race_mode: true }
     seed: "0xCAFEFEEDABCD1234"
     label: "b-race-open-ganon-7-7"
-    expected_digest: "06aec08cf918f0d5632d091ff2769620b319b752453ce69afa65f4c3aa0e6be5"
-    expected_sphere_digest: "bc3603f5b27f2182b1a20a5617b682cc71034ee5db3ec58fa5efc8306a957481"
+    expected_digest: "3503d8ae69cfcf0a4dc68e375e9646d86dd953b3ebc7c3db4ca1e30b99eb3695"
+    expected_sphere_digest: "cc8a783237b39fb942eaf0dcd90eb49362bec006fe16130e2965c848bce04ae4"
   - settings: { mode.state: inverted, goal: fast_ganon, crystals.ganon: 7, crystals.tower: 7, race_mode: true }
     seed: "0xBADC0FFEE"
     label: "b-race-inverted-fast-ganon"
-    expected_digest: "1b28280a9713d6ae492ad6bee0bdf18be5724152f1f18b6b5445d4b1e4f0b726"
-    expected_sphere_digest: "a8918ad6c6f07cb64c543af3930e20bcdc76cf5e03e72b63d23bebf9536d1c28"
+    expected_digest: "0ebe73af6654b3593420edc158deb5b90ca927f39423ecb5ee9a8fbb9a3998fd"
+    expected_sphere_digest: "f32274c059b839a24878da39c33872768c3925127fe5c780f7cc258989f7bf29"
   # Race-mode + Triforce-Hunt reveal round-trip. Triforce-Hunt is the only goal
   # that populates the Murahdahla hint (rando_hints.c id 16); the suppressed ZRSR
   # stamp covers the hints[] array, so this entry's reveal regen MUST reproduce
@@ -366,8 +366,8 @@ entries:
   - settings: { mode.state: open, goal: "triforce-hunt", pieces_required: 20, pieces_placed: 30, race_mode: true }
     seed: "0x0000000000000005"
     label: "a1-open-triforce-hunt-race"
-    expected_digest: "e1745ba3624845cf50ff46b02b1557d4c4896f196eed3e5c9b03cd285101c3f4"
-    expected_sphere_digest: "a338192ac0810097ec8e8f8d6bfefdc2889e739b4ea7a127cf7fe0bdb9239373"
+    expected_digest: "1d6cf25ac32b13694dc1547e3ba343c0af343b340b9feef02565fb7928b2a082"
+    expected_sphere_digest: "091167956233fc1a595d0a8b9add0308c1b8ec62f4e7570c7de0225c7ed6200c"
   # Race-mode + entrance-shuffle reveal round-trip. The suppressed ZRSR spoiler
   # carries an entrance_mapping section; the reveal regen MUST reproduce it or the
   # SHA-256 stamp false-fails as "tampered". Regression guard for the shared
@@ -377,8 +377,8 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, race_mode: true }
     seed: "0x00000000C0FFEE01"
     label: "c-entrance-caves-open-fg-race"
-    expected_digest: "6f8099718f51218db77095711f39e03b300c4553639729276b3785131d04e6bc"
-    expected_sphere_digest: "86730afc25cf1955f0ef26a9c7a1f1941b1d2ddef8d46e93a4bb31ff182b7996"
+    expected_digest: "ab68f4a331acd771848e9ae59c88b6cebf77123ed7e90e1fadfb28e06aab19f4"
+    expected_sphere_digest: "964a60d804c878bc5847eb284f6ad4e02a61bc35951ba779fcedea7113772b6d"
   # Phase C — entrance shuffle (coupled cave shuffle). These exercise the cave
   # permutation + per-seed region overrides through the placer, locking in the
   # deterministic digest. shuffle_cave_entrances active ⇒ digest differs from the
@@ -386,8 +386,8 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true }
     seed: "0x00000000C0FFEE01"
     label: "c-entrance-caves-open-fast-ganon"
-    expected_digest: "6f8099718f51218db77095711f39e03b300c4553639729276b3785131d04e6bc"
-    expected_sphere_digest: "86730afc25cf1955f0ef26a9c7a1f1941b1d2ddef8d46e93a4bb31ff182b7996"
+    expected_digest: "ab68f4a331acd771848e9ae59c88b6cebf77123ed7e90e1fadfb28e06aab19f4"
+    expected_sphere_digest: "964a60d804c878bc5847eb284f6ad4e02a61bc35951ba779fcedea7113772b6d"
   # add-rando-pot-sanity audit fix (kGen 92): cave-entrance shuffle FORCES pot_shuffle
   # off (cave/house pots miss the entrance region-override → false certification).
   # This locks that: pot_shuffle=all here generates a pot-LESS seed; a regression that
@@ -395,8 +395,8 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, pot_shuffle: all }
     seed: "0x00000000C0FFEE0A"
     label: "c-entrance-caves-pot-forced-off"
-    expected_digest: "35251a08057af5122d8de392abf9efdb487ec42d3349d154392dd552de8be1d2"
-    expected_sphere_digest: "5fc903a358896d4226216e620c1bcfe5dbc3826fa02cef65e457127e671a3a7b"
+    expected_digest: "a01599bc64c824fb4be2152186846be0c958ae7cb35b4f097d34a3f49450b6c8"
+    expected_sphere_digest: "95d92809e61daafd4be7e710c494286d2369181118c089903984fe8870667c26"
   # add-rando-pot-sanity audit fix (kGen 93): cave-entrance shuffle must force pots
   # off for NON-default key modes too. Pre-fix the door-only pot-key predicates
   # (eval_pot_keys_wild/dungeon, pot_keys_dungeon_active) fired under cave shuffle
@@ -421,8 +421,8 @@ entries:
   - settings: { mode.state: inverted, shuffle_cave_entrances: true, pot_shuffle: all }
     seed: "0x00000000C0FFEE0D"
     label: "c-entrance-caves-inverted-pot-inert-cave"
-    expected_digest: "087a15d4384325234ff87e4f79ab04a85c9b80da4478afcc5641d81da0cb99b4"
-    expected_sphere_digest: "a280cf2a31f2ca5af800c2b0c5e2b0ff2c8833e4c4303dd0fba6d57ff2c95876"
+    expected_digest: "ba4e391bc6f34fa9b7eadcdb51c45d140d635788d2b0c40747ad11e55c2acf37"
+    expected_sphere_digest: "90a4c29bdd3180680dab14c317ea6fbc330ca29c805eade0a4b6464c3d00d5c8"
   - settings: { mode.state: retro, shuffle_cave_entrances: true, pot_shuffle: all }
     seed: "0x00000000C0FFEE0E"
     label: "c-entrance-caves-retro-pot-inert-cave"
@@ -431,44 +431,44 @@ entries:
   - settings: { mode.state: standard, goal: fast_ganon, shuffle_cave_entrances: true }
     seed: "0x00000000C0FFEE02"
     label: "c-entrance-caves-standard-fast-ganon"
-    expected_digest: "4b6ffac7aee1881ffc560a6be3c58c1b7e4d9ab19cf3c02a380a7bee7becc235"
-    expected_sphere_digest: "62265fb8471f8ef3950764ba6efaac9533ba21daa81fdffafd11f770aae3144a"
+    expected_digest: "148a96382663f4f386e84561f46280b3b919791e364db22f1812b9993f90519c"
+    expected_sphere_digest: "b6d5d2fa43a21767b3dbb97a0a7d26bdbbbf660e3ddde954b0f0ca60621e1eec"
   # Phase C Stage 2 — dungeon entrance shuffle (6 single-entrance dungeons via the
   # per-seed edge overlay), and caves+dungeons together.
   - settings: { mode.state: open, goal: fast_ganon, shuffle_dungeon_entrances: true }
     seed: "0x00000000C0FFEE03"
     label: "c-entrance-dungeons-open-fast-ganon"
-    expected_digest: "e55365e9d65304de603e5cbca0f44df8263fd04daff015ddb89568f5dfcffefb"
-    expected_sphere_digest: "b5da52a154657167fd5e0c8b4bb320e52bfbbf7020c9d6e091a0da71a5bfd430"
+    expected_digest: "8111a7fe627489f3038e92c9a688fbaa8985318c5a0addc9eebd6fdd37045b68"
+    expected_sphere_digest: "66b7527ee60a453b98c628a3aa1a5365d3f8a609f9afb2533644e0e549418f29"
   # goal=ganon + dungeon shuffle — locks the full-reachability gate (this combo
   # previously accepted a seed with 9 unreachable placements via the GT crystal-
   # gate circularity; the gate now rejects such permutations).
   - settings: { mode.state: open, goal: ganon, crystals.ganon: 7, crystals.tower: 7, shuffle_dungeon_entrances: true }
     seed: "0x00000000C0FFEE05"
     label: "c-entrance-dungeons-open-ganon"
-    expected_digest: "01d4cbe4393adf3f59c190e1788bcbf16f6da1ce4ff6b1e1d8e0686f4c70bdde"
-    expected_sphere_digest: "5009464cda398dad7b1cddf8ca279d73c299c601411a98908305da98baf5a9c5"
+    expected_digest: "8f8cb209c19134c443dc4bf2501a1e823d0fb8636ce01685203b1cd37c38f171"
+    expected_sphere_digest: "f4f872e73eb8e7234e278ec34b3092b7d1d02906c6270c74c9cf5a4410a3c9ca"
   # Ganon's Tower advanced opt-in (11-dungeon pool, goal=ganon, crystals.tower=7).
   # Locks that the full-reachability gate finds a clean (fully reachable)
   # permutation despite GT's crystal-gate-on-the-door.
   - settings: { mode.state: open, goal: ganon, crystals.ganon: 7, crystals.tower: 7, shuffle_dungeon_entrances: true, shuffle_ganons_tower_entrance: true }
     seed: "0x00000000C0FFEE06"
     label: "c-entrance-dungeons-gt-open-ganon"
-    expected_digest: "416f3df1909c0a883d47a455e40e45fcd7ecba7fa54354e8de9f891a6b3e9278"
-    expected_sphere_digest: "3a3b6c3f0733cf82bdfbd5215f11f7ab0cde55e4ac38c7c30e5a004b07f426a5"
+    expected_digest: "5a0f1c83abb827e26aa19b14b22570becc02e97789e711d7fb19803bc62d1b5f"
+    expected_sphere_digest: "ef6761470f7bc3555220b34cbe43f110ebd75cad8fe95efd26c72fa4e261ae77"
   - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, shuffle_dungeon_entrances: true }
     seed: "0x00000000C0FFEE04"
     label: "c-entrance-both-open-fast-ganon"
-    expected_digest: "762f90c7965ddaf4f474aa102d21e967fa3ffe05b3ab9bb44a02b44efd53d7e5"
-    expected_sphere_digest: "c056d8dab8934da691f8004f4b77ccb192f6763d024aa4e01d2cde5b01736355"
+    expected_digest: "a0fbf84b64cddd7483fcd99e2f75496214a68276e0ffd847053c846cd785d790"
+    expected_sphere_digest: "2fe39152ec5e1b6280d8131b6c278ddd3796f6a3e86ac5769341ad5efb9b44aa"
   # Cross-category (Stage 3): caves and dungeons share one shuffle pool, so a
   # cave door can lead to a dungeon interior and vice versa. The full-reachability
   # gate (Logic_ComputeSpheres all-reachable) must accept the permutation.
   - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, shuffle_dungeon_entrances: true, cross_category: true }
     seed: "0x00000000C0FFEE05"
     label: "c-entrance-cross-open-fast-ganon"
-    expected_digest: "15e0de852f498cb09b174e6cd7502a4f060b6d6cc1eebe3350bdf8a6c0b48d1b"
-    expected_sphere_digest: "9b4b7cc510ab4966ba89ef5e3ffb69a144e723dab3dfa9a8f85f0fa08316f209"
+    expected_digest: "6fe3e43bd133053aebdf1c882c0ccd9024b94c80cd7762ec162aa4c26a628f98"
+    expected_sphere_digest: "f4d006326d910d5536727b7357f103bd74a1df4605d53b3d6d809a3b96b8d927"
   # Decoupled / "Insanity" (Stage 4 D.1/D.2): caves + decoupled one-way exit warps.
   # LOGIC + GENERATION only (runtime exit redirect D.3/D.4 not yet wired, so this is
   # a headless-only entry — no playable slot). Reject-and-retry with the full-
@@ -477,8 +477,8 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, decoupled: true }
     seed: "0x00000000C0FFEE07"
     label: "c-entrance-decoupled-caves-open-fast-ganon"
-    expected_digest: "77fa629fd11a7e8d3a9685664b0fce68561b888aed8336c56d1583ddb69c909e"
-    expected_sphere_digest: "8e9d1e50dd83a246429a4b418703e51bfbd058c24f743207f4c0047a4e808000"
+    expected_digest: "b27e368f480cb0ab26910e0e242bddd035dffc24ca75b2ccf195509d3598bb71"
+    expected_sphere_digest: "b5c58f1c3aebf9c9bd8cc6ab154a66dbc0e6c1ee8cac6fdc419143be1ce1e7d8"
   # Dungeon decoupled (Stage 4): dungeon shuffle + one-way dungeon EXITS. Fully
   # PLAYABLE (no arrival asset - the runtime reuses the static kExitData room-keyed
   # exit search). Reject-and-retry suffices (8/8 test seeds). Logic is coupled-
@@ -487,16 +487,16 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, shuffle_dungeon_entrances: true, decoupled: true }
     seed: "0x00000000D00DEC07"
     label: "c-entrance-dungeon-decoupled-open-fast-ganon"
-    expected_digest: "62b661325c787c1182cd70828717091b3d3caac80ba62dd16f30d9a5e6d43c12"
-    expected_sphere_digest: "165e40f4622fbdfb7cf56728e61cd858d7aa02367cff4f0531de961786465bdb"
+    expected_digest: "51fbfecc16cafe6d7fd2e0be3a247ed14682c1ddfc49f166ca0d27735ad81642"
+    expected_sphere_digest: "d3afa9b5077b1723e88493990c316df567a1c80f16f146b5cb77031d8dff31c2"
   # Full decoupled ("Insanity" preset): caves AND dungeons, one-way exits on both.
   # Both runtimes active on disjoint door sets; logic is coupled-equivalent for the
   # dungeon side, cave-decoupled adds its exit edges. Converges (5/5 test seeds).
   - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, shuffle_dungeon_entrances: true, decoupled: true }
     seed: "0x00000000F0FFFFFF"
     label: "c-entrance-decoupled-both-open-fast-ganon"
-    expected_digest: "8b4d1c860ab8279e0f40a09b8e3effcf1a14d74476ad66371e0cc76abcc7a6c5"
-    expected_sphere_digest: "cb437e969f2b986db5450b9bdfea3c89d26e091418e9bc6501b723a40b290b09"
+    expected_digest: "6b39acfd8b1816e4e7736b36341d7442b0f270a4159fdf6f1612c171ae379324"
+    expected_sphere_digest: "d42fe52eb117d42f2f9f6374e8f4d69b8391983a479b2dde3740d6479ac0b80a"
   # Cross + decoupled (Crossed preset + Decoupled exits): one-way exits over the
   # MIXED cave+dungeon pool. Each exit target may be a cave (replay baked arrival)
   # or a dungeon (kExitData room). No logic edges (coupled-equivalent reachability,
@@ -504,8 +504,8 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, shuffle_dungeon_entrances: true, cross_category: true, decoupled: true }
     seed: "0x00000000C2055DEC"
     label: "c-entrance-cross-decoupled-open-fast-ganon"
-    expected_digest: "eaf60921aa7483e1fff15eaddd3a49f473bb8201c5c1c1004b1d883624bca560"
-    expected_sphere_digest: "9565c4f5ea64832214a7b3dccfc84eb2024f36bdd4ea555916ef084fda4aec20"
+    expected_digest: "765471f47acb689867375482b078730c21cde9f282398003633865a45ef7a556"
+    expected_sphere_digest: "afd260d791e66f7ab3b8113fb2d955ab3bd319e297f3216b1006acb0321f47e1"
 
   # Phase B Slice 7/8 (add-rando-shuffles-and-minigames) — boss + drop shuffle.
   # DROP shuffle stays ORTHOGONAL to item placement (a drop-on seed is byte-
@@ -521,38 +521,38 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, boss_shuffle: true }
     seed: "0x5701"
     label: "b-boss-open-fast-ganon"
-    expected_digest: "e1e79e0f2fa3728e52bf55a7be55c485b355c8b8723e521176a6df6081d98a11"
-    expected_sphere_digest: "426a207ef9b419ff3d22550164348555b15547f1deafedc5a7113b21b6694f60"
+    expected_digest: "40f553fd0cb98475812418ceccfd29c85331d6aff1ee4588afdd0cdb68f4b3c3"
+    expected_sphere_digest: "4ab3082e1742facc6e1feb4ccd56bbcfcf9dedd76b144131786f0651c32b1bc6"
   - settings: { mode.state: standard, goal: ganon, boss_shuffle: true }
     seed: "0x5702"
     label: "b-boss-standard-ganon"
-    expected_digest: "a3496953356f29505b9d061d0399b43195611364ba06bc56bc37949e3030ccd4"
-    expected_sphere_digest: "86ca6a4839a22d0bb7c171b424ad6bc46b3d6cbf36ac25dd71b1aa9d02237cf5"
+    expected_digest: "c3d3d4e22da1f0a68e05b11bc4b271110a272c38879b83c9c4a691605850f782"
+    expected_sphere_digest: "b3367d25fc1e2631aaae712ea68ef348c2763ffa2b542bcd4fd696d7212ac0c2"
   - settings: { mode.state: open, goal: dungeons, boss_shuffle: true }
     seed: "0x5703"
     label: "b-boss-open-dungeons"
-    expected_digest: "32e87142bf1544950da2998dc24a6fab2e8d28d100547aa0c79e045accc61454"
-    expected_sphere_digest: "20eb73479b0171c78fe0c173ca341090f29c35a8bb14238e0179ae2a939fb551"
+    expected_digest: "9734a8fc268dfc3d1cd958fb8532ffecaf319cbf4e83447b393a381d57eec2b1"
+    expected_sphere_digest: "a87d2ec02fdb269cf3bc4352ce1a0e3b25e3d8d3a7e41a48e3743bf3a2630353"
   - settings: { mode.state: inverted, goal: fast_ganon, boss_shuffle: true }
     seed: "0x5704"
     label: "b-boss-inverted-fast-ganon"
-    expected_digest: "ae6aaae88afa0515a762ebd1a87b9eb29b21e918d571b3a6dcd4387fd611b168"
-    expected_sphere_digest: "9869079de8d91df74b938cf94223dc555f4c5840d05efab35b5e0eceb04850a5"
+    expected_digest: "67ff915d4e931132fd20dbe8c31d2f92b204b1624de3af13dbe4550c50ff63fa"
+    expected_sphere_digest: "eeb7a3263b37f268284700e43c783aba4a0df24a5bb43d1d38a96c1ae9b864f0"
   - settings: { mode.state: open, goal: fast_ganon, drop_shuffle: true }
     seed: "0x5711"
     label: "b-drop-open-fast-ganon"
-    expected_digest: "a8854c95b029ccfa802aa2206ac50d5a572c565c618a3b9a391b95858173ae8d"
-    expected_sphere_digest: "69502d257dd1eb8a284dce6eb2ee7fb30dbe894a0e0c196ec5976b3862e65325"
+    expected_digest: "054dcfd775d803540f8a34ccf4fe2c575a86a0515fdf2b4c1dbe05184ad31385"
+    expected_sphere_digest: "27cb872f34889a4867512069ee3bba2025b5edbf6d949bb392fb9adb7c03d930"
   - settings: { mode.state: open, goal: ganon, drop_shuffle: true }
     seed: "0x5712"
     label: "b-drop-open-ganon"
-    expected_digest: "6d7b4001f4eaa0e8d7c2c8c2fdbae548da2b549417701277960e37d83de0a031"
-    expected_sphere_digest: "9c78b0cad464697d79982a4d97827bc6d2c504bbca94478a7edeed8a5194c75a"
+    expected_digest: "b04c5e08a24214278f64f8c5db1065d1e119eedd717bbd1ae32fa073d74e12a6"
+    expected_sphere_digest: "e82cd670dbff374ea7ff3d82048d1c1ab80bb6336f7575d3255160696bb92973"
   - settings: { mode.state: standard, goal: fast_ganon, drop_shuffle: true }
     seed: "0x5713"
     label: "b-drop-standard-fast-ganon"
-    expected_digest: "2b473f9eff306160485cd761c867057579680e398599181f9ef686c2b95fc074"
-    expected_sphere_digest: "7b876979829897ec40e56f5ea25ba0dfd318d0cc7f97b0d438ab65ec27f4cab2"
+    expected_digest: "a4937d2e941976b8afecbcd74c6f7ae7d18a90365a3f60502866c00d5ff9fed6"
+    expected_sphere_digest: "dd0746a2db89f80577497519211837ae22f3446600b6d8cebee630f8fe22b0e9"
   - settings: { mode.state: retro, goal: ganon, drop_shuffle: true }
     seed: "0x5714"
     label: "b-drop-retro-ganon"
@@ -561,13 +561,13 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, boss_shuffle: true, drop_shuffle: true }
     seed: "0x5721"
     label: "b-bossdrop-open-fast-ganon"
-    expected_digest: "764ce349897878856508dae6e1a2cfa6d16ca8278866b4bc21983f652ab9ccd4"
-    expected_sphere_digest: "9bbe97ac4dc1614005b81d3df21c51ea4d4ca0ba9f3a8ca7d1f09d46535d8ea4"
+    expected_digest: "f7ede99c125329ff9e6987f5aa1f0f80dca30c0d107bdc060d05ff1c23d672ae"
+    expected_sphere_digest: "048302b6286e336aa634ad6e858c7368ea3e7b004559b46e5499f247a36fa7c1"
   - settings: { mode.state: open, goal: triforce-hunt, pieces_required: 20, pieces_placed: 30, boss_shuffle: true, drop_shuffle: true }
     seed: "0x5722"
     label: "b-bossdrop-open-triforce"
-    expected_digest: "367b589918c6e5b75b6e86b46ea98848f8c12d60585d0653f73c7d1d6db32ceb"
-    expected_sphere_digest: "b09039a80f4e74fbcb296a066d63ed2b72709292729b2abe9fcf717c087cac17"
+    expected_digest: "4347290d2377a2a8dac785a15a89f631daa9729b254daf45c42107a18ce17258"
+    expected_sphere_digest: "d0d0267472363c508697e8458c7ebbe4e3417da55d220f217194e7f359e3272d"
   # add-rando-trick-logic-and-axes §9.4 — exercise the un-pinned trick + glitch
   # axes (tricks-on, OverworldGlitches, MajorGlitches). Digests filled by
   # bump_rando_corpus.py --apply; they pin the current trick-gated logic graph so
@@ -576,19 +576,19 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, tricks: "boots-clip+fake-flippers+bunny-revival+dark-room-nav+pearl-bypass" }
     seed: "0x7415C0DE"
     label: "b-tricks-all5-open-fast-ganon"
-    expected_digest: "8375a8424c92bdd4b306b9fdef82d9e42a7fdd706ed864dc6e9dcc27f72651a2"
+    expected_digest: "efdd11e6c6ee180fe0276064aa42b6a5777c99197dfcbb814d4138e3ee5ef30d"
   - settings: { mode.state: open, goal: fast_ganon, tricks: "dark-room-nav" }
     seed: "0x7415DA12"
     label: "b-tricks-darkroom-open-fast-ganon"
-    expected_digest: "90468bda0a8227c710c1ce5c49f6d3acbd06bf0280142bc14710d6eaac2f7677"
+    expected_digest: "e574f6fa0f17d0cd9835a14e8d2572d30c7bf06f07c30e9673544bb70417389e"
   - settings: { mode.state: open, goal: fast_ganon, logic: overworld_glitches }
     seed: "0x06701C45"
     label: "b-logic-owg-open-fast-ganon"
-    expected_digest: "ce00035175ef7d28dc7234ba47ecf77aea413258c0fe70893766a6d24d0fffec"
+    expected_digest: "27c9dd453c51f604a6954492f0e23e9505b6992213b6a430327bf30e2a49ab88"
   - settings: { mode.state: open, goal: fast_ganon, logic: major_glitches }
     seed: "0x6A106C45"
     label: "b-logic-mg-open-fast-ganon"
-    expected_digest: "66871da76d3029db6ceb3ad0a2760cdb5eafa72fe77237698579b9384a029f23"
+    expected_digest: "476994cccacda918201c0fc371a7c9205f8b681ff947f1ab22a0998a3aa55db6"
   # Phase D (add-rando-major-glitch) — HybridMG + NoLogic tiers.
   # HybridMG is a technique SUBSET of MajorGlitches (HMG = OWG + oneFrameClipUW).
   # F1 (canOneFrameClipOW reclassified to MG-exclusive) closed the raw-threshold
@@ -602,7 +602,7 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, logic: hybrid_mg }
     seed: "0x48BD6C45"
     label: "b-logic-hmg-open-fast-ganon"
-    expected_digest: "f73d7648d989fb54ff352bd54d86baf7ebbda0601696ba5d533fb6dff8fbd71a"
+    expected_digest: "9db642b8445e6a831a7a475bc942a068dcbd7aa5bfdfe028fec96eec2ed0e34a"
   # NoLogic — reachability short-circuited; placement ignores progression gating.
   # As of F5 (kGen 64), the LOGIC-level can_place predicates are ALSO short-
   # circuited under NoLogic; this DEFAULT entry uses Vanilla keys (dungeon items
@@ -613,7 +613,7 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, logic: no_logic, accessibility: none }
     seed: "0x4E0106C4"
     label: "b-logic-nologic-open-fast-ganon"
-    expected_digest: "3b0346038faef493ad037351c3e02f4907dfcd6b174034cfa68999dfd10f7779"
+    expected_digest: "3d4c95678d7ca3053a654e6d08740b314314ac5ad65ecdc5234cdd42686a94c4"
   # add-rando-major-glitch F5 — NoLogic + WILD keys exercises the can_place
   # short-circuit: dungeon keys are in the general pool, so the NotADungeonItem
   # fill ban + item-locked slots (Swamp Palace Entrance) WOULD constrain them
@@ -636,7 +636,7 @@ entries:
   - settings: { mode.state: inverted, goal: fast_ganon, logic: hybrid_mg }
     seed: "0x1357"
     label: "b-logic-hmg-inverted-fast-ganon"
-    expected_digest: "350dddd8ea69af356a4d75a81a27c28c26a0c77e6a91e27a621afd15756e4a45"
+    expected_digest: "af3627032490ea4facada0c801969016eb89dec975c5659551c52be4093aca69"
   # add-rando-major-glitch F1-followon guard — the inverted MG tier. The
   # F1-followon's inverted Ice Palace change (canOneFrameClipUW on the melt-
   # factor) opens at MG too, not just HMG; this entry guards that MG-side change
@@ -646,7 +646,7 @@ entries:
   - settings: { mode.state: inverted, goal: fast_ganon, logic: major_glitches }
     seed: "0x1357"
     label: "b-logic-mg-inverted-fast-ganon"
-    expected_digest: "46dd96107f950756b2426f6cce830e3a429f0cdbc30a4157328ea33b1b9f1dc5"
+    expected_digest: "7df4c218fc2d09a101d0235752493bc9bc015251c04f1f78354a5eaef2c833e1"
   # §4 swordless — exercises the swordless logic graph + sword-removed pool. Pins
   # the swordless placement so any future change to a swordless gate fails the
   # corpus. goal_completable verified at capture. (Runtime sword-substitution is
@@ -654,11 +654,11 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, mode.weapons: swordless }
     seed: "0x53574F5244"
     label: "b-swordless-open-fast-ganon"
-    expected_digest: "1ba96140e8f45bd41a6fd228acd2a7a30cf0c15654795a06b657a6cf248b8e06"
+    expected_digest: "94622c11aed7cb815ac9c4c44408030d3b4a1aea12ceac26f45325c6b76f3e8f"
   - settings: { mode.state: standard, goal: fast_ganon, mode.weapons: swordless }
     seed: "0x5357445354"
     label: "b-swordless-standard-fast-ganon"
-    expected_digest: "864e0b547900b91d99ec6ecec01310386e44d4f5d1a99dd6ebf9f4ac8d7db745"
+    expected_digest: "8581ece5995797b41dc8a0ccf4ea38ca0277282333361de91064df69b2e2322c"
   # Per the swordless fresh-eyes audit (LOW #3): pin harder swordless goals so a
   # future regression in the swordless boss macros (CanKillKholdstare /
   # CanKillTrinexx — the showstoppers) or the swordless Ganon predicate is caught
@@ -667,11 +667,11 @@ entries:
   - settings: { mode.state: open, goal: ganon, mode.weapons: swordless }
     seed: "0x5357474E"
     label: "b-swordless-open-ganon"
-    expected_digest: "05537581b8322407920017d94304cc0496ba9a25ef5e08a857927ef3b5b59ea6"
+    expected_digest: "9fb18f4904dda448155aa1e2e736d2381b4684fe96da152a3ec4fc081614f995"
   - settings: { mode.state: open, goal: completionist, mode.weapons: swordless }
     seed: "0x53574350"
     label: "b-swordless-open-completionist"
-    expected_digest: "ff68fe0fe176fc92775dd86de3c5c234afe71ab7dde336f00c6335f3f012bf1e"
+    expected_digest: "74c3618bc90a7fba5ad59d215382d42c28255594baf1bd9ccf8271f16085efce"
 
   # Corpus expansion (2026-06-05): close the under-covered world-state gaps.
   # Swordless was Open-only (Inverted was the documented highest-risk gap), so
@@ -683,18 +683,18 @@ entries:
   - settings: { mode.state: inverted, goal: fast_ganon, mode.weapons: swordless }
     seed: "0xC0FFEE0000000001"
     label: "b-swordless-inverted-fast-ganon"
-    expected_digest: "76b2ac0c3a071ff3671e1bb4531cc965c86595e4ebbdcd9fc071a409d9fdf428"
-    expected_sphere_digest: "cd3c236481b3e272280027b236132b5df4eb4ea36190b122ac54c17bec437607"
+    expected_digest: "eadeb4731dceb814714283af72b45acc5be8f3c8d7addf3f38846bd386b2001a"
+    expected_sphere_digest: "7a861b40af2d0bd87949bca2821ee6cc8f06de0af8ee1aff7f36f1342a1a9492"
   - settings: { mode.state: inverted, goal: ganon, crystals.ganon: 7, crystals.tower: 7, mode.weapons: swordless }
     seed: "0xC0FFEE0000000002"
     label: "b-swordless-inverted-ganon-7-7"
-    expected_digest: "4cb51e03c0a543ebea20f76db7f09216679963fc8beb99e12d23eefaaa4aa3b8"
-    expected_sphere_digest: "e870c4e5b902eb47fd6c91eecc4b084acba56c01607e090ba4d15c3dc902773c"
+    expected_digest: "ce89237d99f5c45f4aba6653aca5a327907816054e518007c9f999b80370178b"
+    expected_sphere_digest: "f8b141a73843a66e3c3b05e969b4f3754320cc0df78a485f2da8b63b602fb423"
   - settings: { mode.state: inverted, goal: completionist, mode.weapons: swordless }
     seed: "0xC0FFEE0000000003"
     label: "b-swordless-inverted-completionist"
-    expected_digest: "5aec40e148beb6b696814808d1ca917bc3f54dd0b73e515575f44e6d1d889af9"
-    expected_sphere_digest: "aa5da6d90a029f27fd3d1522190381ea59c03ed4c260f26d3cd1ee10207b940e"
+    expected_digest: "a62b5c0f98d8f7840bfec3c6e0fefc8afd466892164d0108fe91c2572bc54f20"
+    expected_sphere_digest: "6262e39b0589c3f746a4d1bb193013716b6dc0a1c3157c4f8a1fa55923f2fdaf"
   - settings: { mode.state: retro, goal: fast_ganon, mode.weapons: swordless }
     seed: "0xC0FFEE0000000004"
     label: "b-swordless-retro-fast-ganon"
@@ -703,50 +703,50 @@ entries:
   - settings: { mode.state: standard, goal: ganon, crystals.ganon: 7, crystals.tower: 7, mode.weapons: swordless }
     seed: "0xC0FFEE0000000005"
     label: "b-swordless-standard-ganon-7-7"
-    expected_digest: "07bd04f736b1fc68e7507e4265a89bdd4c1b77aef098e630dde4d0918c48888c"
-    expected_sphere_digest: "3cae9926a7bc71077c0d1126358fb2fdfa1902e5638b4b6b3f7de39387e2c4c3"
+    expected_digest: "f661a88e5612191dbe5930b036bb5615f30891e36996836e00588cd951a69817"
+    expected_sphere_digest: "c2ec27a23e7342ef6cce0e86c10ddf406572ca134994ab374fcf0df364f8aea4"
   - settings: { mode.state: inverted, goal: dungeons }
     seed: "0xC0FFEE0000000011"
     label: "b-inverted-dungeons"
-    expected_digest: "1c1584b2f4cbaf8932725f69041bd73ab104710157b20160289f425c48b9a4c4"
-    expected_sphere_digest: "b4bf5336c35b1981fb25c39b3ad56026f1207a595a67ec0f72f77c37259b84fb"
+    expected_digest: "973efd0febaf59aa255fb84b3401cb9e22e454dab76a259b90af7e36bbcffdd9"
+    expected_sphere_digest: "3c22a3ef08c48bdfdb85d5104dfed6ee3823c8e5f308ef8a9b7bb58692bdb5e2"
   - settings: { mode.state: inverted, goal: pedestal }
     seed: "0xC0FFEE0000000012"
     label: "b-inverted-pedestal"
-    expected_digest: "c699624e6fa2f4f03513e55e5787032396e3e3c6643b4ce452b32eb3b61ab0ec"
-    expected_sphere_digest: "c0ceeae5fcf6adf9912355beea72b0e2585938b1becdc3b048eded634abf0a2e"
+    expected_digest: "35410ad1f7e4710090a943cac394c767ff178b927b9a80e97d834ad7d2e47e91"
+    expected_sphere_digest: "397db71be48dc397a91a0db8abfef80e8d331d2384d2d66d22e7784e17960c79"
   - settings: { mode.state: inverted, goal: triforce-hunt, pieces_required: 20, pieces_placed: 30 }
     seed: "0xC0FFEE0000000015"
     label: "b-inverted-triforce-hunt"
-    expected_digest: "b42266ebee6b43925b69404b990b59f09e5f1402e69fbd34ccd4ceb9b1274fc0"
-    expected_sphere_digest: "c541201390bf89df572b875e27469e77c90979bbb26285b391dff6305beac083"
+    expected_digest: "880bfab7d204adf1fe7f2b020dbef701af12a85f0140ee9b0770a235210e5ba0"
+    expected_sphere_digest: "2c33cd4c161f176ea43182f63fdadfc96d4b05d57d00e4df68b9f15f6f29ccd1"
   - settings: { mode.state: inverted, goal: completionist }
     seed: "0xC0FFEE0000000014"
     label: "b-inverted-completionist"
-    expected_digest: "342b94865f1835bcf56dc53f9345e502761d5b4441473e751c21b40eb48dbab1"
-    expected_sphere_digest: "823e50caac4e949002b6bd0a3773c7253de53a1b129d54f59d789833a945ca3f"
+    expected_digest: "5f497878ece1398703d67bfe0ca608cd3e8de2ed17f53fdd8680e10b9ff5cd26"
+    expected_sphere_digest: "07584458e91d678438c1d640dff2125f1b0a1dbf142ee7bb0372af6c49b54650"
   - settings: { mode.state: inverted, goal: fast_ganon, accessibility: none }
     seed: "0xC0FFEE0000000015"
     label: "b-inverted-acc-beatable"
-    expected_digest: "0d2d5f5c17cd44aaddb20ef3da4ff2f0aa7d58c2a1d952b20c884fb444640e81"
-    expected_sphere_digest: "43f55962451d641dcc6cbcf39d232b8c67690a4465a62928e7d3ee24f13f511f"
+    expected_digest: "fe0ace20c1e2da1e16917cb1112e91e8341f99ada7d57008d988e75aa0850f66"
+    expected_sphere_digest: "6d7685fb307fe9851684c777ac7994bceb86589201f07f0507cce21e1761243c"
   # Randomizer QoL opt-out guard: instant_flute=false restores the separate
   # ALTTPR activation gate, which matters most in Inverted flute routing.
   - settings: { mode.state: inverted, goal: fast_ganon, instant_flute: false }
     seed: "424242"
     label: "b-inverted-instant-flute-off"
-    expected_digest: "2c66c95aca671048c882bac9d4c9ffbeed45bbcfce2e5bae066dbb9dbe200dd5"
-    expected_sphere_digest: "50966b97e07d756049e9bb42e07ee7892faf1165499d8ffb80822feae40ce415"
+    expected_digest: "346c5fc10777c92dbf00a26e4acc1fb4b053094fcfa91a2b5247491d29f13feb"
+    expected_sphere_digest: "ab4bb5a343be4a7608ae2238dcb9f79055248cbcd391d6f0514054d48549bec4"
   - settings: { mode.state: inverted, goal: fast_ganon, boss_shuffle: true, drop_shuffle: true }
     seed: "0xC0FFEE0000000016"
     label: "b-inverted-boss-drop"
-    expected_digest: "276073a1a462eb2d3a56404847f1b0be24834ea293685e658adca8fcaa3da27b"
-    expected_sphere_digest: "47638ca9cbfcfa294ef2ca622f1bcba0afa18a61fe07fbd1ad726373230755e2"
+    expected_digest: "d5be932f34e5652036ed746983f25c76f533c728558c14b57a828fc55209c256"
+    expected_sphere_digest: "2f69cb836ee3b5754414ec6b1ca5bc2c80df6ad4bba6cf61f9dcdea6916bc89a"
   - settings: { mode.state: inverted, goal: fast_ganon, item_pool: expert }
     seed: "0xC0FFEE0000000017"
     label: "b-inverted-pool-expert"
-    expected_digest: "b8cd58a785453ae3af8f85f0814307b5a1c2c7ba41eb2f06263922ac489a64b0"
-    expected_sphere_digest: "ce2053f6905bac613540d9caf284e7f8879d51c5a1f808ef0b56af43f7145c9c"
+    expected_digest: "21b90be99a32b49396925ceff56755924bae2f2fa27f545d9d7a360c02a5b721"
+    expected_sphere_digest: "1d1a7d9b31354d317d942a2fe65c1320db74b13928688b82c11759b3b221ec88"
   - settings: { mode.state: retro, goal: dungeons }
     seed: "0xC0FFEE0000000021"
     label: "b-retro-dungeons"
@@ -775,8 +775,8 @@ entries:
   - settings: { mode.state: standard, goal: fast_ganon, logic: major_glitches }
     seed: "0xC0FFEE0000000031"
     label: "b-logic-mg-standard"
-    expected_digest: "99187cd5f48ba1be02ac2e603dba4d206374a2dcf955648689e24181b1c51ee7"
-    expected_sphere_digest: "e4df48723faa8d55ad517438b552266dd3a0b000e9cd719a3f0b9431829e0779"
+    expected_digest: "795b4a8e301a963858c84449e3907407d293dc332d20f03a05b35554728bcf51"
+    expected_sphere_digest: "ce438b7f83fe89250d5388e862ca608c4dfe735e6f3c0c567d2f8f5fe6934b46"
 
   # Legacy boss-heart key compatibility. The `region_boss_hearts_in_pool` /
   # `region.bossHeartsInPool` CLI key is accepted from old inputs but
@@ -786,18 +786,18 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, region_boss_hearts_in_pool: false }
     seed: "0xC0FFEE0000000041"
     label: "b-bossheart-pool-open-fast-ganon"
-    expected_digest: "ea3d33fcf0fb82ec0766c14edd41925d1cda7ec2c3dc5a670cc5b604d23aac8e"
-    expected_sphere_digest: "8a976efe122bab226d0ab0054dbc526d5ef43669557861f7a8ba2b8a59da97c7"
+    expected_digest: "98f5bf82c773864d11afc70708acac2cc66b46d1352fce6bd9fed20400a2bb0a"
+    expected_sphere_digest: "6d9c468d12a19253ec0344cbfd9e5c80b955d5a8105f5e0d5c7ed2e39a51547c"
   - settings: { mode.state: inverted, goal: fast_ganon, region_boss_hearts_in_pool: false }
     seed: "0xC0FFEE0000000042"
     label: "b-bossheart-pool-inverted-fast-ganon"
-    expected_digest: "5a18fc44bc1b2f61040e702334971ca9520586fa797366b2ca17626da54e7f42"
-    expected_sphere_digest: "cb11e06071be1bf9c29e1e0fa498dc0d818194fd0f7bf62f2001a55bd605b63c"
+    expected_digest: "ee9536a85312b60c2c6686283ca7c28ad3e9e1570ece7ae519d003fd03924be4"
+    expected_sphere_digest: "a1cc4b8ba25899abb737ccea92f76a81808098616025926cd5774a0c3f1ecff6"
   - settings: { mode.state: standard, goal: ganon, crystals.ganon: 7, crystals.tower: 7, region_boss_hearts_in_pool: false }
     seed: "0xC0FFEE0000000043"
     label: "b-bossheart-pool-standard-ganon-7-7"
-    expected_digest: "8f4eac48ff27addf7978a21a0d07f6f3339f0f5d9231693952f91bde92d4997a"
-    expected_sphere_digest: "68153fd69f00e12b33465faeb4e09a3a5a404e44640b1abdfea66c26cd4c879d"
+    expected_digest: "108a259207482f0ef364260fee31bd07ade4c368f6a258b6ed66f19d0cce4fd1"
+    expected_sphere_digest: "3e4b6c28b2b1505efed46952d51fd01ced500592b977fe7bc5f74aeab15bf487"
   - settings: { mode.state: retro, goal: fast_ganon, region_boss_hearts_in_pool: false }
     seed: "0xC0FFEE0000000044"
     label: "b-bossheart-pool-retro-fast-ganon"
@@ -836,18 +836,18 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: keys }
     seed: "0x504F540000000001"
     label: "pot-keys-open-fast-ganon"
-    expected_digest: "45e05c92994f2cfa037779c0eddcd0bf5642b27d6af2963ef296be90697ed683"
-    expected_sphere_digest: "42e7b062361eaab0fcd77782a5f061e3b99bf46080bee27d65473a6537bf0cff"
+    expected_digest: "b8b658f036f49757ca49f8c129f673c402c02bdaa56137ac91b92e2ac50e2db1"
+    expected_sphere_digest: "ebf751eda7cba546c9ca634363095d4f77f15f41408e5e00eb5355c7b10ef920"
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: contents }
     seed: "0x504F540000000002"
     label: "pot-contents-open-fast-ganon"
-    expected_digest: "7cf8b4ceaf2e04d010b5778fda386c2ebe87302183a0ee41e858aa1318fe6e24"
-    expected_sphere_digest: "c5c76d0bd3b92880987b131e5d409b07cb7b48fdcea147edf518b7a0b8b201f5"
+    expected_digest: "9f14381787c14d2baffcde0b6faa53db3d4f035e3e82b1ea67ee05b0f844dcd8"
+    expected_sphere_digest: "d146ea22be4e5defd66071d637eb1c2a4ddf04905489269f171905740aa1d317"
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: all }
     seed: "0x504F540000000003"
     label: "pot-all-open-fast-ganon"
-    expected_digest: "4447f101ca1f50f73c470e8e35504b316402bba94554efe09fe8b1f8b80c653b"
-    expected_sphere_digest: "37fae85d0960d9e1d30c70e4c246ad401bb4a3672a736282b27c5e9fdc4e5271"
+    expected_digest: "4d649f8b2d05ff5f7b0538145c61776493a9a327bdb4a0ff1e88738c26a1887e"
+    expected_sphere_digest: "8cb5843cc52da68ca2693c98a49df40dd83a92828e25c01e8480057dc0d75c48"
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: all, dungeon_items.small_keys: dungeon }
     seed: "0x504F540000000004"
     label: "pot-all-dungeon-keys-open"
@@ -982,8 +982,8 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, pot_shuffle: keys, enemy_drop_checks: all, accessibility: items }
     seed: "0x45414C4C00000007"
     label: "enemy-drop-all-pot-keys-wild-items"
-    expected_digest: "79e7dd4b21ecfaffe282b381d70ff84d2fb45ead8254624e4a037e6445440b95"
-    expected_sphere_digest: "fccd258f492793bf546aaefe100b35ed0523ccf04fb7b7865cf6d6c23fdca25d"
+    expected_digest: "c27af4bd22cc322c92c2cac8706055502e55f575066a3664df569ca0b90d20a3"
+    expected_sphere_digest: "23c6721f035c8deb92d1aec4ea5d2520e47871c7f5e5ce36a4182be07fbf10cc"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, door_shuffle: basic, enemy_drop_checks: all }
     seed: "0x45414C4C00000008"
     label: "enemy-drop-all-door-basic-active"
@@ -1040,19 +1040,19 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, souls_shuffle: bosses }
     seed: "0x50554C5300000001"
     label: "souls-bosses-open-fast-ganon"
-    expected_digest: "228117481b5ac136d5f8a2919080dedc9202b599b4e751f0b942b4ff309f0d36"
+    expected_digest: "13a73a2f20a5321f586af7e150f52622b17118a21bcf745ce29b603dd75a8b0d"
   - settings: { mode.state: standard, goal: ganon, souls_shuffle: bosses }
     seed: "0x50554C5300000002"
     label: "souls-bosses-standard-ganon"
-    expected_digest: "7b6523c30c5112c7fc082acb48cba2f58db0f3e0136075b4e727d924fca2ed62"
+    expected_digest: "8f4696b5c3d9a470eac164e27e1e26b488c2a8b90ff7f2f477ba3638d2515c62"
   - settings: { mode.state: open, goal: fast_ganon, souls_shuffle: all }
     seed: "0x50554C5300000003"
     label: "souls-all-open-fast-ganon"
-    expected_digest: "ecfc7e56ab83f8b42bb7655fac04e44f33254b927f06db6616a327a1622a18d8"
+    expected_digest: "e6ca1377731c83b0eb0ef5a9840f96fc8e0f5406ca3ffa44b81130ab90c99d9c"
   - settings: { mode.state: open, goal: fast_ganon, souls_shuffle: bosses, boss_shuffle: true }
     seed: "0x50554C5300000004"
     label: "souls-bosses-boss-shuffle"
-    expected_digest: "da9e170cd7e3646309893da4490ba6a13993035809b6f6427fbb293b0b783b14"
+    expected_digest: "603f93c79ae02ee69951bef6da7f4a29508569e264159765c65bd17339f543f0"
   - settings: { mode.state: open, goal: fast_ganon, souls_shuffle: all, dungeon_items.small_keys: wild, enemy_drop_checks: dungeon }
     seed: "0x50554C5300000005"
     label: "souls-all-enemy-drop-dungeon"
@@ -1060,7 +1060,7 @@ entries:
   - settings: { mode.state: open, goal: triforce-hunt, pieces_required: 20, pieces_placed: 30, souls_shuffle: bosses, accessibility: none }
     seed: "0x50554C5300000006"
     label: "souls-bosses-hunt-none"
-    expected_digest: "b432deef07771382498b9859af62a755890ba3b976bf83c0878acb0890a26582"
+    expected_digest: "45a08fc8b3b4ce91236879b05507c0f51187a88a25483f5164fc2223e58f4589"
   # Enemies-tier logic coverage (kill-gated-room soul terms, task 4.4): the
   # Standard escape interplay, the enemy-shuffle vanilla pin, the door-shuffle
   # degrade (souls fully OFF under door shuffle — the entry must place NO
@@ -1068,11 +1068,11 @@ entries:
   - settings: { mode.state: standard, goal: ganon, souls_shuffle: all }
     seed: "0x50554C5300000007"
     label: "souls-all-standard-ganon"
-    expected_digest: "e06a6ef10d1ce0b3a1c12c9b0692d8d96730e7b910da1a0974256ba775c61cae"
+    expected_digest: "435346c0ca905da3638b167fff30dd995cab305883b51fad384149cf1db19669"
   - settings: { mode.state: open, goal: fast_ganon, souls_shuffle: all, enemy_shuffle: true }
     seed: "0x50554C5300000008"
     label: "souls-all-enemy-shuffle-pin"
-    expected_digest: "8ad56b2f6078c8ab45b0451bc1dfd314204fb0072f1db8ae7dec5c78708baf57"
+    expected_digest: "8072fcf419fbc60e63735f80950e87bbd76a03fa21724eec0077717e7b45c7c3"
   # Degrade proof: souls are fully inert under door shuffle, so this entry's
   # digest MUST equal c-door-basic-open-ganon (same settings minus the souls
   # axis, same seed). A divergence means some consumer read the RAW souls tier.
@@ -1087,7 +1087,7 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, souls_shuffle: all, pot_shuffle: keys }
     seed: "0x50554C530000000B"
     label: "souls-all-pot-keys"
-    expected_digest: "2049a6b3cc4f57cad02a012e519a6bdadb8125f658fde32fb162746149451fff"
+    expected_digest: "07aa5d4987334aeeb759bcdd6cc2da6cec48a09a7d1c4544302045d5c02b8791"
   # Witness for the fresh-eyes chains seam fix: the successor dungeon's entry
   # routes through the previous dungeon's BossRoom approach edge, which must
   # carry CanKillBoss + the kill-room souls.
@@ -1102,28 +1102,28 @@ entries:
   - settings: { mode.state: open, goal: ganon, npc_souls: true }
     seed: "0x4E50430000000001"
     label: "npc-souls-open-ganon"
-    expected_digest: "fd6312cd80c034f707a8e3b48016116d64ee23539385d4699ab96427e3a0f809"
-    expected_sphere_digest: "0af2bea5dc4ec3a729cdb07fd0f25ba431fb9d6fdd0479efec5df5a45999f5ed"
+    expected_digest: "601e316cf0af0aab510d9ae459306983dc3882c825879b1382ac9f3855bf2687"
+    expected_sphere_digest: "d2c0037adffee90076185867d2f6c12e00a955a0577337ff63efb454211cffab"
   - settings: { mode.state: open, goal: ganon, souls_shuffle: all, npc_souls: true }
     seed: "0x4E50430000000002"
     label: "npc-souls-x-souls-all"
-    expected_digest: "87d64bd0d5c384aff6440aed826274f2babb676e0e87d2136da872052129b584"
-    expected_sphere_digest: "4f299cad7a19f1089f5bd5ccf3b35891b9943f05be56638787369e62b896998e"
+    expected_digest: "f454315ed98403838956c1663030f474b9a7c95dc25f2d8fcd59b4b9c5364d49"
+    expected_sphere_digest: "1d48a30bad00b7cf31b2a79113a688f5486a4e76325c2390fa444f4b980706da"
   - settings: { mode.state: standard, goal: ganon, npc_souls: true }
     seed: "0x4E50430000000003"
     label: "npc-souls-standard"
-    expected_digest: "136fd6a21b3bcde88eabdd3ebab086e26c26de829b799fa29c3a86a530a9bf62"
-    expected_sphere_digest: "3198ee07fc26e43e3e4b11986981dd52c210053a7722aa56a9f191d7480540b2"
+    expected_digest: "d97b5423f8592fbcf80da5b39b83b6db69103269130fd1cb26f6130db9d60c5a"
+    expected_sphere_digest: "9d7179a1bb991792263d021c0757247099a2f1401aa2f733f98296ecf74ce60f"
   - settings: { mode.state: inverted, goal: ganon, npc_souls: true }
     seed: "0x4E50430000000004"
     label: "npc-souls-inverted-kiki-bypass"
-    expected_digest: "dca374236bba5e975baa35f42eef49d2185b475ddc10498fec947896a9c33c39"
-    expected_sphere_digest: "9e66062a829fc38ef73d43e6a9edcc64a913fefdb54fdaea20657906268bc372"
+    expected_digest: "85ac1580a33068a54a6e506badc69d2422cb855fc9306b699b523971de609f63"
+    expected_sphere_digest: "bd729bb2a8b01c98a209042dfc588e05479262e71cdbc37dc3c0a61ee2f21eb4"
   - settings: { mode.state: open, goal: ganon, npc_souls: true, shuffle_cave_entrances: true }
     seed: "0x4E50430000000005"
     label: "npc-souls-entrance-shuffle"
-    expected_digest: "ef8d683f702ed32c177dcd84b5ab2f1df398fb6adb6780520d5ebc0c55e40e6d"
-    expected_sphere_digest: "9ba1eaec364819698649286d98b2b2b690a41595a75cd49e06004b1ef5e6ebd4"
+    expected_digest: "69c6509385b88d395cffc803b44a8760c1cbfcd4d363f28d6a3d6874f6176943"
+    expected_sphere_digest: "50f9888b64fec9b0240af0777cc20e6f0200b3debab56753513b1aaa78392dd6"
   - settings: { mode.state: open, goal: ganon, npc_souls: true, dungeon_chains: true }
     seed: "0x4E50430000000006"
     label: "npc-souls-chains-pod-seam"
@@ -1146,27 +1146,27 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, grass_shuffle: junk, accessibility: items }
     seed: "0x4752415353000001"
     label: "terrain-grass-junk"
-    expected_digest: "212de27bfd7a254f9756624e51eafa4a4d831418ebc2f5c85b05f6e298d5c0e3"
-    expected_sphere_digest: "8731754bb289b4f05f8a35ab52ad66e91b0fc8585151138bd812754172e51922"
+    expected_digest: "ef9fa85b0cc02aef77f9ed63e3fb5406400a8fec6cc8aaceceb1808dd3b3e7ff"
+    expected_sphere_digest: "dad9f24542bb062c9c512d1015c871f49ba594d6f953e7610c951f2ed73e6415"
   - settings: { mode.state: open, goal: fast_ganon, grass_shuffle: all, accessibility: items }
     seed: "0x4752415353000002"
     label: "terrain-grass-all"
-    expected_digest: "4def2c55bf5e8d139cf935f2cbcb74532c9a5f8e85b6dbe74e4dd642251b2033"
-    expected_sphere_digest: "ca006902d7f041b62ae45e127399e8c42a3d3c5b2e51ac0d2b6d051353003416"
+    expected_digest: "80fb6fe6d7f2d0cfd47bed9749ab34bad58bc5cd7958fb2c89995fc9ff8ff9c2"
+    expected_sphere_digest: "19d4db41d21a60da8f4dd96fb5748f0cb2e8053f5376b7c6143d6a6db0bf61f2"
   - settings: { mode.state: open, goal: fast_ganon, rock_shuffle: junk, accessibility: items }
     seed: "0x524F434B00000001"
     label: "terrain-rock-junk"
-    expected_digest: "1737a4a031acfd8cc5bd0727a9cd6f16a39249a31ed5d8026dff4111becbcc54"
-    expected_sphere_digest: "4c93db0a451c938cfd35c95ef2fec642f1243ff5c4b0b1e6e3961af4c72fdf5a"
+    expected_digest: "7a9f87dca21bf75391e3d8fd955f46545604349a5dd6bc8ed7305d0c2c6976b6"
+    expected_sphere_digest: "33a995f36d0011be854113ddef2d6b7a208963df3d7cbf563e851b9ec5ae6d09"
   - settings: { mode.state: open, goal: fast_ganon, rock_shuffle: all, accessibility: items }
     seed: "0x524F434B00000002"
     label: "terrain-rock-all"
-    expected_digest: "1cff98f2b7ef8e96962296bb8263c9d484757faf5e7fd60ed733e81c2ce43751"
-    expected_sphere_digest: "5d84ddb469be2b2c8d2508937e7f8013b596be9a6c75f59f0b48c0d6d5b4a438"
+    expected_digest: "161e00f16323bf1515179fd7c15615aab2ce3696fbe90cd4570613c7a6cdfa0e"
+    expected_sphere_digest: "8caa686b068d733b80cab615b74699520d6c9a76746f70626565df662e8e1742"
   - settings: { mode.state: open, goal: fast_ganon, grass_shuffle: all, rock_shuffle: all, accessibility: items }
     seed: "0x4752524F434B0003"
     label: "terrain-grass-rock-all"
-    expected_digest: "b73cdcb349b6ce00326a300a08d068d05e6ab5e9eee4d66bc73cbbadb7f1d91f"
+    expected_digest: "4cce69a6ae6c8348830074922ed8ba89f986bfa15280e4bc5d8588681bd2819c"
     expected_sphere_digest: "fd292d0b54a16ecd401770b3bdd530104632a2652a31a10ec6689a575c44fa8c"
   - settings: { mode.state: retro, goal: ganon, grass_shuffle: all, rock_shuffle: all }
     seed: "0x4752524F434B0004"
@@ -1176,8 +1176,8 @@ entries:
   - settings: { mode.state: inverted, goal: fast_ganon, grass_shuffle: all, rock_shuffle: all, accessibility: items }
     seed: "0x4752524F434B0005"
     label: "terrain-inverted"
-    expected_digest: "acd659f5607015ec55c6218d1a78de53d9be69ebb6d4cc4d7f6a8ae4ca9587a4"
-    expected_sphere_digest: "2f79b272fe8b623b1111ec4ade9fa24a0604015b71288013d89500fc42d1baf5"
+    expected_digest: "6bad6064a5d6d16f28b93a1a92f5c77ba94a662fb45277524f75a776eaa30db2"
+    expected_sphere_digest: "f05579a324d36fd99478bf3aa80b8d27a31f5f13fad89c0bbdf93003b228f4c3"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, door_shuffle: basic, grass_shuffle: all, rock_shuffle: all }
     seed: "0x4752524F434B0006"
     label: "terrain-door-basic-composes"
@@ -1186,8 +1186,8 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, grass_shuffle: all, rock_shuffle: all }
     seed: "0x4752524F434B0007"
     label: "terrain-cave-entrance-composes"
-    expected_digest: "7900355b2c195681ae169c4540d74f41e1bf0883c86a321b9e63a39f30e51ad0"
-    expected_sphere_digest: "3da5bdc14d7eb89cea947ca498b1aeff3eff9186a65ef12f7d00849ea96506b1"
+    expected_digest: "3080e36a97fff0efe7b41a9f2c8b9e69168fb3d99935286a5495878c7891aa89"
+    expected_sphere_digest: "801d18d41e206d0c0e101ad09bef334825db7e649e3b07068e4256b7ee42b8f0"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, enemy_drop_checks: keys, grass_shuffle: all, rock_shuffle: all }
     seed: "0x4752524F434B0008"
     label: "terrain-enemy-drop"
@@ -1199,9 +1199,9 @@ entries:
     expected_digest: "7a1395e97a9020ab2453b1b560eefb3d7c742264e86efce8856d43e1bd1f2373"
     expected_sphere_digest: "a4749ee01134a7bb4577a36b079892e0ea2a1ad1ebb8c0295bbdb64f20867838"
   - settings: { mode.state: standard, goal: "triforce-hunt", pieces_required: 20, pieces_placed: 30, grass_shuffle: all, rock_shuffle: all, accessibility: none }
-    seed: "0x4752524F434B000C"
+    seed: "0x4752524F434B000D"
     label: "terrain-hunt-all-none"
-    # Seed reselected 000A->000C: triforce-hunt + grass+rock=all + accessibility=none
+    # Seed reselected 000A->000C->000D: triforce-hunt + grass+rock=all + accessibility=none
     # is an inherently marginal composition (~44% of random seeds are 20-piece
     # beatable — junk dilution across the ~3981 terrain locations under the
     # beatable-only tier lets the assumed fill strand progression). The +38
@@ -1209,8 +1209,8 @@ entries:
     # shifted the RNG stream and tipped the old 000A seed from beatable to not;
     # 000C generates the same composition robustly. Same class as any marginal
     # hunt seed — reselect on a future re-roll (see the hunt-goal note above).
-    expected_digest: "3b8ab91c3c26d5d104200cbf5907526eec6ac22bd16d88d3ac2b61ef20edc9d1"
-    expected_sphere_digest: "bf0bf2b925306ba880db3923fbd3834787bd93b60a6bcafc8a99239f222f9ea5"
+    expected_digest: "62b3e45b1ca6c712463f27eaf41d461d51d8c8b8749f8dffe583106843cd70a3"
+    expected_sphere_digest: "592b7e192a7ecab1ef25a582aab2f7195c762caed6e62025b787d8b5c0730714"
 
 # Celebrity-seed candidates (task 12.2) — these are the named seeds we plan
 # to capture once the generator stabilizes. Listed here as comments so the

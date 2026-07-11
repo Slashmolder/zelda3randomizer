@@ -17,8 +17,8 @@ header-dep tracking → `make clean` after any `features.h`/`config.h` edit).
   `kFeatures0_RandoSeedQolMask`. Leave F5 out of the mask (local/race);
   bit 21 remains reserved for the deferred F2 overlay.
 - [x] 0.2 Add the `text_speed` global selector to `src/config.{c,h}` +
-  `zelda3.ini` parsing (F3 draw speed), and the `kKeys_WarpToSpawn` /
-  `kKeys_SoftResetToSpawn` command IDs to the `kKeys_*` enum + `kDefaultKbdControls[]` +
+  `zelda3.ini` parsing (F3 draw speed), and the `kKeys_WarpToSpawn` command ID to
+  the `kKeys_*` enum + `kDefaultKbdControls[]` +
   `kKeyNameId[]` (keep the enum/array lock-step assert green).
 - [x] 0.3 `make clean` + build (`-Werror`) + `--rando-selftest` green; **corpus
   byte-identical, no `kGeneratorVersion` bump** (no registry/settings change). This
@@ -32,10 +32,21 @@ header-dep tracking → `make clean` after any `features.h`/`config.h` edit).
   `g_ram`).
 - [x] 1.2 Draw the per-dungeon remaining count on the Module 0x0E dungeon map,
   gated on `kFeatures0_RandoDungeonCheckCounts` + rando-active; counts only.
-- [ ] 1.3 (Phase 2) Add located-check dots using a location→map-cell mapping, gated
-  the same way; ship after 1.2 is validated.
-- [ ] 1.4 Build + **playtest**: counts update as a dungeon's checks are collected;
+- [x] 1.3 Defer located-check dots to a separate Phase 2 change. The validated
+  count-only map is the shipping F1 scope; dots require a new location→map-cell
+  data model and are not a close-out gate for this change.
+- [x] 1.4 Build + **playtest**: counts update as a dungeon's checks are collected;
   race-mode shows counts only (no item names); off/non-rando renders vanilla.
+  <!-- owner playtest 2026-07-10: Hyrule Castle room 0x72 showed no count even
+  with its map. F12 dump confirmed cur_palace_index_x2=0x0002 (game dungeon
+  Hyrule Castle proper), which the generic game->rando mapping intentionally
+  leaves unmapped. The map-display path now folds only that live slot into the
+  Hyrule Castle Escape / Sewers check bucket. First owner retest exposed the
+  counter's assumed digit range: remaining=8 emitted OBJ char 0x26, which the
+  F12 OAM/VRAM dump proved is a map-border tile (the sheet has only digits 1..8
+  at 0x1e..0x25). The map now uploads a complete 0..9 font to map-only rando
+  scratch chars 0xf0..0xf9. Owner retest reports maps working after the fix,
+  including the enabled and disabled paths. -->
 
 ## 2. F2 — In-game seed info panel — deferred — D3
 
@@ -54,16 +65,18 @@ header-dep tracking → `make clean` after any `features.h`/`config.h` edit).
   `ZeldaIsEmulatorAttached()`** so the side-by-side comparator stays clean on both paths.
 - [x] 3.2 Clamp the `ancilla_aux_timer` get-holds in `AncillaAdd_ItemReceipt` under
   `kFeatures0_FastFanfare`, keeping the grant otherwise byte-identical.
-- [ ] 3.3 Build + **playtest incl. hint-readability check**: at `instant`, dialogue
+- [x] 3.3 Build + **playtest incl. hint-readability check**: at `instant`, dialogue
   fills instantly but a hint tile / telepathy / rando hint still waits for input and
   is readable; item/key/map/compass gets advance faster with identical effect.
+  <!-- owner confirmation 2026-07-11: instant text and fast item receipts work;
+  hint/telepathy text remains readable and waits for input. -->
 
 ## 4. F4 — Cutscene & transition fast-forward (skip animation, never flag) — D5
 
-- [ ] 4.1 Add per-cutscene dwell-compression gated on
-  `kFeatures0_CutsceneFastForward`, one commit per sequence:
-  prize-get, GT crystal barrier, pyramid-opening, Agahnim intro (KillAgahnim),
-  Zelda escort, death/game-over fade (`Module12_GameOver`). Compress submodule
+- [x] 4.1 Add per-cutscene dwell-compression gated on
+  `kFeatures0_CutsceneFastForward`: post-prize victory, GT crystal-barrier final
+  dwell, pyramid opening, post-Agahnim defeat transition (`KillAgahnim`), and
+  death/game-over pre-menu holds (`Module12_GameOver`). Compress submodule
   dwell / zero per-stage timers — never jump past a flag-setting stage.
 - [x] 4.1a Add a story-dialogue allowlist for Standard intro / Uncle / Zelda escort /
   Sanctuary / post-Agahnim messages that auto-advances `Waitkey` and end-message pages
@@ -72,11 +85,21 @@ header-dep tracking → `make clean` after any `features.h`/`config.h` edit).
 - [x] 4.2 Add mirror-warp + flute-travel **animation** speed-up (visual submodule
   chain only); leave `MirrorWarp_FinalizeAndLoadDestination` (position/camera/music)
   untouched. Do NOT change screen-scroll timing.
-- [ ] 4.3 Build + **F12 flag-preservation compare per cutscene**: dump `g_ram`/SRAM
-  after a fast-forwarded sequence and after the vanilla sequence — they MUST match
-  (esp. `sram_progress_indicator`, `link_has_crystals`). Any cutscene that can't be
-  sped without stage-skipping is DROPPED from scope, not shipped. Playtest the
-  downstream triggers (reload after a skipped Agahnim/escort behaves identically).
+- [ ] 4.3 Build + **F12 settled-state preservation compare per cutscene**: at the
+  same stable checkpoint, compare the live save block, serialized SRAM, randomizer
+  checked bitmap, progression flags, and destination/player state. Ignore the FF
+  feature bit, frame counter, animation/audio timers, and render scratch that must
+  differ when fewer frames execute. Any cutscene that can't be sped without
+  stage-skipping is DROPPED from scope, not shipped. Playtest downstream triggers
+  (reload after the post-Agahnim transition/Zelda escort behaves identically).
+  <!-- owner partial 2026-07-11: flute travel completed, but the fast destination
+  arc made the bird and Link disappear briefly. The F12 capture identified Z-height
+  wrap from the accelerated vertical velocity; the arrival arc now stays vanilla
+  while the surrounding fast dwell/fade remains enabled. Retest passed: bird and
+  Link remain visible through the accelerated flight. Owner confirms the full visible
+  cutscene matrix was tested. F12 now also emits the complete 8 KiB SRAM image and
+  heap-resident randomizer checked bitmap; only the paired fast-vs-vanilla semantic
+  state comparison remains. -->
 
 ## 5. F5 — Quick reset / warp-to-spawn (race-toggleable) — D6
 
@@ -84,8 +107,7 @@ header-dep tracking → `make clean` after any `features.h`/`config.h` edit).
   `Death_Func15` save-and-quit branch already lands at `which_starting_point` via the
   `kStartingPoint_*[]` loader (`src/dungeon.c` ~:8835-8864). Drive that SAME
   save-then-load-start sequence (or call the start-point loader after a save); do NOT
-  divert/re-derive the branch. Trigger from `kKeys_WarpToSpawn` /
-  `kKeys_SoftResetToSpawn` under
+  divert/re-derive the branch. Trigger from `kKeys_WarpToSpawn` under
   `kFeatures0_WarpToSpawn` + rando-active + `Rando_HasActiveSettings()`. Off = vanilla S&Q.
 - [x] 5.1a **Flag audit (load-bearing):** enumerate every flag `Death_Func15` sets /
   clears / consumes (`death_var4/5`, `savegame_is_darkworld`, `sram_progress_indicator`,
@@ -93,8 +115,12 @@ header-dep tracking → `make clean` after any `features.h`/`config.h` edit).
   exact post-S&Q state — this is the CLAUDE.md Dark Chapel bug class; a stale flag
   corrupts the NEXT spawn/transition.
 - [x] 5.2 Add the Game Settings toggle + keybind with the **race-legality note**.
-- [ ] 5.3 Build + **playtest**: warp returns to the correct spawn without file-select;
+- [x] 5.3 Build + **playtest**: warp returns to the correct spawn without file-select;
   save consistent; disabled = vanilla S&Q with no hotkey.
+  <!-- owner partial 2026-07-11: enabled action returned to the slot spawn at Link's
+  House without file-select; disabled hotkey correctly did nothing; items collected
+  before warping remained collected. The redundant second spawn alias discovered
+  during this playtest was removed from the keymap, UI, runtime dispatch, and spec. -->
 
 ## 6. F6 — Auto / hold-to-dash — D7
 
@@ -103,8 +129,10 @@ header-dep tracking → `make clean` after any `features.h`/`config.h` edit).
   NOT `LinkState_Dashing`'s active-dash counter). Under `kFeatures0_AutoDash`,
   short-circuit the charge wait there **without perturbing the shared sword spin-charge
   path** (JP-glitch faithfulness); compose with `kFeatures0_TurnWhileDashing`.
-- [ ] 6.2 Build + **playtest**: hold-dash triggers without the charge wait; off =
+- [x] 6.2 Build + **playtest**: hold-dash triggers without the charge wait; off =
   vanilla boots.
+  <!-- owner confirmation 2026-07-11: enabled boots/auto-dash behavior works and
+  disabling it restores the vanilla charge behavior. -->
 
 ## 7. F7 — Entrance/door connection feed to the auto-tracker — D8
 
@@ -113,9 +141,18 @@ header-dep tracking → `make clean` after any `features.h`/`config.h` edit).
   override tables; emit only non-vanilla, already-traversed connections;
   observation-only; empty under a non-shuffled seed. The key is **purely additive**
   (no snapshot schema-version bump); document it with the existing snapshot keys.
-- [ ] 7.2 Build + **playtest with an external client**: traversing a shuffled
+- [x] 7.2 Build + **playtest with an external client**: traversing a shuffled
   entrance reports its destination in the feed; no in-game overlay; a non-shuffled
   seed emits no connection data.
+  <!-- owner CLI playtest 2026-07-11 exposed a stale 128 KiB handshake-buffer
+  assumption: the 6,356-location catalog overflowed it and the server immediately
+  dropped every subscriber. The client backlog now grows on demand to a bounded
+  ceiling. Retest passed the door-shuffle half: successive Eastern Palace traversals
+  emitted stable directed rows 99->111, 112->74, and 76->93 with names, with no
+  entrance rows. Entrance-shuffle retest also passed: traversals emitted door-row 7
+  (entrance 8->53) and row 8 (9->36), with no dungeon-door rows. The non-shuffled
+  control also passed across multiple active-slot reloads: both arrays remained empty;
+  inactive snapshots correctly omitted the fields. -->
 
 ## 8. Close-out — D1, D9
 

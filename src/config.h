@@ -56,10 +56,9 @@ enum {
   // Unconditional enum entry (keymap table index stability); the handler in
   // main.c is gated by Z3R_NATIVE_SETTINGS_WINDOW and no-ops on Switch.
   kKeys_OpenSettings,
-  // Seed QoL local actions. Default unbound; point-of-use handlers are gated by
+  // Seed QoL local action. Default unbound; the point-of-use handler is gated by
   // their kFeatures0_* toggles so an unbound/off config is vanilla.
   kKeys_WarpToSpawn,
-  kKeys_SoftResetToSpawn,
   // Developer diagnostic dump (g_ram/VRAM/OAM/CGRAM + hint state + a state line).
   // Default F12; rebindable, and clearing the binding disables the hotkey. Also
   // triggerable from the Debug tab button. Handler is in main.c.

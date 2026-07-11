@@ -95,12 +95,13 @@ locations:
     source: "app/Region/Standard/DesertPalace.php:56"
 
   # DP - Torch (php:88-90): has(PegasusBoots) → our Boots.
-  # Location\Dash type — requires the pegasus-boots dash to grab.
+  # Location\Dash type — requires the pegasus-boots dash to grab; the
+  # vanilla reward is Desert Palace's small key.
   - id: "Desert Palace - Torch"
     name: "Desert Palace - Torch"
     region: DesertPalace_Lobby
     type: Dash
-    vanilla_item: PowerGlove
+    vanilla_item: SmallKey_DesertPalace
     can_reach: "HAS_ITEM(Boots)"
     source: "app/Region/Standard/DesertPalace.php:88-90"
 

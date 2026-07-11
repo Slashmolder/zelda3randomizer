@@ -3347,6 +3347,27 @@ void Placement_SelfCheck(void) {
     selfcheck_die("placement digest collision on different items");
   }
 
+  // The Desert bonk torch is the sole placed Desert small key in vanilla-key
+  // mode. If its registry metadata drifts to the Boots reach requirement (the
+  // historical bug), the vanilla pre-pin misses it and a random item can strand
+  // the player behind Desert's key door.
+  {
+    const RandoLocationDef *desert_torch = NULL;
+    for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+      if (kRandoLocations[i].id == LOC_Desert_Palace_Torch) {
+        desert_torch = &kRandoLocations[i];
+        break;
+      }
+    }
+    if (desert_torch == NULL ||
+        desert_torch->vanilla_item_id != ID_SmallKey_DP)
+      selfcheck_die("Desert Palace torch must carry its vanilla small key");
+    RandoSettings vanilla_keys;
+    Settings_SetDefaults(&vanilla_keys);
+    if (!location_is_prepinned(desert_torch, &vanilla_keys))
+      selfcheck_die("Desert Palace torch must be pinned in vanilla-key mode");
+  }
+
   // BuildItemPool: with default settings (Open), pool size equals the count
   // of FILLABLE locations active in the Open world-state — i.e. excluding
   // TakeAny slots and the slots the §3b pre-place pass pins (prizes, events,

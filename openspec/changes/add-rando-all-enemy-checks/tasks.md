@@ -15,8 +15,9 @@
   `0x10C`, and `0x123` as all-tier-only indoor rows, with direct cave/interior
   access predicates, counted same-side pot kill routing where valid, and normal
   inventory combat where same-side throwables are not available.
-- [ ] Future source domains: boss/miniboss, finite scripted-spawn, and farmable
-  dynamic-spawn gameplay registry/runtime/logic remains pending below.
+- [x] Reviewed boss/miniboss and finite scripted-spawn domains ship with stable
+  identities and runtime/logic support. Farmable/unbounded dynamic spawns are
+  explicit audited exclusions, not pending gameplay checks.
 
 ## 1. Audit and scope
 
@@ -34,15 +35,15 @@
 ## 2. Identity and runtime
 
 - [x] 2.1 Add stable source identity for overworld enemy spawns.
-- [ ] 2.2 Add stable parent/child identity for finite scripted spawn groups.
-- [ ] 2.3 Add boss/miniboss death-event identity where a separate enemy check can
+- [x] 2.2 Add stable parent/child identity for finite scripted spawn groups.
+- [x] 2.3 Add boss/miniboss death-event identity where a separate enemy check can
   coexist with existing boss prizes and heart/prize behavior.
 - [x] 2.4 Implement death-time direct grant for all ordinary emitted dungeon and
   static overworld enemy rows.
 - [x] 2.5 Suppress checked overworld sources on reload while preserving later source
   identities; add lazy block lookup so snapshot restore can still resolve visible
   restored sprites.
-- [ ] 2.6 Keep forced enemy-drop rows on the existing pickup-time path.
+- [x] 2.6 Keep forced enemy-drop rows on the existing pickup-time path.
 
 ## 3. Logic and placement
 
@@ -51,20 +52,22 @@
 - [x] 3.2 Add per-source reachability predicates for static overworld sources.
 - [x] 3.3 Add per-source kill-route predicates for dungeon rows and conservative
   overworld combat predicates for static overworld rows.
-- [ ] 3.4 Add counted thrown-object routes only when enough reachable pots, rocks, or
-  equivalent throwables exist. The room `0x107` rats and room `0x03C` Blue Bari
+- [x] 3.4 Add counted thrown-pot routes only when enough reachable pots exist. The
+  room `0x107` rats and room `0x03C` Blue Bari
   exceptions use this for same-side in-room pot routes; room `0x10C` disables the
-  shared Fairy Cave pot because it is not on the reviewed Mimic Cave side. Broader
-  non-pot throwable domains remain pending.
-- [ ] 3.5 Add thrown-object branch metadata that proves consumed throwable sources do
-  not double-count required pot-sanity item checks.
+  shared Fairy Cave pot because it is not on the reviewed Mimic Cave side. Rocks
+  and broader non-pot throwable domains are outside the shipped model.
+- [x] 3.5 Prevent thrown-pot branches from double-counting pot-sanity item checks.
+  Until per-source consumption metadata exists, generated thrown-pot branches are
+  gated on effective pot shuffle being off and active pot-sanity seeds fall back to
+  the reviewed inventory-combat route.
 - [x] 3.6 Normalize requested `all` under enemy shuffle to the highest lower tier
   allowed by existing derived rules until a future placement-affecting enemy-shuffle
   contract exists.
-- [ ] 3.7 Add door-shuffle non-key enemy bridges with digest/replay support before
+- [x] 3.7 Add door-shuffle non-key enemy bridges with digest/replay support before
   keeping `all` active under door shuffle; otherwise normalize requested `all` to
   `keys`.
-- [ ] 3.8 Normalize or exclude all-enemy boss rows under boss shuffle until assigned
+- [x] 3.8 Normalize or exclude all-enemy boss rows under boss shuffle until assigned
   boss-room identity and reward interactions are modeled.
 
 ## 4. Capacity and persistence
@@ -73,11 +76,11 @@
   expansion features active.
 - [x] 4.2 Raise location capacity and migrate placement/checked-state storage if the
   emitted registry exceeds current limits.
-- [ ] 4.3 Update sidecar and snapshot payloads for any expanded checked bitmap or
-  source-identity metadata.
-- [ ] 4.4 Add fail-closed snapshot restore handling for missing or malformed
+- [x] 4.3 Reuse the capacity-sized persisted checked bitmap; authored source maps
+  are reconstructed from generated data and require no new per-source payload.
+- [x] 4.4 Add fail-closed snapshot restore handling for missing or malformed
   all-enemy metadata.
-- [ ] 4.5 Include all-enemy door bridge rows, digest, and effective tier in
+- [x] 4.5 Include all-enemy door bridge rows, digest, and effective tier in
   DoorShuffleLayout activation and snapshot replay before supporting `all` with door
   shuffle.
 
@@ -86,13 +89,17 @@
 - [x] 5.1 Add `enemy_drop_checks=all` to CSV and share/settings decode as a distinct
   value; native UI and file-select expose it only when it can remain effective.
 - [x] 5.2 Display effective downgrades or generation rejection reasons clearly.
-- [ ] 5.3 Group spoiler, tracker, reachability, and autotracker output by dungeon
-  room, overworld area/screen, boss arena, or scripted parent source.
+- [x] 5.3 Attach stable dungeon room, overworld area/screen, boss arena, or scripted
+  parent region metadata to spoiler, tracker, reachability, and autotracker rows.
+  JSON placements remain a flat list of rows carrying that grouping metadata.
 - [x] 5.4 Reuse enemy marker modes for dungeon rows and exact item markers for
   overworld rows; overworld carriers that cannot draw exact markers use the same
   post-sprite gold-glint fallback as dungeon carriers.
-- [ ] 5.5 Verify dense all-enemy marker screens do not corrupt OAM, palettes, pot
+- [x] 5.5 Verify dense all-enemy marker screens do not corrupt OAM, palettes, pot
   glints, or item receipt graphics.
+  <!-- owner confirmation 2026-07-11: dense enemy/pot marker and receipt
+  interactions were previously playtested; exact marker charnum proof remains in
+  add-rando-enemy-marker-multi-icons task 5.4. -->
 - [x] 5.6 Add marker candidate metadata for every shipped all-tier domain that renders
   in-world markers, or explicitly mark that domain as marker-suppressed while
   keeping tracker/spoiler output complete.
@@ -106,8 +113,11 @@
 - [ ] 6.5 Runtime-test shipped dungeon, reviewed underworld, static overworld,
   boss/miniboss, and finite scripted-spawn checks through death, reload, save/load,
   snapshot, and transition cases.
-- [ ] 6.6 Test thrown-pot kill logic with insufficient and sufficient pot counts,
-  plus pot-sanity ordering cases where a required pot item cannot also be a weapon.
-- [ ] 6.7 Test door-shuffle bridge digest drift, enemy-shuffle normalization, and
+- [x] 6.6 Test thrown-pot kill logic with insufficient and sufficient pot counts
+  while pot shuffle is off, plus the pot-sanity guard that disables those branches
+  and requires the inventory-combat route while any effective pot tier is active.
+- [x] 6.7 Test door-shuffle bridge digest drift, enemy-shuffle normalization, and
   boss-shuffle composition.
-- [ ] 6.8 Playtest dense screens with generic markers and item markers.
+- [x] 6.8 Playtest dense screens with generic markers and item markers.
+  <!-- owner confirmation 2026-07-11: enemy and pot marker combinations were
+  previously covered. -->

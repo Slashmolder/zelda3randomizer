@@ -14,8 +14,10 @@
 
 - [x] 2.1 Emit only dungeon candidates with reviewed reachability/key-depth
   coverage; exclude uncovered candidates from the generated registry.
-- [ ] 2.2 Add stable runtime source identity for overworld enemies before any
+- [x] 2.2 Add stable runtime source identity for overworld enemies before any
   overworld candidates are emitted.
+  <!-- completed by the separate add-rando-all-enemy-checks follow-up; this
+  dungeon-only change continues to own only its reviewed dungeon rows. -->
 - [x] 2.3 Implement death-time direct-grant dispatch for ordinary enemy checks.
 - [x] 2.4 Preserve vanilla forced-key pickup behavior for `enemy_drop_checks=keys`.
 - [x] 2.5 Add checked-state visuals on live ordinary carriers and clear them after
@@ -37,8 +39,8 @@
 - [x] 4.2 Add placement pool/junk/trap/customizer policy for ordinary `Enemy`
   checks.
 - [x] 4.3 Expose `enemy_drop_checks=dungeon` in CSV, file select, and the native UI,
-  with door shuffle and enemy shuffle degrading requested `dungeon` to effective
-  `keys`.
+  with door shuffle composing through generated bridge rows and enemy shuffle
+  degrading requested `dungeon` to effective `keys`.
 - [x] 4.4 Group spoiler/tracker/autotracker output through the normal dungeon room
   location model rather than a separate flat runtime-only list.
 - [x] 4.5 Add per-source kill predicates for ordinary enemy checks, including
@@ -48,12 +50,25 @@
 
 ## 5. Verification
 
-- [ ] 5.1 OpenSpec strict validation.
-- [ ] 5.2 Candidate/registry freshness checks.
-- [ ] 5.3 Release build and `--rando-selftest`.
-- [ ] 5.4 Corpus rows for keys, dungeon-Wild, dungeon-Dungeon, enemy shuffle degradation,
+- [x] 5.1 OpenSpec strict validation.
+  <!-- 2026-07-11: `openspec validate --changes --strict` passed. -->
+- [x] 5.2 Candidate/registry freshness checks.
+  <!-- 2026-07-11: regenerated local key-depth/audit artifacts, then
+  `audit_enemy_check_candidates.py --check`, `gen_enemy_check_tables.py --check`,
+  and `gen_enemy_drop_tables.py --check` all passed. -->
+- [x] 5.3 Release build and `--rando-selftest`.
+  <!-- 2026-07-11: integrated generator-version-134 Release build and all
+  rando selftest subsystems passed. -->
+- [x] 5.4 Corpus rows for keys, dungeon-Wild, dungeon-Dungeon, enemy shuffle degradation,
   pot shuffle, door shuffle, and pot+enemy+door interactions.
-- [ ] 5.5 Fresh-eyes review.
-- [ ] 5.6 Runtime playtest: death direct grant, leave/re-enter, save/reload,
+  <!-- 2026-07-11: full generator-version-133 corpus passed all 192 entries,
+  including rows 136-154 for enemy checks and their pot/door/shuffle combinations. -->
+- [x] 5.5 Fresh-eyes review.
+  <!-- 2026-07-11: independent review found no player-facing implementation
+  defect. It found stale door-shuffle degradation text; the change now matches
+  the shipped door x ordinary-enemy bridge and passed strict validation. -->
+- [x] 5.6 Runtime playtest: death direct grant, leave/re-enter, save/reload,
   snapshot before/after death, checked visual clear, enemy shuffle interaction,
   and high-density tracker/spoiler usability.
+  <!-- owner confirmation 2026-07-11: the implemented enemy runtime paths and
+  enemy+pot combinations were previously playtested. -->

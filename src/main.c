@@ -2684,7 +2684,6 @@ static void HandleCommand_Locked(uint32 j, bool pressed) {
 #endif
       break;
     case kKeys_WarpToSpawn:
-    case kKeys_SoftResetToSpawn:
       WarpToSpawn_Try();
       break;
     // Developer state dump (g_ram/VRAM/OAM/CGRAM + hint state + a state line to

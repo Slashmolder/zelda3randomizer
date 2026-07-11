@@ -8,7 +8,7 @@ logic, persistence, and tracker grouping are implemented.
 #### Scenario: Dungeon tier is available
 - **WHEN** the native window or file-select settings present enemy-drop checks
 - **AND** effective small keys support enemy-drop checks
-- **AND** neither door shuffle nor enemy shuffle is active
+- **AND** enemy shuffle is inactive (door shuffle is supported)
 - **THEN** they offer `off`, `enemy key drops`, and `dungeon enemies`
 
 #### Scenario: Effective value is downgraded

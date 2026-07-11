@@ -66,6 +66,10 @@ def read_version(header: Path) -> int | None:
 
 def read_version_at(header_relpath: str, sha: str) -> int | None:
     """Read kGeneratorVersion as it was at a given git SHA. Returns None on missing."""
+    # `git show <sha>:<path>` always uses repository-style forward slashes.
+    # Path.__str__ emits backslashes on Windows, which made this gate silently
+    # treat the existing header as absent and skip the required bump check.
+    header_relpath = header_relpath.replace("\\", "/")
     try:
         out = subprocess.run(
             ["git", "show", f"{sha}:{header_relpath}"],
@@ -194,7 +198,7 @@ def main(argv: list[str]) -> int:
         return 1
 
     if not args.quiet:
-        print(f"check_generator_version: bump OK ({base_version} → {head_version}).")
+        print(f"check_generator_version: bump OK ({base_version} -> {head_version}).")
     return 0
 
 

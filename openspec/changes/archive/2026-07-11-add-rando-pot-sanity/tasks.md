@@ -158,7 +158,7 @@ corpus and `--rando-selftest`). Decision labels (D1…) reference `design.md`.
 - [x] 6.2 Fresh-eyes audit (independent reviewer) over the committed diff, briefed on
   the dominant bug class + D3 (key-pot dup) + D9 determinism + D5 capacity + D8
   falsely-in-logic; ask for NEW findings. Do not self-review as the final pass.
-- [ ] 6.3 **Owner end-to-end playtest (load-bearing):** each tier — key-pot (key
+- [x] 6.3 **Owner end-to-end playtest (load-bearing):** each tier — key-pot (key
   shuffles; **re-enter room + re-break → NO duplicate key** regression); item-pot
   re-break (vanilla drop, no re-grant); empty-pot (`All`, Literally Nothing);
   gold glint + clears-on-check (and the sprite-palette-row collision check); a
@@ -171,7 +171,7 @@ corpus and `--rando-selftest`). Decision labels (D1…) reference `design.md`.
     shuffles wild; no key-pot duplicate was observed, and the gold glint looked good.
     Retro/Inverted pot seeds and a dungeon-keys-specific pot seed are intentionally
     tabled for later playtest.
-  - [ ] **task #25 (§7) addendum:** a **dungeon-keys + `pot_shuffle = all`** seed — beat
+  - [x] **task #25 (§7) addendum:** a **dungeon-keys + `pot_shuffle = all`** seed — beat
     a couple of dungeons; key pots grant SHUFFLED items, the dungeon's keys can sit in
     other in-dungeon locations, and nothing strands (the dungeon under-gate is invisible
     to `--generate-seed`). Plus a **wild-keys + pot** seed.
@@ -211,8 +211,9 @@ path was superseded by the archived door-pot integration baseline.
   0-refuse matrix at `accessibility=items` across keys/all × goals × worlds; all CI
   guards green.
 - [x] 7.7 Fresh-eyes independent review (0 findings, end-to-end re-validated).
-- [ ] 7.8 **Owner playtest** a dungeon+pot seed — see 6.3 addendum (the only correctness
-  gate the generator cannot cover).
+- [x] 7.8 **Owner playtest** a dungeon+pot seed — see 6.3 addendum (the only correctness
+  gate the generator cannot cover). <!-- owner confirmation 2026-07-11: dungeon keys,
+  wild keys, enemy interactions, and pot combinations were covered. -->
 
 ## 8. Post-ship audit fixes (owner playtest + sibling-class sweeps; kGen 92→95)
 
