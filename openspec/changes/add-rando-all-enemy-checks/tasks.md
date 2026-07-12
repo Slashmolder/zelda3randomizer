@@ -113,6 +113,12 @@
 - [ ] 6.5 Runtime-test shipped dungeon, reviewed underworld, static overworld,
   boss/miniboss, and finite scripted-spawn checks through death, reload, save/load,
   snapshot, and transition cases.
+  <!-- owner playtest 2026-07-11: Eastern room 0x0D8 Red Eyegore source slot 8
+  showed no marker and dropped its vanilla 10-arrow bundle. F12 confirmed type
+  0x84 had no generated check because the audit incorrectly treated enemy-shuffle
+  eligibility as the definition of all-tier eligibility. Red Eyegores are now
+  curated all-tier-only static checks with Bow-specific logic and Eyegore soul
+  behavior; final owner retest remains. -->
 - [x] 6.6 Test thrown-pot kill logic with insufficient and sufficient pot counts
   while pot shuffle is off, plus the pot-sanity guard that disables those branches
   and requires the inventory-combat route while any effective pot tier is active.

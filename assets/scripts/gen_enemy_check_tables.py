@@ -61,6 +61,19 @@ from gen_soul_tables import enemy_soul_by_species  # noqa: E402
 # degrades to Keys there), so the vanilla source_type is authoritative.
 SOUL_BY_SPECIES = enemy_soul_by_species()
 
+# Static, finite, killable sources that are safe as one-shot all-tier checks but
+# deliberately absent from the enemy-shuffle replacement pool. Red Eyegores
+# have stable room/source-slot identity and a precise Bow kill predicate; not
+# being a safe generic shuffle replacement must not silently make them vanilla
+# in a setting named `all`.
+ALL_TIER_CHECK_ONLY_SOURCE_CONSTRAINTS = {
+    0x84: {
+        "name": "Red Eyegore",
+        "flags": ["ESF_KILLABLE"],
+        "sheets": [46],
+    },
+}
+
 
 def soul_term_for(source_type: int) -> str | None:
     tok = SOUL_BY_SPECIES.get(int(source_type))
@@ -625,7 +638,9 @@ OVERWORLD_REGIONS = {
 # The enemy-shuffle table establishes which source types are safe ordinary enemy
 # checks. This table tightens only source types whose real kill requirement is
 # proven narrower than the generic ALTTPR firepower predicate.
-SPECIAL_INVENTORY_KILL_PREDICATES = {}
+SPECIAL_INVENTORY_KILL_PREDICATES = {
+    0x84: "CanShootArrowsL1()",  # Red Eyegore deflects every non-arrow hit.
+}
 
 # Some sprite prep routines replace kSpriteInit_Health at runtime. Use the
 # maximum vanilla prep value so thrown-pot counts never understate HP.
@@ -1331,7 +1346,15 @@ def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
     all_tier_underworld_room_rows: dict[tuple[int, int], list[dict]] = {}
     all_scope_by_key = {dungeon_candidate_key(r): r for r in dungeon_all_rows}
     base_dungeon_keys = {dungeon_candidate_key(r) for r in dungeon_rows}
-    automatic_all_tier_keys = set(all_scope_by_key) - base_dungeon_keys
+    curated_check_only_keys = {
+        key for key, row in all_scope_by_key.items()
+        if int(row["source_type"]) in ALL_TIER_CHECK_ONLY_SOURCE_CONSTRAINTS
+    }
+    # Preserve every existing generated location id by appending newly curated
+    # check-only classes after all established domains rather than interleaving
+    # them into the room-sorted automatic all-tier block.
+    automatic_all_tier_keys = (
+        set(all_scope_by_key) - base_dungeon_keys - curated_check_only_keys)
     automatic_all_tier_no_key_depth = []
     automatic_all_tier_no_room_predicate = []
     emitted_by_room: Counter[int] = Counter()
@@ -1681,6 +1704,34 @@ def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
         rows.append(row)
         underworld_all_tier_emitted += 1
 
+    # Curated check-only source types are append-only. They are required to use
+    # an already modeled key-depth room/access predicate; otherwise generation
+    # fails instead of silently restoring the original "all but these" gap.
+    for key in sorted(curated_check_only_keys):
+        candidate = all_scope_by_key[key]
+        room_rows = by_room.get(key[0], [])
+        if not room_rows:
+            die(
+                "curated all-tier check-only source has no key-depth ROOM row: "
+                f"room=0x{key[0]:03x} slot={key[1]}")
+        best = best_room_key_depth(room_rows)
+        dungeon = int(best["dungeon"])
+        if dungeon not in SMALL_KEY_ITEMS or dungeon not in DUNGEON_REGIONS:
+            die(
+                "curated all-tier check-only source has unsupported dungeon: "
+                f"room=0x{key[0]:03x} slot={key[1]} dungeon={dungeon}")
+        reach = enemy_can_reach(
+            candidate, dungeon, pot_predicates, region_only_pot_rooms,
+            entry_room_predicates, pot_rows, pot_requirements)
+        if reach is None:
+            die(
+                "curated all-tier check-only source has no conservative room predicate: "
+                f"room=0x{key[0]:03x} slot={key[1]}")
+        append_key_depth_dungeon_row(
+            candidate, room_rows, best, dungeon, reach,
+            all_tier_only=True,
+            reviewed_binding_reason="curated_check_only_source_type")
+
     # Conservative pot-consumption guard. Every emitted throwable-pot branch
     # must carry the effective pots-off predicate both in its audit metadata
     # and in the compiled kill expression. This catches a future generator
@@ -1706,6 +1757,23 @@ def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
         for r in rows
         if "source_type" in r or "child_type" in r
     }
+    expected_check_only = {
+        dungeon_candidate_key(r)
+        for r in dungeon_all_rows
+        if int(r["source_type"]) in ALL_TIER_CHECK_ONLY_SOURCE_CONSTRAINTS
+    }
+    emitted_check_only = {
+        (int(r["room"]), int(r["source_slot"]))
+        for r in rows
+        if r.get("domain") == "dungeon" and
+           int(r.get("source_type", -1)) in ALL_TIER_CHECK_ONLY_SOURCE_CONSTRAINTS
+    }
+    if expected_check_only != emitted_check_only:
+        missing = sorted(expected_check_only - emitted_check_only)
+        extra = sorted(emitted_check_only - expected_check_only)
+        die(
+            "all-tier check-only source coverage drifted: "
+            f"missing={missing} extra={extra}")
     return {
         "format_version": 1,
         "_generated_by": "assets/scripts/gen_enemy_check_tables.py (do not hand-edit)",
@@ -1726,7 +1794,14 @@ def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
         },
         "policy": {
             "scope": "dungeon_plus_all-tier_static_overworld_reviewed_underworld_boss_and_finite_scripted",
-            "eligible_source_type": ["ESF_RANDOMIZABLE", "ESF_KILLABLE"],
+            "eligible_source_type": [
+                "ESF_RANDOMIZABLE + ESF_KILLABLE",
+                "curated static all-tier check-only source types",
+            ],
+            "all_tier_check_only_source_types": {
+                f"0x{typ:02X}": meta["name"]
+                for typ, meta in sorted(ALL_TIER_CHECK_ONLY_SOURCE_CONSTRAINTS.items())
+            },
             "excluded_source_type_flags": {
                 "dungeon": ["ESF_CANNOT_KEY", "ESF_FLYING"],
                 "dungeon_all_tier": [],
@@ -1773,6 +1848,7 @@ def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
             "emitted_underworld_all_tier_count": underworld_all_tier_total,
             "emitted_underworld_all_tier_automatic_count": automatic_all_tier_emitted,
             "emitted_underworld_all_tier_reviewed_count": underworld_all_tier_emitted,
+            "emitted_curated_check_only_count": len(curated_check_only_keys),
             "emitted_overworld_count": overworld_emitted,
             "emitted_boss_count": boss_emitted,
             "emitted_scripted_spawn_count": scripted_emitted,
@@ -1869,6 +1945,7 @@ def build_doc(args) -> dict:
         forced_sources,
         allow_cannot_key=True,
         allow_flying=True,
+        extra_source_constraints=ALL_TIER_CHECK_ONLY_SOURCE_CONSTRAINTS,
     )
     overworld_rows, _overworld_collisions, overworld_excluded_counts = collect_overworld_candidates(
         assets,

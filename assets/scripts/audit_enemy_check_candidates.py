@@ -92,7 +92,9 @@ def forced_drop_source_set(assets: dict[str, bytes]) -> set[tuple[int, int]]:
 def collect_dungeon_candidates(assets: dict[str, bytes], constraints: dict[int, dict],
                                forced_sources: set[tuple[int, int]],
                                *, allow_cannot_key: bool,
-                               allow_flying: bool) -> tuple[list[dict], Counter]:
+                               allow_flying: bool,
+                               extra_source_constraints: dict[int, dict] | None = None,
+                               ) -> tuple[list[dict], Counter]:
     try:
         sprites = assets["kDungeonSprites"]
         offsets = parse_u16le_array(assets["kDungeonSpriteOffs"])
@@ -114,9 +116,17 @@ def collect_dungeon_candidates(assets: dict[str, bytes], constraints: dict[int, 
             if (room, slot) in forced_sources:
                 excluded["existing_forced_key_drop_check"] += 1
                 continue
-            info = constraints.get(typ)
-            reason = exclusion_reason(info, allow_cannot_key=allow_cannot_key,
-                                      allow_flying=allow_flying)
+            # The enemy-shuffle table is the conservative default oracle, but
+            # an all-tier check may safely model a static source that is not a
+            # safe shuffle replacement. Callers must opt those source types in
+            # with their own reviewed constraint/name metadata.
+            extra_constraints = extra_source_constraints or {}
+            info = extra_constraints.get(typ, constraints.get(typ))
+            reason = (
+                None if typ in extra_constraints else
+                exclusion_reason(info, allow_cannot_key=allow_cannot_key,
+                                 allow_flying=allow_flying)
+            )
             if reason is not None:
                 excluded[reason] += 1
                 continue

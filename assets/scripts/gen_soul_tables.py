@@ -104,7 +104,7 @@ ENEMY_FAMILIES = [
     ("Rope",              [0x6E]),
     ("Keese",             [0x6F]),
     ("Leever",            [0x71]),
-    ("Eyegore",           [0x83]),
+    ("Eyegore",           [0x83, 0x84]),
     ("Gibdo",             [0x8B]),
     ("Pengator",          [0x99]),
     ("Wizzrobe",          [0x9B]),
@@ -143,6 +143,10 @@ def parse_randomizable_species() -> dict[int, str]:
 
 def build_and_check():
     species = parse_randomizable_species()
+    # These species are deliberately not enemy-shuffle replacements, but they
+    # are finite authored all-enemy checks and therefore still need their
+    # family's soul gate and runtime suppression behavior.
+    check_only_species = {0x84}  # Red Eyegore
 
     fam_by_species: dict[int, str] = {}
     for token, ids in ENEMY_FAMILIES:
@@ -153,13 +157,17 @@ def build_and_check():
 
     # Completeness both directions vs kEnemyTable.
     missing = sorted(set(species) - set(fam_by_species))
-    extra = sorted(set(fam_by_species) - set(species))
+    extra = sorted(set(fam_by_species) - set(species) - check_only_species)
+    missing_check_only = sorted(check_only_species - set(fam_by_species))
     if missing:
         sys.exit("gen_soul_tables: kEnemyTable species with no family: " +
                  ", ".join(f"0x{s:02X} ({species[s]})" for s in missing))
     if extra:
         sys.exit("gen_soul_tables: family species not in kEnemyTable: " +
                  ", ".join(f"0x{s:02X}" for s in extra))
+    if missing_check_only:
+        sys.exit("gen_soul_tables: check-only species with no family: " +
+                 ", ".join(f"0x{s:02X}" for s in missing_check_only))
 
     boss_species = {sid: tok for tok, ids in BOSS_SOULS for sid in ids}
     boss_tokens = {tok for tok, _ in BOSS_SOULS}

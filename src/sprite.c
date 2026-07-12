@@ -2321,6 +2321,9 @@ static int8 Rando_EnemyMarkerCarrierVisualTopOffset(int k) {
   case 0x51:  // Armos statue
   case 0x53:  // Armos Knight
     return -16;
+  case 0x83:  // Green Eyegore
+  case 0x84:  // Red Eyegore
+    return -16;
   case 0x56:  // Walking Zora
     return -7;
   case 0x6a:  // Ball-n-chain trooper

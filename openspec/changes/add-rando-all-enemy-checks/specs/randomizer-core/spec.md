@@ -13,7 +13,9 @@ silently mean dungeon-only.
 
 `All` is effective only when the `Keys` and `Dungeon` tiers plus every generated
 compatible all-tier source can remain active for the selected settings. The current
-generated all-tier source set is ordinary dungeon enemies plus static ordinary
+generated all-tier source set is ordinary dungeon enemies (including curated
+finite check-only sources that are unsafe as generic enemy-shuffle replacements,
+such as Red Eyegores) plus static ordinary
 overworld enemies with stable `(stage, area, source slot, block)` identity, plus
 reviewed underworld cave/interior exceptions with stable room/source-slot identity
 and direct access predicates, reviewed boss/miniboss event checks, and reviewed

@@ -103,6 +103,12 @@ runtime tables. The current shipped generator emits ordinary dungeon, reviewed
 all-tier underworld, static overworld, boss/miniboss event, and finite
 scripted-spawn rows. Each emitted source row records at minimum:
 
+The enemy-shuffle constraint table is only the default safety oracle, not the
+definition of "all." Curated finite static sources may be check-only even when
+they are not safe generic shuffle replacements. Red Eyegores (`0x84`) use this
+path: every authored dungeon source is an all-tier-only check with stable
+room/source-slot identity and a Bow-specific kill predicate.
+
 - domain (`dungeon`, `overworld`, `boss`, `scripted_spawn`);
 - stable source identity fields for that domain;
 - vanilla source type and coordinates;
