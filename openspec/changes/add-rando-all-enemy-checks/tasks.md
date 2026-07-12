@@ -131,7 +131,8 @@
   <!-- owner F12 2026-07-12: room 0x0A8 scripted Red Stalfos identities/grants were
   correct, but dense OAM starved later child markers. Marker fallback reservation
   and verified-free ancilla-region overflow landed under the marker change; owner
-  retest of all four child spawn markers remains. -->
+  retest captured all four live child markers with complete 0x1F0..0x1FE exact
+  footprints and no receive-slot charnums. -->
   <!-- owner playtest 2026-07-12: the Eastern Palace big key was placed on room
   0x099 slot 09 even though 0x099 is reached from 0x0A9 through the vanilla big-key
   door. The authored Dark Eyegore forced-key predicate omitted BigKey_EasternPalace;

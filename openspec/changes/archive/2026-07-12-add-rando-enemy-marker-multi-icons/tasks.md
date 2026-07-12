@@ -66,9 +66,15 @@
 - [x] 5.1 Run `openspec validate add-rando-enemy-marker-multi-icons --strict`.
 - [x] 5.2 Run allocator/selftests and `--rando-selftest` in a Release build.
 - [x] 5.3 Run `git diff --check`.
-- [ ] 5.4 Capture F12 dumps for room `0x72` with multiple enemy-marker placed
-  items and confirm marker charnums stay within `0xF0..0xFF` with no `0x24/0x34`
-  exact-marker references.
+- [x] 5.4 Capture F12 dumps for a dense scripted room with multiple enemy-marker
+  placed items and confirm marker charnums stay within `0xF0..0xFF` with no
+  `0x24/0x34` exact-marker references.
+  <!-- owner F12 2026-07-12: room 0x0A8 captured all four dynamic Red Stalfos
+  alive (type 0xA7, runtime slots 9-12). PPU OAM exactly matched the WRAM OAM
+  buffer and contained four complete marker footprints: 0x1F0/0x1F2,
+  0x1F4-0x1F7, 0x1F8/0x1FA, and 0x1FC/0x1FE. No visible OAM entry referenced
+  charnum 0x24 or 0x34. This supersedes the stale room-0x72 wording: that room
+  has only one generated enemy check and cannot exercise a dense allocation. -->
 - [x] 5.5 Playtest dense rooms with multiple live markers, spawned drops, pot glints,
   custom-art items, and receipt/direct-grant transitions.
   <!-- owner confirmation 2026-07-11: enemy and pot marker combinations were
@@ -77,4 +83,5 @@
   assigned checks correctly, but eight total Stalfos exhausted floor-region OAM;
   later carriers had no marker and Moon Pearl alternated exact/glint as capacity
   changed. The allocator now preserves fallback coverage before exact upgrades and
-  uses only live-free ancilla-region overflow. Owner retest remains. -->
+  uses only live-free ancilla-region overflow. The 2026-07-12 F12 retest in 5.4
+  captured complete exact markers over all four live scripted carriers. -->
