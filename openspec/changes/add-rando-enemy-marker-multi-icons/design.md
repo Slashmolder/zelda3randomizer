@@ -83,6 +83,11 @@ cosmetic-exempt. Row 7 is never allocated for overlays.
 
 ## D5 - Marker rendering policy
 
+The client-local default is `[Graphics] EnemyDropMarker=generic`, so a fresh or
+key-absent configuration marks checks without revealing their contents. The
+item-revealing mode remains available as an explicit preference and existing INI
+values continue to parse unchanged.
+
 `[Graphics] EnemyDropMarker=generic` remains unchanged: live enemy carriers draw
 the neutral gold glint and do not reveal placement. Spawned forced-drop pickups may
 still show the real dropped item when the existing spawned-drop policy can do so

@@ -3497,6 +3497,22 @@ void SpriteStunned_Main_Func1(int k) {  // 86e2ba
   }
 }
 
+// Resolve a prize-pack event even when an ordinary enemy check replaces its
+// physical pickup. Advancing the pack cursor and applying drop shuffle keeps
+// later drops deterministic; only PrepareEnemyDrop is suppressed.
+static void ResolvePrizeDrop(int k, uint8 prize, uint8 slot,
+                             bool suppress_pickup) {
+  prize = prize * 8 | prizes_arr1[slot];
+  prizes_arr1[slot] = (prizes_arr1[slot] + 1) & 7;
+  uint8 shuffled = DropShuffle_Lookup(prize);
+  if (!suppress_pickup) {
+    PrepareEnemyDrop(k, kPrizeItems[shuffled]);
+    return;
+  }
+  sprite_state[k] = 0;
+  SpriteDeath_Func4(k);
+}
+
 void SpriteModule_Poof(int k) {  // 86e393
   static const int8 kSpritePoof_X[16] = {-6, 10, 1, 13, -6, 10, 1, 13, -7, 4, -5, 6, -1, 1, -2, 0};
   static const int8 kSpritePoof_Y[16] = {-6, -4, 10, 9, -6, -4, 10, 9, -8, -10, 4, 3, -1, -2, 0, 1};
@@ -3514,7 +3530,8 @@ void SpriteModule_Poof(int k) {  // 86e393
       sprite_ignore_projectile[k] = 0;
     } else {
       if (sprite_die_action[k] == 0) {
-        ForcePrizeDrop(k, 2, 2);
+        bool granted_enemy_check = Rando_TryGrantEnemyCheck(k);
+        ResolvePrizeDrop(k, 2, 2, granted_enemy_check);
       } else {
         Sprite_DoTheDeath(k);
       }
@@ -4650,7 +4667,7 @@ void SpriteModule_Die(int k) {  // 86f8a2
 
 void Sprite_DoTheDeath(int k) {  // 86f923
   uint8 type = sprite_type[k];
-  Rando_TryGrantEnemyCheck(k);
+  bool granted_enemy_check = Rando_TryGrantEnemyCheck(k);
   // This is how Vitreous knows whether to come out of his slime pool
   if (type == 0xBE)
     sprite_G[0]--;
@@ -4688,12 +4705,12 @@ void Sprite_DoTheDeath(int k) {  // 86f923
       if (++luck_kill_counter >= 10)
         item_drop_luck = 0;
       if (luck == 1) {
-        ForcePrizeDrop(k, prize, 1);
+        ResolvePrizeDrop(k, prize, 1, granted_enemy_check);
         return;
       }
     } else {
       if (!(GetRandomNumber() & kPrizeMasks[prize])) {
-        ForcePrizeDrop(k, prize, prize);
+        ResolvePrizeDrop(k, prize, prize, granted_enemy_check);
         return;
       }
     }
@@ -4714,13 +4731,8 @@ uint8 Sprite_VanillaPrizeItem(uint8 source_index) {
 }
 
 void ForcePrizeDrop(int k, uint8 prize, uint8 slot) {  // 86f9bc
-  prize = prize * 8 | prizes_arr1[slot];
-  prizes_arr1[slot] = (prizes_arr1[slot] + 1) & 7;
-  // Per-site drop-shuffle instrumentation (Phase B §65). When the
-  // assignment is identity (drop_shuffle off), DropShuffle_Lookup returns
-  // the original index unchanged → vanilla behavior.
-  uint8 shuffled = DropShuffle_Lookup(prize);
-  PrepareEnemyDrop(k, kPrizeItems[shuffled]);
+  // Public legacy path used by non-check rewards such as Toppo's prize.
+  ResolvePrizeDrop(k, prize, slot, false);
 }
 
 void PrepareEnemyDrop(int k, uint8 item) {  // 86f9d1

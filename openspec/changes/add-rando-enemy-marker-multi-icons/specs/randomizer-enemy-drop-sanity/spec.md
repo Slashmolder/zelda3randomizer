@@ -1,5 +1,17 @@
 ## ADDED Requirements
 
+### Requirement: Enemy marker defaults to non-spoiler
+
+When `[Graphics] EnemyDropMarker` is absent, the client SHALL default to `generic`
+and SHALL mark live active enemy checks without revealing their placed items. The
+explicit `item` value SHALL remain supported for players who opt into placed-item
+markers. This preference SHALL remain client-local and SHALL NOT alter seed data.
+
+#### Scenario: Fresh configuration hides enemy-check contents
+- **WHEN** the client loads a configuration with no `EnemyDropMarker` key
+- **THEN** live active enemy checks use the neutral gold glint
+- **AND** selecting `EnemyDropMarker=item` still enables exact placed-item markers
+
 ### Requirement: Enemy item-marker mode supports multiple simultaneous icons
 
 `[Graphics] EnemyDropMarker=item` SHALL render real placed-item icons for active

@@ -136,7 +136,9 @@ placement, logic, digest, and corpus expectations.
 Ordinary all-enemy locations SHALL dispatch their placed item at enemy death time.
 The runtime SHALL resolve the source identity, guard already-checked locations, grant
 the placed item, mark the location checked, and suppress future duplicate grants for
-that source.
+that source. A successfully granted ordinary enemy check SHALL replace that kill's
+normal prize-pack pickup. Special forced/carried drops and boss/event rewards SHALL
+remain independent.
 
 Checked sources SHALL stay checked across room/area reload, save/reload, snapshot
 restore, screen transition, mirror transition, and world transition. Suppressing a
@@ -149,6 +151,7 @@ Forced enemy-drop checks SHALL keep their existing pickup-time behavior from the
 - **WHEN** an active all-tier overworld enemy check dies
 - **THEN** the runtime dispatches the placed item, marks the location checked, and
   prevents that source from granting again after reload or transition
+- **AND** the kill does not also produce a normal prize-pack pickup
 
 #### Scenario: Boss enemy check coexists with boss reward
 - **WHEN** an emitted boss/miniboss enemy check dies

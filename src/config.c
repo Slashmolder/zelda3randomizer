@@ -914,7 +914,7 @@ void ParseConfigFile(const char *filename) {
   g_config.rando_race_mode_default = false;
   g_config.rando_debug_force_ram_compare = false;  // dev-only override per §11.1
   g_config.field_item_sprites = true;        // add-rando-field-item-sprites: ON by default
-  g_config.enemy_drop_marker = kEnemyDropMarker_Item;
+  g_config.enemy_drop_marker = kEnemyDropMarker_Generic;
   g_config.text_speed = kTextSpeed_Normal;   // add-rando-seed-qol F3: global selector
 
   // [AutoTracker] defaults — opt-in, observation-only, localhost-only.

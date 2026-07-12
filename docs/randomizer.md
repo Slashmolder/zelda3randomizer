@@ -516,8 +516,10 @@ external clients can filter them.
 
 `enemy_drop_checks` (`add-rando-enemy-drop-sanity`,
 `add-rando-dungeon-enemy-checks`, and `add-rando-all-enemy-checks`) is a separate
-location-expansion setting, not the same as `drop_shuffle`, which still only
-permutes the normal prize-pack drop table.
+location-expansion setting. An ordinary active enemy check's placed item replaces
+that kill's normal prize-pack pickup; non-check enemies still use the normal drop
+table, optionally permuted by `drop_shuffle`. Forced key drops, items swallowed by
+Pikits, boss prizes/hearts, and scripted progression retain their special behavior.
 
 The `keys` tier turns vanilla dungeon enemies that carry forced key drops into
 randomizer checks. It is effective when small keys are Wild, including Retro's
@@ -584,10 +586,10 @@ enemy-specific kill predicate. Thrown pots count as a valid kill route when the
 engine damage table shows the enemy takes normal pot damage and the room has at
 least the required number of reachable liftable pots. Active unchecked carriers
 draw a field marker where the current renderer can do so safely. The local
-`[Graphics] EnemyDropMarker` option controls the marker: `item` (default) shows
-the placed item when it can be represented safely, while `generic` shows the same
-gold check glint used by pot-sanity for dungeon carriers without revealing the
-placement. Current dungeon builds borrow the existing receive-item slot only in
+`[Graphics] EnemyDropMarker` option controls the marker: `generic` (default) shows
+the gold check glint without revealing the placement, while `item` shows the placed
+item when it can be represented safely. Current dungeon builds borrow the existing
+receive-item slot only in
 the post-sprite overlay pass, and only when that slot is not already visible in
 OAM; this avoids corrupting boomerangs, field items, receipts, and other live OBJ
 users. More than one distinct visible marker item, unsupported custom palette

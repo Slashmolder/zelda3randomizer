@@ -150,7 +150,7 @@ typedef struct Config {
   // unchecked enemy-drop checks: placed item icon where the shared tile slot can
   // represent it unambiguously, or the neutral gold check glint. Never serialized
   // into randomizer settings or seed material.
-  uint8 enemy_drop_marker;       // kEnemyDropMarker_*; default item
+  uint8 enemy_drop_marker;       // kEnemyDropMarker_*; default generic
 } Config;
 
 enum {

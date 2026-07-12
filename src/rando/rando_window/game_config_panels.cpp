@@ -715,13 +715,14 @@ static void Panel_Cosmetics(void) {
   if (ImGui::Checkbox("Music shuffle (area background songs)", &ms)) { s_cfg.cosmetic_music_shuffle = ms; s_dirty = true; }
   Help("Remaps the area background music. Applies live. Honors an MSU-1 pack if loaded.");
 
-  static const char *const kEnemyDropMarker[] = { "Placed item", "Gold glint" };
-  int edm = s_cfg.enemy_drop_marker == kEnemyDropMarker_Generic ? 1 : 0;
+  static const char *const kEnemyDropMarker[] = { "Gold glint", "Placed item" };
+  int edm = s_cfg.enemy_drop_marker == kEnemyDropMarker_Generic ? 0 : 1;
   if (ComboInt("Enemy drop marker", &edm, kEnemyDropMarker, 2)) {
-    s_cfg.enemy_drop_marker = (uint8)edm;
+    s_cfg.enemy_drop_marker = edm == 0 ? kEnemyDropMarker_Generic
+                                      : kEnemyDropMarker_Item;
     s_dirty = true;
   }
-  Help("Controls the marker above active unchecked enemy-drop carriers. Placed-item mode falls back to the gold glint when the real item cannot be shown safely. Spawned drops still try to show the real placed item. Applies live.");
+  Help("Controls the marker above active unchecked enemy-drop carriers. Gold glint is the non-spoiler default. Placed-item mode falls back to the gold glint when the real item cannot be shown safely. Spawned drops still try to show the real placed item. Applies live.");
 
   // Hex u64 seed input + a "New random seed" button (matches the rando window's
   // seed field). 0 = derive the look from the loaded slot's seed.

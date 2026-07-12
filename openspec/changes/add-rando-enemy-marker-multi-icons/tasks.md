@@ -45,6 +45,8 @@
 - [x] 3.7 Keep custom marker palette writes frame-scoped through the unified overlay
   palette manager, with transformed-base restoration and CGRAM-rebuild invalidation.
 - [x] 3.8 Give the legacy OAM tracker priority over the `0xF0..0xFF` scratch range.
+- [x] 3.9 Default a missing `[Graphics] EnemyDropMarker` preference to the
+  non-spoiler generic gold glint while retaining `item` as an explicit option.
 
 ## 4. Compatibility checks
 

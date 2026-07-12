@@ -29,6 +29,14 @@ includes:
 - future finite scripted spawn groups when each emitted child can be assigned a
   stable bounded source identity.
 
+For ordinary enemy sources, the randomized check is the kill reward and replaces
+the probabilistic prize-pack pickup. This prevents one kill from visibly producing
+both a placed check item and an unrelated vanilla/shuffled consumable. The hidden
+prize-pack event still advances its normal cursor/luck state so later non-check
+drops remain deterministic. Forced key-drop pickups, items swallowed by Pikits,
+boss prizes/hearts, and scripted progression retain their dedicated paths.
+Non-check enemies continue to use the prize-pack table.
+
 The tier excludes actors that are not valid one-shot kill checks:
 
 - non-killable sprites such as thieves and NPC-like actors;

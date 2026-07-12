@@ -44,6 +44,8 @@
   identities; add lazy block lookup so snapshot restore can still resolve visible
   restored sprites.
 - [x] 2.6 Keep forced enemy-drop rows on the existing pickup-time path.
+- [x] 2.7 Make an ordinary enemy check replace its normal prize-pack pickup while
+  preserving Pikit-held items, forced drops, boss prizes/hearts, and scripted events.
 
 ## 3. Logic and placement
 
@@ -119,6 +121,12 @@
   eligibility as the definition of all-tier eligibility. Red Eyegores are now
   curated all-tier-only static checks with Bow-specific logic and Eyegore soul
   behavior; final owner retest remains. -->
+  <!-- owner playtest 2026-07-12: ordinary enemies visibly produced both their
+  direct-grant check item and a normal prize-pack pickup. The check now replaces
+  only that ordinary pickup, including the frozen/hammer death path, while hidden
+  prize-pack sequencing and all special/boss rewards remain intact. The client-local
+  marker default is now the non-spoiler generic gold glint; placed-item markers remain
+  available as an explicit preference. Final owner retest remains. -->
 - [x] 6.6 Test thrown-pot kill logic with insufficient and sufficient pot counts
   while pot shuffle is off, plus the pot-sanity guard that disables those branches
   and requires the inventory-combat route while any effective pot tier is active.

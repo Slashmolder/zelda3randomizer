@@ -2,9 +2,12 @@
 
 ### Requirement: All-enemy tier composes with shuffle axes explicitly
 
-`enemy_drop_checks=all` SHALL be orthogonal to `drop_shuffle`: prize-pack drops keep
-using the drop table, while active enemy checks grant placed items through their
-location dispatch model.
+`enemy_drop_checks=all` SHALL compose explicitly with `drop_shuffle`: an ordinary
+active enemy check grants its placed item instead of producing a prize-pack pickup,
+while non-check enemies keep using the vanilla or shuffled drop table. Suppressed
+pickup events SHALL still preserve prize-pack cursor, luck, RNG, and drop-shuffle
+sequencing. Forced key-drop pickups, Pikit-held items, boss prizes/hearts, and
+scripted progression SHALL retain their dedicated behavior.
 
 With `enemy_shuffle`, forced-key `EnemyDrop` rows keep the existing vanilla
 room/source-slot identity and requested `All` normalizes to the highest lower tier
@@ -42,6 +45,7 @@ check and a future thrown weapon.
 - **WHEN** `drop_shuffle` and effective `enemy_drop_checks=all` are both active
 - **THEN** non-check enemy prize-pack drops use the shuffled prize table
 - **AND** active enemy checks grant placed items through their location dispatch path
+- **AND** an ordinary active enemy check does not also produce a prize-pack pickup
 
 #### Scenario: Enemy shuffle normalizes all to supported lower tier
 - **WHEN** `enemy_shuffle` is active and settings request `enemy_drop_checks=all`
