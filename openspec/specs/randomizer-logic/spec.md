@@ -760,7 +760,7 @@ Under the `bosses+enemies` tier, logic SHALL require the resident species' souls
 - **THEN** no souls enter the pool, no suppression binds at runtime, souls-conditional logic evaluates as off, and the canonical settings hash reflects the degraded (off) value
 
 ### Requirement: Enemy-check locations require the source species' soul
-Under the `bosses+enemies` tier, every enemy-check location (`LOCTYPE_Enemy`) and forced enemy-drop location (`LOCTYPE_EnemyDrop`) SHALL additionally require the soul of its source species, emitted by the enemy-check table generator (which already carries `source_type` per check) into the location's predicate; the 13 boss/miniboss check locations SHALL instead be covered by the boss-soul resolution and the GT-refight gates, and the virtual `HyruleCastleBigKey` derivation SHALL inherit its underlying forced-drop check's soul requirement.
+Under the `bosses+enemies` tier, every enemy-check location (`LOCTYPE_Enemy`) and forced enemy-drop location (`LOCTYPE_EnemyDrop`) SHALL additionally require the soul of its source species, emitted by the enemy-check table generator (which already carries `source_type` per check) into the location's predicate; the three GT-miniboss check locations SHALL instead be covered by the GT-refight boss-soul gates, and the virtual `HyruleCastleBigKey` derivation SHALL inherit its underlying forced-drop check's soul requirement.
 
 #### Scenario: Ordinary enemy check gated on its species
 - **WHEN** a `bosses+enemies` seed places an item on an enemy-check location whose source species' soul is un-owned
@@ -768,7 +768,7 @@ Under the `bosses+enemies` tier, every enemy-check location (`LOCTYPE_Enemy`) an
 
 #### Scenario: Off and bosses tiers leave enemy-check predicates unchanged
 - **WHEN** a seed uses `souls_shuffle=off` or `souls_shuffle=bosses` with any `enemy_drop_checks` tier
-- **THEN** ordinary enemy-check predicates evaluate exactly as without the souls feature (boss/miniboss checks gate through boss souls at the `bosses` tier)
+- **THEN** ordinary enemy-check predicates evaluate exactly as without the souls feature (GT-miniboss checks gate through boss souls at the `bosses` tier)
 
 #### Scenario: Standard escape big-key guard
 - **WHEN** a Standard-mode `bosses+enemies` seed gates the Ball-and-chain guard's big-key drop on that guard's soul

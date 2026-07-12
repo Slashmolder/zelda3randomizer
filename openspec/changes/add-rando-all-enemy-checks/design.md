@@ -91,8 +91,8 @@ The initial compatibility table is:
   existing derived rules, normally `Keys` but `Off` when the keys tier is unsupported,
   until a future change makes enemy shuffle placement-affecting for all-enemy logic
   and updates its digest/corpus contract;
-- boss shuffle: keep `All`; boss/miniboss checks bind to the destination event and
-  coexist with existing boss rewards, unless another rule lowers the effective tier
+- boss shuffle: keep `All`; the emitted GT-miniboss checks are outside the
+  shuffleable dungeon-boss room set, unless another rule lowers the effective tier
   further;
 - pot shuffle: compose conservatively; generated thrown-pot routes are active only
   when effective pot shuffle is off, while pot-sanity seeds use the reviewed
@@ -108,7 +108,7 @@ It must never silently treat `all` as `dungeon`.
 
 The all-enemy generator builds one source audit from local ROM assets and curated
 runtime tables. The current shipped generator emits ordinary dungeon, reviewed
-all-tier underworld, static overworld, boss/miniboss event, and finite
+all-tier underworld, static overworld, GT-miniboss event, and finite
 scripted-spawn rows. Each emitted source row records at minimum:
 
 The enemy-shuffle constraint table is only the default safety oracle, not the
@@ -134,8 +134,9 @@ the `dungeon` tier. Overworld identity uses the authored active sprite-list tupl
 `(stage, area, source_slot, block)` plus the runtime `sprite_N_word` block. A lazy
 block lookup fallback re-resolves `(current area, current stage, block)` so snapshot
 restore does not depend on the process-static load-time map being rebuilt first.
-Boss/miniboss identity uses the destination dungeon event plus room for GT
-minibosses. Scripted-spawn identity uses the authored parent
+GT-miniboss identity uses the destination dungeon event plus room. Dungeon bosses
+remain excluded because their heart-container and dungeon-prize sequence is already
+the boss reward. Scripted-spawn identity uses the authored parent
 `(room, source slot, overlord type)` plus child index and child type. Unbounded
 children are excluded.
 
@@ -239,9 +240,9 @@ per-source consumption model.
 Enemy shuffle composes with forced-key `Keys` only in the first all-enemy change.
 Requested `All` normalizes to the highest lower tier allowed by existing derived
 rules while enemy shuffle is active, normally `Keys` but `Off` when the keys tier is
-unsupported. Boss shuffle composes with `All` because boss/miniboss checks bind to
-the destination event and preserve the existing reward behavior, unless another rule
-lowers the effective tier further. Entrance shuffle normalizes requested `All` to
+unsupported. Boss shuffle composes with `All` because dungeon bosses are excluded
+and the emitted GT-miniboss checks are outside the shuffleable room set, unless
+another rule lowers the effective tier further. Entrance shuffle normalizes requested `All` to
 `Dungeon` until all-enemy overworld/domain reachability is modeled against the
 entrance graph, unless another rule lowers the effective tier further.
 
@@ -281,9 +282,8 @@ Required validation includes:
 - corpus rows for `all` under Wild/Retro/Dungeon keys, pot shuffle, enemy shuffle
   normalization, door shuffle normalization, boss shuffle normalization, cave
   entrance interaction, and dense marker rooms;
-- runtime tests for shipped dungeon, reviewed underworld, and static overworld death grants, with
-  boss/miniboss and finite scripted-spawn death-grant tests reserved for the
-  future source-domain work;
+- runtime tests for shipped dungeon, reviewed underworld, static overworld,
+  GT-miniboss, and finite scripted-spawn death grants;
 - leave/re-enter, save/reload, snapshot before death, snapshot after death, mirror or
   world transition, and checked-source suppression;
 - targeted thrown-pot tests where one pot is insufficient and two pots are logical;

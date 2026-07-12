@@ -130,7 +130,7 @@ axis via `item_pool`.
 | `traps` (alias `trap_frequency`) | `off`, `low`, `medium`, `high`, `insanity` | `off` (replaces 4 / 8 / 16 eligible junk pickups — or **every** eligible junk pickup at `insanity` — with masquerade traps; they look like real items but spring one of 16 effects across 5 categories; see [Traps](#traps)) |
 | `trap_categories` | `all`, `none`, or a `+`-joined list of `hazard`, `impair`, `drain`, `scare`, `displace` | `all` (which categories of trap effect can appear; only meaningful when `traps` is on; the native window exposes per-category checkboxes) |
 | `pot_shuffle` | `off`, `keys`, `contents`, `all` | `off` (experimental; turns dungeon pots into checks — `keys` = key pots only, `contents` adds loot pots, `all` adds the empty pots too; forced `off` under cave-entrance shuffle; see [Pot shuffle](#pot-shuffle-experimental)) |
-| `enemy_drop_checks` | `off`, `keys`, `dungeon`, `all` | `off` (experimental; `keys` turns vanilla forced enemy key drops into checks, `dungeon` also turns eligible ordinary dungeon enemies into checks, and `all` adds eligible overworld, boss/miniboss, finite scripted-spawn, and reviewed underworld enemy checks; active only when effective small keys are Wild/Retro or Dungeon; vanilla small keys force `off`; enemy shuffle degrades `dungeon`/`all` to `keys`; entrance shuffle degrades `all` to `dungeon`; see [Enemy drop checks](#enemy-drop-checks-experimental)) |
+| `enemy_drop_checks` | `off`, `keys`, `dungeon`, `all` | `off` (experimental; `keys` turns vanilla forced enemy key drops into checks, `dungeon` also turns eligible ordinary dungeon enemies into checks, and `all` adds eligible overworld, GT-miniboss, finite scripted-spawn, and reviewed underworld enemy checks; active only when effective small keys are Wild/Retro or Dungeon; vanilla small keys force `off`; enemy shuffle degrades `dungeon`/`all` to `keys`; entrance shuffle degrades `all` to `dungeon`; see [Enemy drop checks](#enemy-drop-checks-experimental)) |
 | `dungeon_chains` | `true`, `false` | `false` (experimental; main dungeon doors route through dungeon chains ending in bosses; see [Dungeon chains](#dungeon-chains-experimental)) |
 | `grass_shuffle` | `off`, `junk`, `all` | `off` (experimental; turns overworld bushes and cuttable grass into checks — `junk` = filler only, `all` = anything including progression; see [Grass & rock shuffle](#grass--rock-shuffle-experimental)) |
 | `rock_shuffle` | `off`, `junk`, `all` | `off` (experimental; turns liftable rocks — Glove and Titan's Mitt — into checks; `junk` = filler only, `all` = anything; see [Grass & rock shuffle](#grass--rock-shuffle-experimental)) |
@@ -545,13 +545,15 @@ aliases to the dungeon-only tier. In current builds it adds generated static
 ordinary overworld enemy checks whose authored `(stage, area, source slot, block)`
 identity can be recovered at runtime, automatic all-only underworld rows for
 killable key-banned/flying source classes when the room already has modeled
-access, reviewed underworld cave/interior checks, reviewed boss/miniboss event
-checks, and finite authored scripted-spawn groups whose parent/child identity is
+access, reviewed underworld cave/interior checks, reviewed Ganon's Tower miniboss
+event checks, and finite authored scripted-spawn groups whose parent/child identity is
 stable at runtime. A requested `all` lowers to `keys` under enemy shuffle, lowers
 to `dungeon` under entrance shuffle, and normalizes to `off` with vanilla small
 keys.
 Unbounded/farmable dynamic spawns and sources without stable death-time identity
 remain explicit future scope rather than quiet inclusions.
+Dungeon bosses are not separate all-enemy checks: their existing heart-container
+and dungeon-prize sequence remains their only randomized reward path.
 The native window and file-select UI expose `all` only as a separate tier; they do
 not label the dungeon-only tier as all.
 
@@ -1562,6 +1564,7 @@ Current `kGeneratorVersion` is in `src/rando/rando.h` (search for `#define kGene
 | 124→125 | **Complete reviewed all-tier enemy coverage** — reviewed all-only underworld coverage was expanded across modeled key-depth rooms and cave/interior exceptions while preserving `all_tier_only` activation for rows outside the dungeon tier. | Active `all` rows move; lower tiers remain gated to their effective scopes. Corpus regenerated at v125. |
 | 125→126 | **All-tier key-banned/flying killable enemy coverage** — killable enemy-shuffle key-banned/flying classes such as Keese and overworld flyers now emit as all-only checks when their static source identity and room/area reachability are modeled. Raven, Vulture, and Poe are explicitly treated as killable for all-enemy generation. | Active pure `all` rows gain these sources; the normal `dungeon` tier remains key-capable only. Corpus regenerated at v126. |
 | 134→135 | **Renewable general bomb access** — `CanBombThings()` again matches ALTTPR's always-true ordinary-world model (drops, terrain secrets, and shops are renewable), while `CanKillEscapeThings()` retains an explicit Bombs1/Bombs3/Bombs10 branch so Standard escape combat still receives concrete ammo. | 164 of 192 corpus rows move; Retro, No Logic, and other already-inert cases remain unchanged. Full v135 corpus regenerated. |
+| 137→138 | **Dungeon bosses no longer duplicate their reward** — the ten dungeon-boss event rows were removed from `enemy_drop_checks=all`; their existing heart-container and dungeon-prize sequence remains the only boss reward. The three GT miniboss/refight checks remain because they have no dungeon-prize reward. | Prevents an extra direct-grant item from colliding with the boss heart/prize animation. Corpus regenerated at v138. |
 | 14→15 | Slice 3a #52 — 7 new item-registry IDs for Retro shop consumables | Pool composition unchanged at default settings; Retro entries shift if pool difficulty changes |
 | 15→16 | Cluster-audit H1 fix — `PlacementTable_ComputeDigest` 256→512 entry cap | 3 Retro corpus entries get new digests (the truncation was silently dropping 9 slots from the hash) |
 | 16→17 | Slice 3a #53 part 2 — `LOCTYPE_Shop` identity-pinned per ALTTPR `Randomizer.php:737-750` | Retro placement changes; 3 Retro entries regenerated |

@@ -6,11 +6,11 @@
 compatible generated static overworld ordinary enemy source in the shipped
 all-tier registry. It MAY also include audited underworld cave/interior ordinary
 enemy sources when their room access can be modeled directly without dungeon
-key-depth metadata. It SHALL include reviewed boss/miniboss event checks and
+key-depth metadata. It SHALL include reviewed GT-miniboss event checks and
 finite authored scripted-spawn enemy checks when their runtime identity,
 reachability, death dispatch, persistence, and reward coexistence are modeled.
 The shipped registry scope is dungeon ordinary enemies, static authored overworld
-ordinary enemies, reviewed underworld exceptions, reviewed boss/miniboss events,
+ordinary enemies, reviewed underworld exceptions, reviewed GT-miniboss events,
 and reviewed finite scripted-spawn enemies with stable source identity,
 reachability, death dispatch, and checked-state suppression.
 Killable source classes that are banned from carrying dungeon keys or are flying
@@ -20,7 +20,7 @@ are modeled for `enemy_drop_checks=all`.
 
 The all-enemy audit SHALL classify every scanned source in the supported static
 dungeon/overworld domains, every reviewed underworld exception candidate, every
-reviewed boss/miniboss event, and every reviewed finite scripted-spawn candidate
+reviewed GT-miniboss event, and every reviewed finite scripted-spawn candidate
 as included or excluded with a stable reason.
 Non-killable actors such as thieves and NPC-like sprites, non-enemy hazards,
 projectiles, decorative sprites, and unbounded farmable dynamic spawns SHALL NOT
@@ -153,11 +153,15 @@ Forced enemy-drop checks SHALL keep their existing pickup-time behavior from the
   prevents that source from granting again after reload or transition
 - **AND** the kill does not also produce a normal prize-pack pickup
 
-#### Scenario: Boss enemy check coexists with boss reward
-- **WHEN** an emitted boss/miniboss enemy check dies
+#### Scenario: Dungeon boss retains its existing reward sequence
+- **WHEN** a dungeon boss dies with all-enemy checks active
+- **THEN** no separate enemy-check item is dispatched
+- **AND** the existing heart-container and dungeon-prize sequence remains intact
+
+#### Scenario: GT miniboss grants an enemy check
+- **WHEN** an emitted Ganon's Tower miniboss enemy check dies
 - **THEN** the all-enemy check grants exactly once
-- **AND** existing boss prize, heart-container, dungeon-prize, or
-  scripted-progression behavior remains intact
+- **AND** existing scripted-progression behavior remains intact
 
 #### Scenario: Save reload after checked enemy
 - **WHEN** the player checks an all-tier enemy source, saves, and reloads

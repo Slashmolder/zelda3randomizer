@@ -15,8 +15,9 @@
   `0x10C`, and `0x123` as all-tier-only indoor rows, with direct cave/interior
   access predicates, counted same-side pot kill routing where valid, and normal
   inventory combat where same-side throwables are not available.
-- [x] Reviewed boss/miniboss and finite scripted-spawn domains ship with stable
-  identities and runtime/logic support. Farmable/unbounded dynamic spawns are
+- [x] Reviewed GT miniboss and finite scripted-spawn domains ship with stable
+  identities and runtime/logic support. Dungeon bosses retain only their existing
+  heart-container/dungeon-prize reward sequence. Farmable/unbounded dynamic spawns are
   explicit audited exclusions, not pending gameplay checks.
 
 ## 1. Audit and scope
@@ -36,8 +37,8 @@
 
 - [x] 2.1 Add stable source identity for overworld enemy spawns.
 - [x] 2.2 Add stable parent/child identity for finite scripted spawn groups.
-- [x] 2.3 Add boss/miniboss death-event identity where a separate enemy check can
-  coexist with existing boss prizes and heart/prize behavior.
+- [x] 2.3 Add GT miniboss death-event identity where a separate enemy check has no
+  competing dungeon-prize reward; exclude dungeon bosses from all-enemy checks.
 - [x] 2.4 Implement death-time direct grant for all ordinary emitted dungeon and
   static overworld enemy rows.
 - [x] 2.5 Suppress checked overworld sources on reload while preserving later source
@@ -45,7 +46,7 @@
   restored sprites.
 - [x] 2.6 Keep forced enemy-drop rows on the existing pickup-time path.
 - [x] 2.7 Make an ordinary enemy check replace its normal prize-pack pickup while
-  preserving Pikit-held items, forced drops, boss prizes/hearts, and scripted events.
+  preserving Pikit-held items, forced drops, dungeon bosses, and scripted events.
 
 ## 3. Logic and placement
 
@@ -113,7 +114,7 @@
 - [x] 6.3 Run Release build and `--rando-selftest`.
 - [x] 6.4 Run corpus rows for `all` and every supported/degraded interaction.
 - [ ] 6.5 Runtime-test shipped dungeon, reviewed underworld, static overworld,
-  boss/miniboss, and finite scripted-spawn checks through death, reload, save/load,
+  GT-miniboss, and finite scripted-spawn checks through death, reload, save/load,
   snapshot, and transition cases.
   <!-- owner playtest 2026-07-11: Eastern room 0x0D8 Red Eyegore source slot 8
   showed no marker and dropped its vanilla 10-arrow bundle. F12 confirmed type
@@ -137,6 +138,10 @@
   because enemy checks reuse that room predicate, sphere analysis falsely treated
   the placement as reachable. The shared room binding now carries the explicit big-
   key term for both the forced drop and every ordinary enemy check in 0x099. -->
+  <!-- owner playtest 2026-07-12: Eastern's dungeon boss dispatched a separate
+  all-enemy item inside its existing heart-container/dungeon-prize sequence,
+  producing a corrupt-looking held item and three overlapping rewards. Dungeon
+  bosses are now excluded; the three GT miniboss/refight checks remain. -->
 - [x] 6.6 Test thrown-pot kill logic with insufficient and sufficient pot counts
   while pot shuffle is off, plus the pot-sanity guard that disables those branches
   and requires the inventory-combat route while any effective pot tier is active.

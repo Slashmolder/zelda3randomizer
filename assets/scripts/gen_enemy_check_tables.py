@@ -55,7 +55,7 @@ from gen_enemy_drop_tables import (  # noqa: E402
 from gen_soul_tables import enemy_soul_by_species  # noqa: E402
 
 # add-enemy-souls (task 1.6): killing a check's source enemy requires that
-# species' soul at souls_shuffle=all. Terms are inert below the tier; boss/
+# species' soul at souls_shuffle=all. Terms are inert below the tier; GT
 # miniboss checks are excluded (their CanKill<Boss> macros carry the boss-soul
 # terms). Ordinary enemy checks never coexist with enemy shuffle (the tier
 # degrades to Keys there), so the vanilla source_type is authoritative.
@@ -659,152 +659,7 @@ def world_state_predicate(standard: str, inverted: str | None = None) -> str:
     )
 
 
-BOSS_EVENT_CHECKS = [
-    {
-        "name": "Enemy Check - Eastern Palace Boss Enemy",
-        "boss_kind": "dungeon_boss",
-        "game_dungeon": 2,
-        "rando_dungeon": 1,
-        "room": 0x0C8,
-        "door_dungeon": 1,
-        "door_region": 38,
-        "region": "EasternPalace_Lobby",
-        "source_name": "Eastern Palace Boss",
-        "can_reach": world_state_predicate(
-            "CanShootArrowsL1() AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) "
-            "AND HAS_ITEM(BigKey_EasternPalace) AND CanKillBoss(EasternPalace)",
-            "CanShootArrowsL1() AND (HAS_ITEM(MoonPearl) OR CanBunnyRevival(world) OR CanPearlBypass()) "
-            "AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HAS_ITEM(BigKey_EasternPalace) "
-            "AND CanKillBoss(EasternPalace)",
-        ),
-    },
-    {
-        "name": "Enemy Check - Desert Palace Boss Enemy",
-        "boss_kind": "dungeon_boss",
-        "game_dungeon": 3,
-        "rando_dungeon": 2,
-        "room": 0x033,
-        "door_dungeon": 2,
-        "door_region": 73,
-        "region": "DesertPalace_Lobby",
-        "source_name": "Desert Palace Boss",
-        "can_reach": world_state_predicate(
-            "CanLightTorches() AND HAS_ITEM(BigKey_DesertPalace) "
-            "AND HAS_ITEM(SmallKey_DesertPalace) AND CanKillBoss(DesertPalace)",
-            "HAS_ITEM(MoonPearl) AND CanLightTorches() AND HAS_ITEM(BigKey_DesertPalace) "
-            "AND HAS_ITEM(SmallKey_DesertPalace) AND CanKillBoss(DesertPalace)",
-        ),
-    },
-    {
-        "name": "Enemy Check - Tower of Hera Boss Enemy",
-        "boss_kind": "dungeon_boss",
-        "game_dungeon": 10,
-        "rando_dungeon": 3,
-        "room": 0x007,
-        "door_dungeon": 3,
-        "door_region": 107,
-        "region": "TowerOfHera_Lobby",
-        "source_name": "Tower of Hera Boss",
-        "can_reach": "CanKillBoss(TowerOfHera) AND HAS_ITEM(BigKey_TowerOfHera)",
-    },
-    {
-        "name": "Enemy Check - Palace of Darkness Boss Enemy",
-        "boss_kind": "dungeon_boss",
-        "game_dungeon": 6,
-        "rando_dungeon": 5,
-        "room": 0x05A,
-        "door_dungeon": 5,
-        "door_region": 158,
-        "region": "PalaceOfDarkness",
-        "source_name": "Palace of Darkness Boss",
-        "can_reach": "HAS_ITEM(Hammer) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) "
-                     "AND CanShootArrowsL1() AND HAS_ITEM(BigKey_PalaceOfDarkness) "
-                     "AND HAS_AMOUNT(SmallKey_PalaceOfDarkness, 6) AND CanKillBoss(PalaceOfDarkness)",
-    },
-    {
-        "name": "Enemy Check - Swamp Palace Boss Enemy",
-        "boss_kind": "dungeon_boss",
-        "game_dungeon": 5,
-        "rando_dungeon": 6,
-        "room": 0x006,
-        "door_dungeon": 6,
-        "door_region": 204,
-        "region": "SwampPalace",
-        "source_name": "Swamp Palace Boss",
-        "can_reach": "HAS_ITEM(Hookshot) AND HAS_ITEM(SmallKey_SwampPalace) "
-                     "AND HAS_ITEM(Hammer) AND CanKillBoss(SwampPalace)",
-    },
-    {
-        "name": "Enemy Check - Skull Woods Boss Enemy",
-        "boss_kind": "dungeon_boss",
-        "game_dungeon": 8,
-        "rando_dungeon": 7,
-        "room": 0x029,
-        "door_dungeon": 7,
-        "door_region": 261,
-        "region": "SkullWoods",
-        "source_name": "Skull Woods Boss",
-        "can_reach": world_state_predicate(
-            "HAS_ITEM(FireRod) AND HAS_ITEM(MoonPearl) AND "
-            "(OP_MODEWEAPONS_EQ(swordless) OR HasSword(1)) AND "
-            "HAS_AMOUNT(SmallKey_SkullWoods, 3) AND CanKillBoss(SkullWoods)",
-            "HAS_ITEM(FireRod) AND (OP_MODEWEAPONS_EQ(swordless) OR HasSword(1)) "
-            "AND HAS_AMOUNT(SmallKey_SkullWoods, 3) AND CanKillBoss(SkullWoods)",
-        ),
-    },
-    {
-        "name": "Enemy Check - Thieves' Town Boss Enemy",
-        "boss_kind": "dungeon_boss",
-        "game_dungeon": 11,
-        "rando_dungeon": 8,
-        "room": 0x0AC,
-        "door_dungeon": 8,
-        "door_region": 291,
-        "region": "ThievesTown",
-        "source_name": "Thieves' Town Boss",
-        "can_reach": "HAS_ITEM(SmallKey_ThievesTown) AND HAS_ITEM(BigKey_ThievesTown) "
-                     "AND CanKillBoss(ThievesTown)",
-    },
-    {
-        "name": "Enemy Check - Ice Palace Boss Enemy",
-        "boss_kind": "dungeon_boss",
-        "game_dungeon": 9,
-        "rando_dungeon": 9,
-        "room": 0x0DE,
-        "door_dungeon": 9,
-        "door_region": 323,
-        "region": "IcePalace_Lobby",
-        "source_name": "Ice Palace Boss",
-        "can_reach": "HAS_ITEM(Hammer) AND CanLiftRocks() AND CanKillBoss(IcePalace) "
-                     "AND HAS_ITEM(BigKey_IcePalace) AND HAS_AMOUNT(SmallKey_IcePalace, 2)",
-    },
-    {
-        "name": "Enemy Check - Misery Mire Boss Enemy",
-        "boss_kind": "dungeon_boss",
-        "game_dungeon": 7,
-        "rando_dungeon": 10,
-        "room": 0x090,
-        "door_dungeon": 10,
-        "door_region": 371,
-        "region": "MiseryMire_Lobby",
-        "source_name": "Misery Mire Boss",
-        "can_reach": "HAS_ITEM(CaneOfSomaria) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) "
-                     "AND HAS_ITEM(BigKey_MiseryMire) AND CanKillBoss(MiseryMire)",
-    },
-    {
-        "name": "Enemy Check - Turtle Rock Boss Enemy",
-        "boss_kind": "dungeon_boss",
-        "game_dungeon": 12,
-        "rando_dungeon": 11,
-        "room": 0x0A4,
-        "door_dungeon": 11,
-        "door_region": 427,
-        "region": "TurtleRock_Lobby",
-        "source_name": "Turtle Rock Boss",
-        "can_reach": "HAS_AMOUNT(SmallKey_TurtleRock, 4) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav()) "
-                     "AND HAS_ITEM(BigKey_TurtleRock) AND HAS_ITEM(CaneOfSomaria) "
-                     "AND CanKillBoss(TurtleRock)",
-    },
+GT_MINIBOSS_EVENT_CHECKS = [
     {
         "name": "Enemy Check - Ganon's Tower Ice Armos Enemy",
         "boss_kind": "gt_miniboss",
@@ -1490,8 +1345,10 @@ def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
             all_tier_only=True,
             reviewed_binding_reason="automatic_all_tier_source_type")
 
-    boss_emitted = 0
-    for boss in BOSS_EVENT_CHECKS:
+    gt_miniboss_emitted = 0
+    for boss in GT_MINIBOSS_EVENT_CHECKS:
+        if boss.get("boss_kind") != "gt_miniboss":
+            die(f"non-GT boss event must not be emitted as an enemy check: {boss.get('name')}")
         rows.append({
             "id": ENEMY_CHECK_BASE_ID + len(rows),
             "name": boss["name"],
@@ -1513,7 +1370,7 @@ def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
             "all_tier_only": True,
             "marker_policy": "suppressed",
         })
-        boss_emitted += 1
+        gt_miniboss_emitted += 1
 
     scripted_rows, scripted_excluded_counts, scripted_excluded_rows = (
         collect_scripted_spawn_candidates(assets))
@@ -1842,7 +1699,7 @@ def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
             "scanned_underworld_source_count": len(dungeon_all_rows),
             "scanned_base_dungeon_source_count": len(dungeon_rows),
             "scanned_overworld_source_count": len(overworld_rows),
-            "candidate_count": len(dungeon_all_rows) + len(overworld_rows) + len(scripted_rows) + len(BOSS_EVENT_CHECKS),
+            "candidate_count": len(dungeon_all_rows) + len(overworld_rows) + len(scripted_rows) + len(GT_MINIBOSS_EVENT_CHECKS),
             "emitted_count": len(rows),
             "emitted_dungeon_count": dungeon_emitted,
             "emitted_underworld_all_tier_count": underworld_all_tier_total,
@@ -1850,7 +1707,9 @@ def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
             "emitted_underworld_all_tier_reviewed_count": underworld_all_tier_emitted,
             "emitted_curated_check_only_count": len(curated_check_only_keys),
             "emitted_overworld_count": overworld_emitted,
-            "emitted_boss_count": boss_emitted,
+            # Compatibility key consumed by audit_enemy_check_candidates.py;
+            # the emitted boss-domain rows are GT minibosses only.
+            "emitted_boss_count": gt_miniboss_emitted,
             "emitted_scripted_spawn_count": scripted_emitted,
             "excluded_scripted_spawn_source_count": len(scripted_excluded_rows),
             "excluded_count": (
@@ -2030,7 +1889,7 @@ def main(argv: list[str]) -> int:
         f"{summary['emitted_dungeon_count']} dungeon + "
         f"{summary['emitted_underworld_all_tier_count']} underworld all-tier + "
         f"{summary['emitted_overworld_count']} overworld + "
-        f"{summary['emitted_boss_count']} boss/miniboss + "
+        f"{summary['emitted_boss_count']} GT miniboss + "
         f"{summary['emitted_scripted_spawn_count']} scripted ordinary enemy checks "
         f"emitted from {summary['candidate_count']} eligible sources; "
         f"{summary['audit_only_no_room_predicate_count']} audit-only without "

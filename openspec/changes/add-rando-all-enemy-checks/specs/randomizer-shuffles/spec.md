@@ -24,11 +24,9 @@ generation, the accepted `DoorShuffleLayout` identity/digest, sidecar activation
 and snapshot replay validation. Without that bridge/digest/replay support, requested
 `All` SHALL normalize to `Keys`.
 
-With boss shuffle, requested `All` SHALL remain effective only after boss/miniboss
-all-enemy identity is defined against assigned boss rooms, pinned bosses, secondary
-sprites, prizes, heart containers, and scripted progression. Until then, requested
-`All` SHALL normalize to `Dungeon` unless another rule lowers the effective tier
-further.
+With boss shuffle, requested `All` SHALL remain effective because dungeon bosses
+are excluded from all-enemy checks and the emitted GT-miniboss checks are outside
+the shuffleable dungeon-boss room set.
 
 With entrance shuffle, including cave entrance shuffle, requested `All` SHALL remain
 effective only after all-enemy overworld/domain reachability is modeled against the

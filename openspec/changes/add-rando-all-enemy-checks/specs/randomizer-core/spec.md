@@ -18,7 +18,7 @@ finite check-only sources that are unsafe as generic enemy-shuffle replacements,
 such as Red Eyegores) plus static ordinary
 overworld enemies with stable `(stage, area, source slot, block)` identity, plus
 reviewed underworld cave/interior exceptions with stable room/source-slot identity
-and direct access predicates, reviewed boss/miniboss event checks, and reviewed
+and direct access predicates, reviewed GT-miniboss event checks, and reviewed
 finite scripted-spawn checks with stable parent/child identity. Unbounded/farmable
 spawns and sources without stable death-time identity remain explicit future
 scope. The normalized effective value, not an incompatible raw request, SHALL feed
@@ -43,8 +43,8 @@ Derived rules SHALL apply this compatibility table:
   existing derived rules, normally `Keys` but `Off` when the keys tier is unsupported,
   until a future change makes enemy shuffle placement-affecting for all-enemy logic
   and updates digest/corpus expectations;
-- boss shuffle: requested `All` remains `All`; boss/miniboss checks bind to the
-  destination event and coexist with the existing boss reward path;
+- boss shuffle: requested `All` remains `All`; emitted GT-miniboss checks are
+  outside the shuffleable dungeon-boss room set;
 - pot shuffle composes with `All`; generated thrown-pot kill routes require
   effective pot shuffle to be off, while active pot-sanity seeds use the reviewed
   inventory-combat branch so a shuffled pot cannot be counted twice;

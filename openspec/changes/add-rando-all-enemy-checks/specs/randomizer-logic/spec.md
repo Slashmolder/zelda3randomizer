@@ -67,9 +67,9 @@ enemy-check bridge rows and source predicates. Enemy shuffle normalizes requeste
 `All` to the highest lower tier allowed by existing derived rules, normally `Keys`
 but `Off` when the keys tier is unsupported, until a future change explicitly makes
 enemy shuffle placement-affecting for all-enemy kill logic and updates digest/corpus
-expectations. Boss shuffle composes with `All` because boss/miniboss checks bind to
-the destination event and preserve existing boss reward behavior, unless another
-rule lowers the effective tier further. Entrance shuffle normalizes requested `All`
+expectations. Boss shuffle composes with `All` because dungeon bosses are excluded
+and the emitted GT-miniboss checks are outside the shuffleable room set, unless
+another rule lowers the effective tier further. Entrance shuffle normalizes requested `All`
 to `Dungeon` until all-enemy overworld/domain reachability is modeled against the
 entrance graph, unless another rule lowers the effective tier further.
 
