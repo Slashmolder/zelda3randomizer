@@ -821,10 +821,13 @@ bool Rando_AssignScriptedEnemyCheck(int child_slot, int parent_slot,
       dungeon_room_index2, parent_source_slot, parent_type, child_index, child_type);
   if (check == NULL)
     return true;
-  if (Rando_IsLocationChecked(check->loc_id)) {
-    sprite_state[child_slot] = 0;
-    return false;
-  }
+  // Checked state belongs to the one-time randomized reward, not the actor.
+  // Repeatable scripted children respawn normally after collection; leaving the
+  // dynamic location clear makes their marker/grant path inactive, so later
+  // deaths fall through to vanilla prize behavior. One-shot scripted parents
+  // whose children cannot be retriggered are excluded at codegen time.
+  if (Rando_IsLocationChecked(check->loc_id))
+    return true;
   s_rando_dynamic_enemy_check_loc[child_slot] = check->loc_id;
   return true;
 }
@@ -5623,19 +5626,12 @@ int Dungeon_LoadSingleSprite(int k, const uint8 *src, uint8 source_slot) {  // 8
     Dungeon_LoadSingleOverlord(src, source_slot);
     return k - 1;
   }
-  if (Rando_EnemyChecksDungeonActiveRuntime()) {
-    const RandoEnemyCheckLookupEntry *check =
-        Rando_FindEnemyCheck(dungeon_room_index2, (uint8)k);
-    if (Rando_EnemyCheckEntryActive(check) &&
-        Rando_IsLocationChecked(check->loc_id)) {
-      sprite_state[k] = 0;
-      sprite_type[k] = type;
-      sprite_N[k] = k;
-      sprite_die_action[k] = 0;
-      sprite_where_in_room[dungeon_room_index2] |= 1 << k;
-      return k;
-    }
-  }
+  // Ordinary enemy checked state suppresses only the randomized reward and its
+  // marker. Let the authored actor continue through the vanilla killed-bit and
+  // spawn path so it respawns exactly when it would without enemy checks; a
+  // later kill then receives the ordinary vanilla/drop-shuffled prize. Forced
+  // key carriers are a separate registry and the marker branch above already
+  // removes only their one-time forced-key behavior after collection.
   // Boss-shuffle render note: the old per-entry BossShuffle_ShouldSuppressSecondary
   // / BossShuffle_RemapSpriteType hooks were removed here — the live model
   // redirects the WHOLE room sprite list to the assigned boss's home room
@@ -5770,11 +5766,8 @@ void Overworld_LoadSprites() {  // 89c4ac
       const RandoOverworldEnemyCheckLookupEntry *check =
           Rando_FindOverworldEnemyCheck((uint8)overworld_area_index,
                                         rando_ow_stage, es_slot);
-      if (check != NULL && check->block == block) {
-        if (Rando_IsLocationChecked(check->loc_id)) {
-          sprite_where_in_overworld[block] = 0;
-          continue;
-        }
+      if (check != NULL && check->block == block &&
+          !Rando_IsLocationChecked(check->loc_id)) {
         s_rando_overworld_enemy_loc_by_block[block] = check->loc_id;
         s_rando_overworld_enemy_area_by_block[block] = (uint8)overworld_area_index;
         s_rando_overworld_enemy_stage_by_block[block] = rando_ow_stage;

@@ -12,7 +12,7 @@ reachability, death dispatch, persistence, and reward coexistence are modeled.
 The shipped registry scope is dungeon ordinary enemies, static authored overworld
 ordinary enemies, reviewed underworld exceptions, reviewed GT-miniboss events,
 and reviewed finite scripted-spawn enemies with stable source identity,
-reachability, death dispatch, and checked-state suppression.
+reachability, death dispatch, and checked-state grant/marker suppression.
 Killable source classes that are banned from carrying dungeon keys or are flying
 MAY be excluded from the normal `dungeon` tier, but SHALL be emitted as
 all-tier-only checks when their static source identity and room/area reachability
@@ -35,7 +35,7 @@ death dispatch, persistence, and logic are modeled.
 
 #### Scenario: Killable overworld source is emitted
 - **WHEN** the all-enemy audit finds a finite overworld enemy source with stable
-  identity, reachability, kill logic, and checked-state suppression
+  identity, reachability, kill logic, and duplicate-grant suppression
 - **THEN** it emits one `Enemy` location for that source under
   `enemy_drop_checks=all`
 
@@ -94,8 +94,8 @@ death dispatch, persistence, and logic are modeled.
 - **AND** its child kill route is modeled through inventory or counted throwable
   objects
 - **THEN** it emits one all-tier `Enemy` location for that child
-- **AND** already-checked children are suppressed without shifting later child
-  identities from the same authored parent
+- **AND** already-checked children still spawn without a marker or randomized grant,
+  while later child identities from the same authored parent remain stable
 
 #### Scenario: Unsupported source domain is not silently covered
 - **WHEN** a farmable, unbounded, projectile, or enemy-shuffle substituted source
@@ -141,11 +141,14 @@ normal prize-pack pickup. Special forced/carried drops and boss/event rewards SH
 remain independent.
 
 Checked sources SHALL stay checked across room/area reload, save/reload, snapshot
-restore, screen transition, mirror transition, and world transition. Suppressing a
-checked source SHALL preserve later source identities in the same spawn list.
+restore, screen transition, mirror transition, and world transition. Checked state
+SHALL suppress only the randomized grant and marker. Ordinary actors SHALL keep their
+authored source identity and follow vanilla spawn, room-history, death, and prize-drop
+behavior after collection.
 
 Forced enemy-drop checks SHALL keep their existing pickup-time behavior from the
-`keys` tier.
+`keys` tier: after collection the carrier may respawn normally, but its one-time
+forced-key behavior SHALL remain suppressed.
 
 #### Scenario: Overworld enemy dies
 - **WHEN** an active all-tier overworld enemy check dies
@@ -165,8 +168,9 @@ Forced enemy-drop checks SHALL keep their existing pickup-time behavior from the
 
 #### Scenario: Save reload after checked enemy
 - **WHEN** the player checks an all-tier enemy source, saves, and reloads
-- **THEN** the checked source does not grant again and later sources keep stable
-  identity
+- **THEN** the checked source follows vanilla respawn behavior without a check marker
+  or another randomized grant
+- **AND** later sources keep stable identity
 
 ### Requirement: All-enemy visuals use existing marker policy
 
@@ -180,7 +184,7 @@ a different placed item.
 
 For every emitted all-tier source that can have an in-world marker, generated marker
 data SHALL define domain-specific stable authored identity, screen-coordinate
-derivation, scroll/camera basis, sorted-OAM region, and checked-source suppression
+derivation, scroll/camera basis, sorted-OAM region, and checked-marker suppression
 behavior. A domain MAY suppress in-world markers only when marker metadata cannot be
 made safe; tracker, spoiler, reachability, and checked-state output SHALL still
 include every emitted location.

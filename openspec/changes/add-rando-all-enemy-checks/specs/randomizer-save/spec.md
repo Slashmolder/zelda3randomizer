@@ -9,11 +9,12 @@ tables, checked-location bitmaps, sidecar payloads, snapshot payloads, spoilers,
 trackers, and selftests are migrated together.
 
 New all-enemy slots SHALL persist the checked bit for every emitted all-enemy
-location and any domain-specific source-identity or suppression metadata required to
-recover authored source identity after reload or snapshot restore. Save/reload and
-snapshot restore SHALL suppress checked sources exactly as normal reload does and
-SHALL preserve later source identities in the same spawn list. Missing or malformed
-required metadata SHALL fail closed or deactivate randomizer state.
+location and any domain-specific source-identity metadata required to recover
+authored source identity after reload or snapshot restore. Save/reload and snapshot
+restore SHALL suppress duplicate grants and markers while ordinary actors follow
+vanilla respawn behavior, and SHALL preserve later source identities in the same
+spawn list. Missing or malformed required metadata SHALL fail closed or deactivate
+randomizer state.
 
 When door shuffle supports effective `enemy_drop_checks=all`, the non-key all-enemy
 door bridge rows, bridge digest, and effective all-enemy tier SHALL be part of door
@@ -34,12 +35,13 @@ path.
 
 #### Scenario: New all slot persists every emitted enemy check
 - **WHEN** an all-enemy slot is saved after some all-tier enemy checks are collected
-- **THEN** every emitted checked bit and required source-suppression metadata needed
-  for those checks is persisted
+- **THEN** every emitted checked bit and required source-identity metadata needed for
+  those checks is persisted
 
-#### Scenario: Reload suppresses checked sources
+#### Scenario: Reload preserves checked rewards but respawns ordinary actors
 - **WHEN** an all-enemy slot is reloaded after an emitted source has been checked
-- **THEN** that source is suppressed exactly as on normal room/area reload
+- **THEN** its randomized grant and marker remain suppressed while its actor follows
+  vanilla respawn and ordinary prize-drop behavior
 - **AND** later sources in the same spawn list keep stable identity
 
 #### Scenario: Snapshot lacks required all metadata

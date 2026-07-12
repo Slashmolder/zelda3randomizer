@@ -9,8 +9,9 @@
   shuffle, boss shuffle, entrance shuffle, and missing registry.
 - [x] Foundation: fail generation before placement retries when pure effective
   `all` would require missing generated all-tier registry data.
-- [x] Static-overworld phase: emit, place, grant, suppress, and expose generated
-  ordinary overworld enemies under `enemy_drop_checks=all`.
+- [x] Static-overworld phase: emit, place, grant once, respawn normally after
+  collection, and expose generated ordinary overworld enemies under
+  `enemy_drop_checks=all`.
 - [x] Reviewed-underworld exception phase: emit audited rooms `0x03C`, `0x107`,
   `0x10C`, and `0x123` as all-tier-only indoor rows, with direct cave/interior
   access predicates, counted same-side pot kill routing where valid, and normal
@@ -41,9 +42,9 @@
   competing dungeon-prize reward; exclude dungeon bosses from all-enemy checks.
 - [x] 2.4 Implement death-time direct grant for all ordinary emitted dungeon and
   static overworld enemy rows.
-- [x] 2.5 Suppress checked overworld sources on reload while preserving later source
-  identities; add lazy block lookup so snapshot restore can still resolve visible
-  restored sprites.
+- [x] 2.5 Suppress checked overworld grants and markers on reload while respawning
+  the authored actor and preserving later source identities; add lazy block lookup
+  so snapshot restore can still resolve visible restored sprites.
 - [x] 2.6 Keep forced enemy-drop rows on the existing pickup-time path.
 - [x] 2.7 Make an ordinary enemy check replace its normal prize-pack pickup while
   preserving Pikit-held items, forced drops, dungeon bosses, and scripted events.
@@ -149,6 +150,13 @@
   child made its item permanently unavailable. Those four one-shot parents are
   now excluded; repeatable room 0x00A Falling Stalfos and room 0x0A8 proximity
   Red Stalfos remain all-tier checks. -->
+  <!-- owner playtest/F12 2026-07-12: after collecting a Mini-Moldorm check and
+  an overworld Octorok check, their actors stayed permanently absent. The dump
+  confirmed area 0x35 stage 1 location 1947 was checked and its block 0xC5A was
+  being suppressed. Checked state now suppresses only the randomized grant and
+  marker: ordinary static and repeatable scripted actors follow vanilla respawn,
+  room-history, kill-gate, and prize-drop behavior. Forced-key carriers likewise
+  may respawn, while their collected one-time key behavior remains suppressed. -->
 - [x] 6.6 Test thrown-pot kill logic with insufficient and sufficient pot counts
   while pot shuffle is off, plus the pot-sanity guard that disables those branches
   and requires the inventory-combat route while any effective pot tier is active.

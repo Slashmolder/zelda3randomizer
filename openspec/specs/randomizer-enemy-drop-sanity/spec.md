@@ -132,6 +132,8 @@ key outside placement semantics.
 - **WHEN** a checked enemy-drop source is loaded again
 - **THEN** the runtime suppresses its forced-key behavior and does not respawn a
   vanilla forced key or rerun the placed check
+- **AND** the carrier itself may respawn under vanilla rules, with later kills using
+  ordinary vanilla/drop-shuffled prize behavior
 
 ### Requirement: Enemy-drop check visual marker
 
@@ -231,8 +233,10 @@ death flag is set.
 
 #### Scenario: Checked ordinary enemy room reloads
 - **WHEN** a room containing an already checked ordinary enemy source is loaded
-- **THEN** the runtime suppresses that enemy and consumes its source slot so later
-  sprites in the same room keep stable source-slot identity
+- **THEN** the enemy follows vanilla room-history and respawn behavior in its
+  original source slot
+- **AND** it has no enemy-check marker, cannot grant the randomized location again,
+  and produces its ordinary vanilla/drop-shuffled prize on later kills
 
 #### Scenario: Forced-key tier remains pickup based
 - **WHEN** `enemy_drop_checks=keys` is effective

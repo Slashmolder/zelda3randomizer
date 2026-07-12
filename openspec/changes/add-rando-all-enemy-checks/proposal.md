@@ -18,7 +18,8 @@ reason why it cannot be modeled yet.
 - Generate a complete enemy-source audit across dungeon rooms, overworld areas,
   bosses/minibosses, and finite scripted spawn groups.
 - Emit randomizer locations for every audited finite killable enemy source whose
-  reachability, kill route, death event, and checked-state suppression can be proven.
+  reachability, kill route, death event, and duplicate-grant suppression can be
+  proven.
 - Keep non-killable and non-finite actors out of the emitted registry, but record
   each exclusion with a stable reason.
 - Add stable runtime identity and persistence for overworld and scripted enemy
@@ -48,7 +49,8 @@ reason why it cannot be modeled yet.
 - **Generated data**: complete all-enemy audit, all-enemy registry, source lookup
   tables, reachability metadata, kill-route metadata, and exclusion reports.
 - **Runtime**: overworld/source identity tracking, death-time dispatch, checked-state
-  suppression, save/reload and snapshot replay for all emitted enemy domains.
+  grant/marker suppression with vanilla actor respawn, and save/reload and snapshot
+  replay for all emitted enemy domains.
 - **Logic and placement**: full location emission, kill predicates, setting
   compatibility rules, capacity checks, item-pool/trap/customizer policies, and
   corpus coverage.

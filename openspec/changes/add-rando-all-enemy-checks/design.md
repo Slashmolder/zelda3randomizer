@@ -44,13 +44,13 @@ The tier excludes actors that are not valid one-shot kill checks:
   have a killable enemy death event;
 - unbounded or farmable dynamic spawns unless the design converts the parent into a
   finite one-shot source with stable persistence;
-- sources whose death cannot be detected, dispatched, and suppressed without
+- sources whose death cannot be detected, dispatched, and guarded without
   duplicate grants or source-slot drift.
 
 The generated `all` registry is complete for the currently shipped static
 dungeon+overworld domains plus the reviewed underworld exception list only if every
 emitted source has stable identity, logic, death dispatch, and checked-source
-suppression. Bosses, minibosses, finite scripted spawns, and unbounded/farmable
+grant suppression. Bosses, minibosses, finite scripted spawns, and unbounded/farmable
 spawns are not quiet exclusions from a completed future full-all domain; they
 remain explicit future domains until their audits can classify each source as
 included or excluded with a stable reason.
@@ -157,10 +157,11 @@ dispatches the placed item, marks the location checked, and then allows the norm
 death cleanup that is safe for that source.
 
 Checked sources must not re-grant on room/area reload, save/reload, snapshot replay,
-screen transition, mirror transition, or world transition. The runtime must suppress
-the checked source while preserving later source identities in the same spawn list.
-For overworld sources, this likely requires source-list consumption equivalent to
-the dungeon source-slot preservation model.
+screen transition, mirror transition, or world transition. The runtime suppresses
+the checked source's randomized grant and marker, not the actor. Ordinary checked
+enemies keep their authored source identity and follow vanilla spawn, room-history,
+death, and prize-drop behavior. Forced key checks remain distinct: their carrier may
+respawn normally, but its collected one-time forced-key behavior stays suppressed.
 
 Boss and miniboss rows may coexist with existing boss prizes, dungeon prizes, heart
 containers, and scripted progression only if the death hook can keep those existing
@@ -220,7 +221,8 @@ Save and snapshot compatibility must be explicit:
 - new all-enemy slots persist every emitted checked bit;
 - snapshot restore fails closed or deactivates randomizer state if required all-enemy
   source-identity metadata is missing or malformed;
-- source suppression after restore matches normal reload behavior.
+- grant/marker suppression and vanilla actor respawn after restore match normal
+  reload behavior.
 
 ## D7 - Door shuffle, pot shuffle, enemy shuffle, and entrance shuffle
 
@@ -265,7 +267,7 @@ enough source identity to distinguish duplicate enemy types in the same area.
 For every all-tier domain that renders in-world markers, the generated data must
 provide the marker candidate metadata required by the renderer: stable authored
 identity, screen-coordinate derivation, scroll/camera basis, sorted-OAM region, and
-checked-source suppression behavior. A domain that lacks safe marker metadata may
+checked-marker suppression behavior. A domain that lacks safe marker metadata may
 suppress in-world markers only if tracker/spoiler output still exposes every emitted
 location and the UI does not imply an in-world marker is guaranteed.
 
@@ -275,7 +277,7 @@ Required validation includes:
 
 - complete source-audit freshness checks: every source classified, no duplicate
   identity, no unclassified finite killable source;
-- codegen checks for location capacity, lookup uniqueness, source suppression, and
+- codegen checks for location capacity, lookup uniqueness, source identity, and
   stale audit data;
 - logic selfchecks for reachability plus kill-route predicates;
 - Release build and `--rando-selftest`;
@@ -285,6 +287,6 @@ Required validation includes:
 - runtime tests for shipped dungeon, reviewed underworld, static overworld,
   GT-miniboss, and finite scripted-spawn death grants;
 - leave/re-enter, save/reload, snapshot before death, snapshot after death, mirror or
-  world transition, and checked-source suppression;
+  world transition, checked grant/marker suppression, and vanilla actor respawn;
 - targeted thrown-pot tests where one pot is insufficient and two pots are logical;
 - F12/OAM/VRAM marker checks for dense all-enemy screens.
