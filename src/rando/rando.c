@@ -8024,6 +8024,7 @@ static void Rando_SelfCheckCapacityABI(void) {
 void Rando_RunAllSelfChecks(void) {
   Rando_SelfCheckCapacityABI();
   Rando_SelfCheck();
+  ItemReceipt_FastFanfareSelfCheck();
   if (RandoPot_OverlayOamSelfCheck()) {
     fprintf(stderr, "Rando_SelfCheck: pot overlay OAM allocation can clobber sorted sprites\n");
     exit(2);

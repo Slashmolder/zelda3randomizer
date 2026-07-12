@@ -995,6 +995,81 @@ bool ItemReceipt_GrantInventory(uint8 j) {
   return true;
 }
 
+// Fast fanfare shortens a chest receipt from 0x38 to 0x18 frames. Vanilla
+// chest rupees are deferred until Ancilla22_ItemReceipt sees the timer at
+// 0x28, so a shortened receipt can never reach the grant point. Apply that
+// one deferred side effect when the timer is shortened; the normal receipt
+// path still owns every other method and the non-fast chest path.
+static void ItemReceipt_ApplyFastFanfare(int ancilla, uint8 item,
+                                        bool emulator_attached) {
+  if ((enhanced_features0 & kFeatures0_FastFanfare) &&
+      !emulator_attached &&
+      item != 0x20 && item != 0x37 && item != 0x38 && item != 0x39 &&
+      ancilla_aux_timer[ancilla] > 0x18) {
+    if (item_receipt_method == 1)
+      Ancilla_AddRupees(ancilla);
+    ancilla_aux_timer[ancilla] = 0x18;
+  }
+}
+
+void ItemReceipt_FastFanfareSelfCheck(void) {
+  uint32 saved_features0 = enhanced_features0;
+  uint8 saved_method = item_receipt_method;
+  uint8 saved_timer = ancilla_aux_timer[0];
+  uint8 saved_item = ancilla_item_to_link[0];
+  uint16 saved_rupees = link_rupees_goal;
+
+  enhanced_features0 |= kFeatures0_FastFanfare;
+  item_receipt_method = 1;
+  static const struct { uint8 item; uint16 amount; } kRupees[] = {
+    {0x34, 1}, {0x35, 5}, {0x36, 20}, {0x40, 100},
+    {0x41, 50}, {0x46, 300}, {0x47, 20},
+  };
+  for (size_t i = 0; i < sizeof(kRupees) / sizeof(kRupees[0]); i++) {
+    ancilla_item_to_link[0] = kRupees[i].item;
+    ancilla_aux_timer[0] = 0x38;
+    link_rupees_goal = 20;
+    ItemReceipt_ApplyFastFanfare(0, kRupees[i].item, false);
+    if (ancilla_aux_timer[0] != 0x18 ||
+        link_rupees_goal != 20 + kRupees[i].amount) {
+      fprintf(stderr,
+              "ItemReceipt_FastFanfareSelfCheck: fast chest rupees 0x%02x were lost\n",
+              kRupees[i].item);
+      exit(2);
+    }
+  }
+
+  // Non-chest receipts grant rupees at their normal completion point, so the
+  // fast setup must not pre-grant those too.
+  item_receipt_method = 0;
+  ancilla_item_to_link[0] = 0x40;
+  ancilla_aux_timer[0] = 0x60;
+  link_rupees_goal = 20;
+  ItemReceipt_ApplyFastFanfare(0, 0x40, false);
+  if (ancilla_aux_timer[0] != 0x18 || link_rupees_goal != 20) {
+    fprintf(stderr, "ItemReceipt_FastFanfareSelfCheck: pickup rupees double-granted\n");
+    exit(2);
+  }
+
+  // Side-by-side comparison suppresses FastFanfare and must retain the
+  // vanilla timer/grant schedule.
+  item_receipt_method = 1;
+  ancilla_aux_timer[0] = 0x38;
+  link_rupees_goal = 20;
+  ItemReceipt_ApplyFastFanfare(0, 0x40, true);
+  if (ancilla_aux_timer[0] != 0x38 || link_rupees_goal != 20) {
+    fprintf(stderr, "ItemReceipt_FastFanfareSelfCheck: emulator path diverged\n");
+    exit(2);
+  }
+
+  enhanced_features0 = saved_features0;
+  item_receipt_method = saved_method;
+  ancilla_aux_timer[0] = saved_timer;
+  ancilla_item_to_link[0] = saved_item;
+  link_rupees_goal = saved_rupees;
+  fprintf(stderr, "[ItemReceipt_FastFanfareSelfCheck] OK\n");
+}
+
 void AncillaAdd_ItemReceipt(uint8 ain, uint8 yin, int chest_pos) {  // 8985e8
   int j = link_receiveitem_index;
   if (j >= 76)
@@ -1062,12 +1137,8 @@ void AncillaAdd_ItemReceipt(uint8 ain, uint8 yin, int chest_pos) {  // 8985e8
   ancilla_aux_timer[ancilla] =
     (j == 0x20 || j == 0x37 || j == 0x38 || j == 0x39) ? 0x68 :
     (j == 0x26) ? 0x2 : (item_receipt_method ? 0x38 : 0x60);
-  if ((enhanced_features0 & kFeatures0_FastFanfare) &&
-      !ZeldaIsEmulatorAttached() &&
-      j != 0x20 && j != 0x37 && j != 0x38 && j != 0x39 &&
-      ancilla_aux_timer[ancilla] > 0x18) {
-    ancilla_aux_timer[ancilla] = 0x18;
-  }
+  ItemReceipt_ApplyFastFanfare(ancilla, (uint8)j,
+                              ZeldaIsEmulatorAttached());
 
   int x, y;
 

@@ -61,6 +61,7 @@ void Module16_04_FadeAndEnd();
 void TriforceRoom_LinkApproachTriforce();
 bool ItemReceipt_GrantInventory(uint8 item);
 void AncillaAdd_ItemReceipt(uint8 ain, uint8 yin, int chest_pos);
+void ItemReceipt_FastFanfareSelfCheck(void);
 void ItemReceipt_GiveBottledItem(uint8 item);
 void Module17_SaveAndQuit();
 void WallMaster_SendPlayerToLastEntrance();
