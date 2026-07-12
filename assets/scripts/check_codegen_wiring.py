@@ -64,6 +64,43 @@ BUILD_SYSTEM_FILES = [
     Path("src/platform/switch/Makefile"),
 ]
 
+# Normal-invocation inputs consumed by assets/rando_logic_gen.py. Unlike Make
+# and Switch (which force-run codegen), MSBuild uses these as its incremental
+# correctness boundary. Keep the two sets exact: an omission ships stale
+# generated code, while an extra/missing optional entry breaks incremental or
+# add/delete invalidation behavior.
+MSBUILD_REQUIRED_CODEGEN_INPUTS = {
+    "assets/rando/op_registry.yaml",
+    "assets/rando/item_registry.yaml",
+    "assets/rando/location_registry.yaml",
+    "assets/rando/icon_atlas.yaml",
+    "assets/rando/direct_grant_icons.yaml",
+    "assets/rando/logic.yaml",
+    "assets/rando/macros.yaml",
+    "assets/rando/npc_souls.yaml",
+    "assets/rando/entrance_registry.yaml",
+    "assets/rando/door_predicates.gen.json",
+    "assets/rando/door_portals.yaml",
+    "assets/rando/logic_parts/**/*.yaml",
+    "assets/rando_logic_gen.py",
+    "assets/chest_data.py",
+}
+
+MSBUILD_OPTIONAL_CODEGEN_INPUTS = {
+    "assets/rando/chest_table.gen.bin",
+    "assets/rando/pots.gen.yaml",
+    "assets/rando/pot_key_depth.gen.yaml",
+    "assets/rando/terrain.gen.yaml",
+    "assets/rando/enemy_drops.gen.yaml",
+    "assets/rando/enemy_checks.gen.yaml",
+    "assets/rando/soul_rooms.gen.yaml",
+}
+
+MSBUILD_PRESENCE_CODEGEN_INPUTS = {
+    "assets/rando/logic.schema.yaml",
+    "zelda3_assets.dat",
+}
+
 
 def strip_comments(path: Path, text: str) -> str:
     """Inspect build *code*, not prose — a comment mentioning a generated file
@@ -91,6 +128,27 @@ def file_mentions(path: Path, needle: str) -> bool:
     return needle in text or dir_qualified in text
 
 
+def vcx_item_includes(text: str, item_name: str) -> set[str]:
+    """Return normalized Include values for one MSBuild item type."""
+    values = re.findall(
+        rf'<{re.escape(item_name)}\b[^>]*\bInclude="([^"]+)"', text
+    )
+    return {value.replace("\\", "/").lower() for value in values}
+
+
+def vcx_conditioned_items(text: str, item_name: str) -> dict[str, str]:
+    """Return normalized Include -> Condition for simple MSBuild items."""
+    records: dict[str, str] = {}
+    for attrs in re.findall(rf'<{re.escape(item_name)}\b([^>]*)>', text):
+        include = re.search(r'\bInclude="([^"]+)"', attrs)
+        condition = re.search(r'\bCondition="([^"]+)"', attrs)
+        if include:
+            path = include.group(1).replace("\\", "/").lower()
+            records[path] = (condition.group(1).replace("\\", "/").lower()
+                             if condition else "")
+    return records
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--quiet", action="store_true")
@@ -116,6 +174,68 @@ def main(argv: list[str]) -> int:
             "Makefile, Zelda3.vcxproj, and src/platform/switch/Makefile (parity)."
         )
         return 1
+
+    # --- MSBuild input completeness guard -----------------------------------
+    # The incremental RandoCodegen stamp makes this list load-bearing. Assert
+    # the exact required and presence-aware optional sets, rather than merely
+    # checking that the stamp mechanism exists.
+    vcx = Path("zelda3.vcxproj")
+    if vcx.exists():
+        vcx_text = strip_comments(
+            vcx, vcx.read_text(encoding="utf-8", errors="replace")
+        )
+        required_all = vcx_item_includes(vcx_text, "RandoCodegenInput")
+        promotes_optional = "@(randocodegenoptionalinput)" in required_all
+        promotes_presence = "@(randocodegenpresenceinput)" in required_all
+        required = set(required_all)
+        required.discard("@(randocodegenoptionalinput)")
+        required.discard("@(randocodegenpresenceinput)")
+        optional = vcx_item_includes(vcx_text, "RandoCodegenOptionalInput")
+        presence = vcx_item_includes(vcx_text, "RandoCodegenPresenceInput")
+        expected_required = {p.lower() for p in MSBUILD_REQUIRED_CODEGEN_INPUTS}
+        expected_optional = {p.lower() for p in MSBUILD_OPTIONAL_CODEGEN_INPUTS}
+        expected_presence = {p.lower() for p in MSBUILD_PRESENCE_CODEGEN_INPUTS}
+        missing_required = sorted(expected_required - required)
+        extra_required = sorted(required - expected_required)
+        missing_optional = sorted(expected_optional - optional)
+        extra_optional = sorted(optional - expected_optional)
+        missing_presence = sorted(expected_presence - presence)
+        extra_presence = sorted(presence - expected_presence)
+        bad_conditions: list[str] = []
+        for item_name, paths in (
+            ("RandoCodegenOptionalInput", expected_optional),
+            ("RandoCodegenPresenceInput", expected_presence),
+        ):
+            records = vcx_conditioned_items(vcx_text, item_name)
+            for path in paths:
+                if records.get(path) != f"exists('{path}')":
+                    bad_conditions.append(path)
+        if (missing_required or extra_required or missing_optional or extra_optional or
+                missing_presence or extra_presence or bad_conditions or
+                not promotes_optional or promotes_presence):
+            for label, paths in (
+                ("missing required", missing_required),
+                ("unexpected required", extra_required),
+                ("missing presence-aware optional", missing_optional),
+                ("unexpected presence-aware optional", extra_optional),
+                ("missing presence-only", missing_presence),
+                ("unexpected presence-only", extra_presence),
+                ("missing/mismatched Exists condition", sorted(bad_conditions)),
+            ):
+                for path in paths:
+                    print(f"check_codegen_wiring: MSBuild {label} input: {path}")
+            if not promotes_optional:
+                print("check_codegen_wiring: MSBuild optional inputs do not flow "
+                      "into RandoCodegenInput")
+            if promotes_presence:
+                print("check_codegen_wiring: MSBuild presence-only probes must not "
+                      "flow into direct timestamp inputs")
+            print(
+                "\nThe MSBuild RandoCodegen stamp must declare the exact normal-"
+                "invocation\nrequired, optional-content, and presence-only sets "
+                "consumed by\nassets/rando_logic_gen.py."
+            )
+            return 1
 
     # --- Codegen INPUT-recursion guard ----------------------------------------
     # The logic graph is assembled from assets/rando/logic_parts/**/*.yaml (incl.
@@ -171,30 +291,27 @@ def main(argv: list[str]) -> int:
         force_run = bool(m and not re.search(r'\b(Inputs|Outputs)=', m.group(0)))
         incremental_contract = [
             'RandoCodegenOptionalInput',
-            'assets\\rando\\chest_table.gen.bin',
-            'assets\\rando\\pots.gen.yaml',
-            'assets\\rando\\pot_key_depth.gen.yaml',
-            'assets\\rando\\terrain.gen.yaml',
-            'assets\\rando\\enemy_drops.gen.yaml',
-            'assets\\rando\\enemy_checks.gen.yaml',
+            'RandoCodegenPresenceInput',
             'Name="RandoCodegenState"',
             'rando_codegen_inputs.txt',
+            'Lines="version=3;@(RandoCodegenOptionalInput);@(RandoCodegenPresenceInput)"',
             'WriteOnlyWhenDifferent="true"',
             '_MissingRandoCodegenOutput',
             '<Delete Files="$(IntDir)rando_codegen.stamp"',
             'Inputs="@(RandoCodegenInput);$(IntDir)rando_codegen_inputs.txt"',
             'Outputs="$(IntDir)rando_codegen.stamp"',
             '<Touch Files="$(IntDir)rando_codegen.stamp" AlwaysCreate="true"',
-        ]
+        ] + [p.replace("/", "\\") for p in sorted(
+            MSBUILD_OPTIONAL_CODEGEN_INPUTS | MSBUILD_PRESENCE_CODEGEN_INPUTS)]
         presence_aware = bool(m and all(token in text for token in incremental_contract))
         if not force_run and not presence_aware:
             missing_force.append(vcx)
     if missing_force:
         for bs in missing_force:
-            print(f"check_codegen_wiring: {bs} can skip codegen when local pot "
-                  f"artifact presence changes.")
+            print(f"check_codegen_wiring: {bs} can skip codegen when a local "
+                  f"artifact's presence changes.")
         print(
-            "\nThe gitignored pot YAMLs may be added or deleted outside git. Build\n"
+            "\nGitignored registries/assets may be added or deleted outside git. Build\n"
             "systems must either invoke rando_logic_gen.py every build or maintain a\n"
             "presence-aware stamp that invalidates on optional-file addition/deletion\n"
             "and whenever a generated output is missing."
@@ -203,7 +320,8 @@ def main(argv: list[str]) -> int:
 
     if not args.quiet:
         print(f"check_codegen_wiring: {len(EXPECTED_GENERATED)} generated file(s) wired "
-              f"across all build systems (+ logic_parts recursion, pot artifact deletion guard).")
+              f"across all build systems (+ exact MSBuild inputs, logic_parts recursion, "
+              f"local-artifact deletion guard).")
     return 0
 
 
