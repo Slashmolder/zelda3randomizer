@@ -166,6 +166,13 @@ forced-key behavior SHALL remain suppressed.
 - **THEN** the all-enemy check grants exactly once
 - **AND** existing scripted-progression behavior remains intact
 
+#### Scenario: GT miniboss runtime room differs from its logical room
+- **WHEN** a GT miniboss door region uses a logical room id that differs from the
+  live `dungeon_room_index`
+- **THEN** its generated event lookup uses the physical runtime room while retaining
+  the logical door region for reachability
+- **AND** generation fails if the reviewed runtime/logical room contract drifts
+
 #### Scenario: Save reload after checked enemy
 - **WHEN** the player checks an all-tier enemy source, saves, and reloads
 - **THEN** the checked source follows vanilla respawn behavior without a check marker

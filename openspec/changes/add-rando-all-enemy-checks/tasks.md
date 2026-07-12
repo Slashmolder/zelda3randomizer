@@ -161,6 +161,16 @@
   with no marker and no second randomized reward. Owner then revisited the checked
   room 0x0A8 Red Stalfos group and confirmed the repeatable scripted children also
   respawned with no markers or duplicate rewards. -->
+  <!-- owner F12 2026-07-12: killing GT Lanmolas 2 left Arrow1 at 29, with
+  arrow_filler=0 and location 1789 unchecked. The live event ran in physical room
+  0x06C while the generated lookup incorrectly used logical door-region room 0x067.
+  GT event rows now distinguish physical runtime rooms from logical rooms; the same
+  audit corrected Ice Armos from logical 0x064 to physical 0x01C. A subsequent
+  Moldorm F12 likewise showed Arrow1 unchanged at 30, filler zero, location 1790
+  unchecked, and live room 0x04D rather than logical 0x06A. A generator contract
+  now rejects future runtime/logical alias drift for all three events. The final
+  Ice Armos F12 confirmed the full pattern: Arrow1 unchanged at 20, filler zero,
+  location 1788 unchecked, and live physical room 0x01C. -->
 - [x] 6.6 Test thrown-pot kill logic with insufficient and sufficient pot counts
   while pot shuffle is off, plus the pot-sanity guard that disables those branches
   and requires the inventory-combat route while any effective pot tier is active.

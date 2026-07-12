@@ -665,7 +665,11 @@ GT_MINIBOSS_EVENT_CHECKS = [
         "boss_kind": "gt_miniboss",
         "game_dungeon": 13,
         "rando_dungeon": 12,
-        "room": 0x064,
+        # Runtime event identity must use dungeon_room_index, not the logical
+        # door-region room. GT Ice Armos is region room 0x064 but executes in
+        # the lower half of physical room 0x01C.
+        "room": 0x01C,
+        "logical_room": 0x064,
         "door_dungeon": 12,
         "door_region": 537,
         "region": "GanonsTower_Lobby",
@@ -685,7 +689,10 @@ GT_MINIBOSS_EVENT_CHECKS = [
         "boss_kind": "gt_miniboss",
         "game_dungeon": 13,
         "rando_dungeon": 12,
-        "room": 0x067,
+        # GT Lanmolas 2 is logical room 0x067 but its live event runs in
+        # physical room 0x06C (confirmed by owner F12 after the kill).
+        "room": 0x06C,
+        "logical_room": 0x067,
         "door_dungeon": 12,
         "door_region": 540,
         "region": "GanonsTower_Lobby",
@@ -703,7 +710,10 @@ GT_MINIBOSS_EVENT_CHECKS = [
         "boss_kind": "gt_miniboss",
         "game_dungeon": 13,
         "rando_dungeon": 12,
-        "room": 0x06A,
+        # GT Moldorm's logical room 0x06A is rendered in physical room 0x04D.
+        # The death explosion hook therefore observes 0x04D.
+        "room": 0x04D,
+        "logical_room": 0x06A,
         "door_dungeon": 12,
         "door_region": 547,
         "region": "GanonsTower_Lobby",
@@ -719,6 +729,15 @@ GT_MINIBOSS_EVENT_CHECKS = [
         ),
     },
 ]
+
+# These are deliberately physical runtime rooms, not the logical room ids used
+# by door regions and spoiler grouping. Keep the distinction load-bearing: using
+# logical 0x064/0x067 made Ice Armos and Lanmolas 2 silently fail to dispatch.
+GT_MINIBOSS_RUNTIME_ROOM_CONTRACT = {
+    "GT Ice Armos": (0x01C, 0x064),
+    "GT Lanmolas 2": (0x06C, 0x067),
+    "GT Moldorm": (0x04D, 0x06A),
+}
 
 SCRIPTED_SPAWN_SPECS = {
     0x18: {
@@ -1386,6 +1405,13 @@ def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
     for boss in GT_MINIBOSS_EVENT_CHECKS:
         if boss.get("boss_kind") != "gt_miniboss":
             die(f"non-GT boss event must not be emitted as an enemy check: {boss.get('name')}")
+        expected_rooms = GT_MINIBOSS_RUNTIME_ROOM_CONTRACT.get(boss["source_name"])
+        actual_rooms = (int(boss["room"]), int(boss["logical_room"]))
+        if expected_rooms != actual_rooms:
+            die(
+                f"GT miniboss runtime/logical room drift for {boss['source_name']}: "
+                f"got {actual_rooms}, expected {expected_rooms}"
+            )
         rows.append({
             "id": ENEMY_CHECK_BASE_ID + len(rows),
             "name": boss["name"],
@@ -1395,6 +1421,7 @@ def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
             "game_dungeon": int(boss["game_dungeon"]),
             "rando_dungeon": int(boss["rando_dungeon"]),
             "room": int(boss["room"]),
+            "logical_room": int(boss["logical_room"]),
             "door_dungeon": int(boss["door_dungeon"]),
             "door_region": int(boss["door_region"]),
             "region": boss["region"],
