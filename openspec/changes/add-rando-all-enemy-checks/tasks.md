@@ -158,7 +158,9 @@
   room-history, kill-gate, and prize-drop behavior. Forced-key carriers likewise
   may respawn, while their collected one-time key behavior remains suppressed.
   Owner retest confirmed both the checked Mini-Moldorm and checked Octorok respawned
-  with no marker and no second randomized reward. -->
+  with no marker and no second randomized reward. Owner then revisited the checked
+  room 0x0A8 Red Stalfos group and confirmed the repeatable scripted children also
+  respawned with no markers or duplicate rewards. -->
 - [x] 6.6 Test thrown-pot kill logic with insufficient and sufficient pot counts
   while pot shuffle is off, plus the pot-sanity guard that disables those branches
   and requires the inventory-combat route while any effective pot tier is active.
