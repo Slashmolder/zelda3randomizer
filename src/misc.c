@@ -1002,14 +1002,34 @@ bool ItemReceipt_GrantInventory(uint8 j) {
 // path still owns every other method and the non-fast chest path.
 static void ItemReceipt_ApplyFastFanfare(int ancilla, uint8 item,
                                         bool emulator_attached) {
-  if ((enhanced_features0 & kFeatures0_FastFanfare) &&
-      !emulator_attached &&
-      item != 0x20 && item != 0x37 && item != 0x38 && item != 0x39 &&
+  bool fast_fanfare =
+      (enhanced_features0 & kFeatures0_FastFanfare) && !emulator_attached;
+  bool is_prize = item == 0x20 || item == 0x37 || item == 0x38 || item == 0x39;
+  bool fast_boss_prize = ItemReceipt_IsFastBossPrize(
+      item, item_receipt_method, player_is_indoors != 0, fast_fanfare);
+  if (fast_fanfare && (!is_prize || fast_boss_prize) &&
       ancilla_aux_timer[ancilla] > 0x18) {
     if (item_receipt_method == 1)
       Ancilla_AddRupees(ancilla);
     ancilla_aux_timer[ancilla] = 0x18;
   }
+}
+
+bool ItemReceipt_IsFastBossPrize(uint8 item, uint8 receipt_method,
+                                 bool indoors, bool fast_fanfare) {
+  bool is_prize = item == 0x20 || item == 0x37 || item == 0x38 || item == 0x39;
+  return fast_fanfare && indoors && receipt_method == 3 && is_prize;
+}
+
+bool ItemReceipt_ShouldWaitForPendantFanfare(uint8 item, uint8 apu_busy,
+                                             bool fast_boss_prize) {
+  bool is_pendant = item == 0x37 || item == 0x38 || item == 0x39;
+  return is_pendant && apu_busy != 0 && !fast_boss_prize;
+}
+
+bool ItemReceipt_ShouldAdvanceCrystalFanfare(uint8 apu_busy, uint8 timer,
+                                             bool fast_boss_prize) {
+  return apu_busy == 0 || (fast_boss_prize && timer <= 1);
 }
 
 void ItemReceipt_FastFanfareSelfCheck(void) {
@@ -1018,6 +1038,7 @@ void ItemReceipt_FastFanfareSelfCheck(void) {
   uint8 saved_timer = ancilla_aux_timer[0];
   uint8 saved_item = ancilla_item_to_link[0];
   uint16 saved_rupees = link_rupees_goal;
+  uint8 saved_indoors = player_is_indoors;
 
   enhanced_features0 |= kFeatures0_FastFanfare;
   item_receipt_method = 1;
@@ -1062,11 +1083,49 @@ void ItemReceipt_FastFanfareSelfCheck(void) {
     exit(2);
   }
 
+  // Pendant receipts use the same short timer, then bypass the vanilla APU
+  // completion hold. Their prize bits and dungeon exit remain in the normal
+  // receipt-completion path; only the audio wait is optional.
+  item_receipt_method = 3;
+  player_is_indoors = 1;
+  ancilla_aux_timer[0] = 0x68;
+  ItemReceipt_ApplyFastFanfare(0, 0x37, false);
+  bool fast_pendant = ItemReceipt_IsFastBossPrize(0x37, 3, true, true);
+  if (ancilla_aux_timer[0] != 0x18 || !fast_pendant ||
+      ItemReceipt_ShouldWaitForPendantFanfare(0x37, 1, fast_pendant) ||
+      !ItemReceipt_ShouldWaitForPendantFanfare(0x37, 1, false) ||
+      ItemReceipt_ShouldWaitForPendantFanfare(0x37, 0, false) ||
+      ItemReceipt_ShouldWaitForPendantFanfare(0x20, 1, false) ||
+      ItemReceipt_IsFastBossPrize(0x37, 3, false, true) ||
+      ItemReceipt_IsFastBossPrize(0x37, 1, true, true) ||
+      ItemReceipt_IsFastBossPrize(0x37, 3, true, false)) {
+    fprintf(stderr, "ItemReceipt_FastFanfareSelfCheck: pendant wait policy failed\n");
+    exit(2);
+  }
+  ancilla_aux_timer[0] = 0x68;
+  ItemReceipt_ApplyFastFanfare(0, 0x20, false);
+  if (ancilla_aux_timer[0] != 0x18 ||
+      ItemReceipt_ShouldAdvanceCrystalFanfare(1, 2, true) ||
+      !ItemReceipt_ShouldAdvanceCrystalFanfare(1, 1, true) ||
+      ItemReceipt_ShouldAdvanceCrystalFanfare(1, 1, false) ||
+      !ItemReceipt_ShouldAdvanceCrystalFanfare(0, 2, false)) {
+    fprintf(stderr, "ItemReceipt_FastFanfareSelfCheck: crystal policy failed\n");
+    exit(2);
+  }
+  player_is_indoors = 0;
+  ancilla_aux_timer[0] = 0x68;
+  ItemReceipt_ApplyFastFanfare(0, 0x37, false);
+  if (ancilla_aux_timer[0] != 0x68) {
+    fprintf(stderr, "ItemReceipt_FastFanfareSelfCheck: outdoor prize was shortened\n");
+    exit(2);
+  }
+
   enhanced_features0 = saved_features0;
   item_receipt_method = saved_method;
   ancilla_aux_timer[0] = saved_timer;
   ancilla_item_to_link[0] = saved_item;
   link_rupees_goal = saved_rupees;
+  player_is_indoors = saved_indoors;
   fprintf(stderr, "[ItemReceipt_FastFanfareSelfCheck] OK\n");
 }
 

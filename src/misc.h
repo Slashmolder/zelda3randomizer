@@ -62,6 +62,12 @@ void TriforceRoom_LinkApproachTriforce();
 bool ItemReceipt_GrantInventory(uint8 item);
 void AncillaAdd_ItemReceipt(uint8 ain, uint8 yin, int chest_pos);
 void ItemReceipt_FastFanfareSelfCheck(void);
+bool ItemReceipt_IsFastBossPrize(uint8 item, uint8 receipt_method,
+                                 bool indoors, bool fast_fanfare);
+bool ItemReceipt_ShouldWaitForPendantFanfare(uint8 item, uint8 apu_busy,
+                                             bool fast_boss_prize);
+bool ItemReceipt_ShouldAdvanceCrystalFanfare(uint8 apu_busy, uint8 timer,
+                                             bool fast_boss_prize);
 void ItemReceipt_GiveBottledItem(uint8 item);
 void Module17_SaveAndQuit();
 void WallMaster_SendPlayerToLastEntrance();

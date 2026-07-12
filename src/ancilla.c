@@ -40,6 +40,11 @@ static bool CutsceneFastForwardEnabled(void) {
          !ZeldaIsEmulatorAttached();
 }
 
+static bool FastFanfareEnabled(void) {
+  return (enhanced_features0 & kFeatures0_FastFanfare) &&
+         !ZeldaIsEmulatorAttached();
+}
+
 static uint8 CutsceneClampTimer8(uint8 value, uint8 cap) {
   return CutsceneFastForwardEnabled() && value > cap ? cap : value;
 }
@@ -3455,8 +3460,15 @@ void Ancilla22_ItemReceipt(int k) {  // 88c38a
   if (a == 0)
     goto label_a;
   if (a == 1) {
-    if (ancilla_item_to_link[k] != 0x37 && ancilla_item_to_link[k] != 0x38 && ancilla_item_to_link[k] != 0x39 || zelda_read_apui00() == 0)
+    bool fast_boss_prize = ItemReceipt_IsFastBossPrize(
+        ancilla_item_to_link[k], ancilla_step[k], player_is_indoors != 0,
+        FastFanfareEnabled());
+    if (!ItemReceipt_ShouldWaitForPendantFanfare(
+            ancilla_item_to_link[k], zelda_read_apui00(), fast_boss_prize)) {
+      if (fast_boss_prize && ancilla_item_to_link[k] != 0x20)
+        music_control = 0xf1;
       goto endif_6;
+    }
     ancilla_aux_timer[k]++;
   }
   goto endif_1;
@@ -3588,7 +3600,11 @@ endif_1:
   if (ancilla_item_to_link[k] == 0x20) {
     ancilla_z[k] = 0;
     AncillaAdd_OccasionalSparkle(k);
-    if (zelda_read_apui00() == 0) {
+    bool fast_crystal = ItemReceipt_IsFastBossPrize(
+        0x20, ancilla_step[k], player_is_indoors != 0,
+        FastFanfareEnabled());
+    if (ItemReceipt_ShouldAdvanceCrystalFanfare(
+            zelda_read_apui00(), ancilla_aux_timer[k], fast_crystal)) {
       music_control = 0x1a;
       ItemReceipt_TransmuteToRisingCrystal(k);
       return;
