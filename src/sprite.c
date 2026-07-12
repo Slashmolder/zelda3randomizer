@@ -2220,6 +2220,42 @@ static const uint8 kRandoEnemyMarkerSlotBase[kRandoEnemyMarkerIconSlots] = {
   0xF0, 0xF4, 0xF8, 0xFC,
 };
 
+static uint8 Rando_EnemyMarkerScratchSlotsForOamEntry(uint8 charnum,
+                                                       uint8 flags,
+                                                       uint8 ext) {
+  uint8 used = 0;
+  uint16 tile = (uint16)charnum | ((uint16)(flags & 1) << 8);
+  uint16 tiles[4] = {tile, tile, tile, tile};
+  uint8 n = 1;
+  if (ext & 2) {
+    // Vanilla's large OBJ size is 16x16: the lower row advances by 0x10.
+    // The right column wraps inside its 16-tile page, matching the PPU.
+    // An Armos piece at 0x1E0 therefore also consumes 0x1F0/0x1F1.
+    tiles[1] = (tile & ~0xFu) | ((tile + 1) & 0xFu);
+    tiles[2] = tile + 0x10;
+    tiles[3] = (tiles[2] & ~0xFu) | ((tiles[2] + 1) & 0xFu);
+    n = 4;
+  }
+  for (uint8 i = 0; i < n; i++) {
+    if (tiles[i] >= 0x1F0 && tiles[i] <= 0x1FF)
+      used |= (uint8)(1u << ((tiles[i] - 0x1F0) >> 2));
+  }
+  return used;
+}
+
+static uint8 Rando_EnemyMarkerVisibleScratchSlotMask(void) {
+  uint8 used = 0;
+  for (int i = 0; i < 128; i++) {
+    // The PPU treats only 0xF0 as Zelda's hidden-sprite sentinel. Y values
+    // 0xF1..0xFF wrap onto the top scanlines and may still be visible.
+    if (oam_buf[i].y != 0xF0) {
+      used |= Rando_EnemyMarkerScratchSlotsForOamEntry(
+          oam_buf[i].charnum, oam_buf[i].flags, bytewise_extended_oam[i]);
+    }
+  }
+  return used;
+}
+
 static bool Rando_EnemyDropCarrierLiveState(uint8 state) {
   return state == 9 || state == 11;
 }
@@ -2486,18 +2522,19 @@ static bool Rando_LoadEnemyMarkerIconSlot(uint8 slot,
 static uint8 Rando_EnemyMarkerVisiblePaletteMask(void) {
   uint8 used = 1u << 7;
   for (int i = 0; i < 128; i++) {
-    if (oam_buf[i].y < 0xf0)
+    if (oam_buf[i].y != 0xf0)
       used |= 1u << ((oam_buf[i].flags >> 1) & 7);
   }
   return used;
 }
 
 static void Rando_EnemyMarkerAllocateCandidates(RandoEnemyMarkerCandidate *c,
-                                                uint8 n,
-                                                bool resources_available,
-                                                bool load_tiles) {
+                                                 uint8 n,
+                                                 bool resources_available,
+                                                 bool load_tiles,
+                                                 uint8 unavailable_slots) {
   RandoEnemyMarkerIconKey slot_keys[kRandoEnemyMarkerIconSlots];
-  uint8 slot_count = 0;
+  bool slot_valid[kRandoEnemyMarkerIconSlots] = {false};
   for (uint8 i = 0; i < n; i++) {
     c[i].slot = kRandoEnemyMarkerNoSlot;
     c[i].palette_row = 0xFF;
@@ -2508,18 +2545,22 @@ static void Rando_EnemyMarkerAllocateCandidates(RandoEnemyMarkerCandidate *c,
   for (uint8 i = 0; i < n; i++) {
     if (!c[i].has_icon || !Rando_EnemyMarkerIconSupported(&c[i].key))
       continue;
-    for (uint8 s = 0; s < slot_count; s++) {
-      if (Rando_EnemyMarkerIconKeyEq(&c[i].key, &slot_keys[s])) {
+    for (uint8 s = 0; s < kRandoEnemyMarkerIconSlots; s++) {
+      if (slot_valid[s] && Rando_EnemyMarkerIconKeyEq(&c[i].key, &slot_keys[s])) {
         c[i].slot = s;
         goto assigned;
       }
     }
-    if (slot_count >= kRandoEnemyMarkerIconSlots)
-      continue;
-    if (load_tiles && !Rando_LoadEnemyMarkerIconSlot(slot_count, &c[i].key))
-      continue;
-    slot_keys[slot_count] = c[i].key;
-    c[i].slot = slot_count++;
+    for (uint8 s = 0; s < kRandoEnemyMarkerIconSlots; s++) {
+      if ((unavailable_slots & (uint8)(1u << s)) || slot_valid[s])
+        continue;
+      if (load_tiles && !Rando_LoadEnemyMarkerIconSlot(s, &c[i].key))
+        continue;
+      slot_keys[s] = c[i].key;
+      slot_valid[s] = true;
+      c[i].slot = s;
+      break;
+    }
 assigned:
     ;
   }
@@ -2667,7 +2708,8 @@ static void Rando_EnemyMarkerEnsureCache(void) {
   Rando_EnemyMarkerAllocateCandidates(s_enemy_marker_candidates,
                                       s_enemy_marker_candidate_count,
                                       resources_available,
-                                      true);
+                                      true,
+                                      Rando_EnemyMarkerVisibleScratchSlotMask());
 }
 
 static bool Rando_EnemyMarkerCandidateDrawable(const RandoEnemyMarkerCandidate *c) {
@@ -2840,7 +2882,7 @@ void Rando_DrawOverworldEnemyMarkerGlints(void) {
 
   uint8 used = 1u << 7;
   for (int i = 0; i < 128; i++) {
-    if (oam_buf[i].y < 0xf0)
+    if (oam_buf[i].y != 0xf0)
       used |= 1u << ((oam_buf[i].flags >> 1) & 7);
   }
   int prow = -1;
@@ -2885,7 +2927,7 @@ void Rando_DrawTerrainGlints(void) {
   // never take Link's row 7. Same scan as the enemy glint.
   uint8 used = 1u << 7;
   for (int i = 0; i < 128; i++) {
-    if (oam_buf[i].y < 0xf0)
+    if (oam_buf[i].y != 0xf0)
       used |= 1u << ((oam_buf[i].flags >> 1) & 7);
   }
   int prow = -1;
@@ -2992,7 +3034,7 @@ int Rando_EnemyMarkerAllocatorSelfCheck(void) {
   Rando_EnemyMarkerSortCandidates(c, 2);
   if (c[0].source.kind != kRandoEnemyMarkerKind_Pickup)
     return 1;
-  Rando_EnemyMarkerAllocateCandidates(c, 2, true, false);
+  Rando_EnemyMarkerAllocateCandidates(c, 2, true, false, 0);
   if (c[0].slot != 0 || c[1].slot != 1)
     return 2;
 
@@ -3003,23 +3045,23 @@ int Rando_EnemyMarkerAllocatorSelfCheck(void) {
     c[i].has_icon = true;
     c[i].key = (RandoEnemyMarkerIconKey){(uint8)(0x20 + i), kRandoEnemyMarkerFootprint_8x16, 0x30, kRandoEnemyMarkerPalette_FixedScene, 0, 0};
   }
-  Rando_EnemyMarkerAllocateCandidates(c, 5, true, false);
+  Rando_EnemyMarkerAllocateCandidates(c, 5, true, false, 0);
   if (c[0].slot != 0 || c[1].slot != 1 || c[2].slot != 2 ||
       c[3].slot != 3 || c[4].slot != kRandoEnemyMarkerNoSlot)
     return 3;
 
   c[1].key = c[0].key;
-  Rando_EnemyMarkerAllocateCandidates(c, 2, true, false);
+  Rando_EnemyMarkerAllocateCandidates(c, 2, true, false, 0);
   if (c[0].slot != 0 || c[1].slot != 0)
     return 4;
 
   c[0].key.palette_policy = kRandoEnemyMarkerPalette_Unsupported;
   c[1].key.palette_policy = kRandoEnemyMarkerPalette_FixedScene;
-  Rando_EnemyMarkerAllocateCandidates(c, 2, true, false);
+  Rando_EnemyMarkerAllocateCandidates(c, 2, true, false, 0);
   if (c[0].slot != kRandoEnemyMarkerNoSlot || c[1].slot != 0)
     return 5;
 
-  Rando_EnemyMarkerAllocateCandidates(c, 2, false, false);
+  Rando_EnemyMarkerAllocateCandidates(c, 2, false, false, 0);
   if (c[0].slot != kRandoEnemyMarkerNoSlot || c[1].slot != kRandoEnemyMarkerNoSlot)
     return 6;
   {
@@ -3042,7 +3084,7 @@ int Rando_EnemyMarkerAllocatorSelfCheck(void) {
     c[i].has_icon = true;
     c[i].key = (RandoEnemyMarkerIconKey){kRandoCustomGfx_HalfMagic, kRandoEnemyMarkerFootprint_16x16, 0x30, kRandoEnemyMarkerPalette_Dynamic, 0, kRandoCustomGfx_HalfMagic};
   }
-  Rando_EnemyMarkerAllocateCandidates(c, 2, true, false);
+  Rando_EnemyMarkerAllocateCandidates(c, 2, true, false, 0);
   if (c[0].slot != 0 || c[1].slot != 0 ||
       c[0].palette_row == 0xFF || c[1].palette_row != c[0].palette_row)
     return 9;
@@ -3061,6 +3103,21 @@ int Rando_EnemyMarkerAllocatorSelfCheck(void) {
         memcmp(saved_recv, &g_ram[0xbd40], sizeof(saved_recv)) != 0)
       return 11;
   }
+  if (Rando_EnemyMarkerScratchSlotsForOamEntry(0xE0, 1, 2) != 1 ||
+      Rando_EnemyMarkerScratchSlotsForOamEntry(0xF4, 1, 0) != 2 ||
+      Rando_EnemyMarkerScratchSlotsForOamEntry(0xE0, 0, 2) != 0 ||
+      Rando_EnemyMarkerScratchSlotsForOamEntry(0xFF, 1, 2) != 9)
+    return 18;
+  memset(c, 0, sizeof(c));
+  for (int i = 0; i < 2; i++) {
+    c[i].has_icon = true;
+    c[i].key = (RandoEnemyMarkerIconKey){(uint8)(0x20 + i),
+        kRandoEnemyMarkerFootprint_8x16, 0x30,
+        kRandoEnemyMarkerPalette_FixedScene, 0, 0};
+  }
+  Rando_EnemyMarkerAllocateCandidates(c, 2, true, false, 1);
+  if (c[0].slot != 1 || c[1].slot != 2)
+    return 19;
   return 0;
 }
 
