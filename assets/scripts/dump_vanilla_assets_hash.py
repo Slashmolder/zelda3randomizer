@@ -86,6 +86,18 @@ static const uint8 kVanillaAssetsHash[32] = {{
 
 #endif  // ZELDA3_RANDO_VANILLA_ASSETS_HASH_H_
 """
+    # Avoid invalidating every translation unit that depends on this generated
+    # header when the asset blob has not changed.  MSBuild runs this helper on
+    # every build, so preserving the timestamp is what makes incremental builds
+    # incremental.
+    if args.header.exists():
+        try:
+            if args.header.read_text(encoding="utf-8") == content:
+                print(f"unchanged:    {args.header}")
+                return 0
+        except UnicodeDecodeError:
+            pass
+
     # Atomic write (same rationale as assets/rando_logic_gen.py's atomic_write_text):
     # vanilla_assets_hash.h is an order-only codegen prereq the Makefile glob-builds
     # against, so a parallel `make -j` must never read it mid-write. Write a sibling

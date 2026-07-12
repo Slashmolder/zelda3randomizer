@@ -233,6 +233,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <PreprocessorDefinitions>HAS_SDL2;Z3R_NATIVE_SETTINGS_WINDOW=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>$(Sdl2Dir)include;$(SolutionDir)third_party\imgui;$(SolutionDir)third_party\imgui\backends;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
@@ -994,8 +995,7 @@
        pot registries are gitignored ROM-derived artifacts and are consumed when
        present. -->
   <!-- RandoCodegenInput = EXACTLY the files rando_logic_gen.py reads — no more, no less.
-       Three deliberate exceptions: assets\rando\chest_table.gen.bin (gitignored — absent in
-       a fresh worktree, and an absent Input makes the Target always-run, see below),
+       Optional local registries (assets\rando\chest_table.gen.bin,
        assets\rando\pots.gen.yaml / pot_key_depth.gen.yaml /
        enemy_drops.gen.yaml / enemy_checks.gen.yaml (gitignored local registries,
        conditionally included only when present), and
@@ -1020,11 +1020,13 @@
     <RandoCodegenInput Include="assets\rando\macros.yaml" />
     <RandoCodegenInput Include="assets\rando\door_predicates.gen.json" />
     <RandoCodegenInput Include="assets\rando\door_portals.yaml" />
-    <RandoCodegenInput Include="assets\rando\pots.gen.yaml" Condition="Exists('assets\rando\pots.gen.yaml')" />
-    <RandoCodegenInput Include="assets\rando\pot_key_depth.gen.yaml" Condition="Exists('assets\rando\pot_key_depth.gen.yaml')" />
-    <RandoCodegenInput Include="assets\rando\terrain.gen.yaml" Condition="Exists('assets\rando\terrain.gen.yaml')" />
-    <RandoCodegenInput Include="assets\rando\enemy_drops.gen.yaml" Condition="Exists('assets\rando\enemy_drops.gen.yaml')" />
-    <RandoCodegenInput Include="assets\rando\enemy_checks.gen.yaml" Condition="Exists('assets\rando\enemy_checks.gen.yaml')" />
+    <RandoCodegenOptionalInput Include="assets\rando\chest_table.gen.bin" Condition="Exists('assets\rando\chest_table.gen.bin')" />
+    <RandoCodegenOptionalInput Include="assets\rando\pots.gen.yaml" Condition="Exists('assets\rando\pots.gen.yaml')" />
+    <RandoCodegenOptionalInput Include="assets\rando\pot_key_depth.gen.yaml" Condition="Exists('assets\rando\pot_key_depth.gen.yaml')" />
+    <RandoCodegenOptionalInput Include="assets\rando\terrain.gen.yaml" Condition="Exists('assets\rando\terrain.gen.yaml')" />
+    <RandoCodegenOptionalInput Include="assets\rando\enemy_drops.gen.yaml" Condition="Exists('assets\rando\enemy_drops.gen.yaml')" />
+    <RandoCodegenOptionalInput Include="assets\rando\enemy_checks.gen.yaml" Condition="Exists('assets\rando\enemy_checks.gen.yaml')" />
+    <RandoCodegenInput Include="@(RandoCodegenOptionalInput)" />
     <RandoCodegenInput Include="assets\rando\logic_parts\**\*.yaml" />
     <RandoCodegenInput Include="assets\rando_logic_gen.py" />
     <RandoCodegenInput Include="assets\chest_data.py" />
@@ -1040,12 +1042,25 @@
     <RandoCodegenOutput Include="src\rando\icon_atlas.h" />
     <RandoCodegenOutput Include="src\rando\direct_grant_icons.h" />
   </ItemGroup>
-  <!-- Always run codegen: the local pot YAMLs are gitignored, and deletion of
-       a previously-present optional input cannot be represented by MSBuild's
-       normal Inputs/Outputs up-to-date check. rando_logic_gen.py avoids
-       rewriting unchanged outputs, so this does not churn compile inputs. -->
-  <Target Name="RandoCodegen" BeforeTargets="ClCompile">
+  <!-- Record which optional local inputs exist. WriteOnlyWhenDifferent preserves
+       the timestamp on ordinary builds, while adding or deleting any optional
+       registry invalidates the codegen stamp. Missing outputs also invalidate it. -->
+  <Target Name="RandoCodegenState">
+    <WriteLinesToFile File="$(IntDir)rando_codegen_inputs.txt"
+                      Lines="version=1;@(RandoCodegenOptionalInput)"
+                      Overwrite="true"
+                      WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <_MissingRandoCodegenOutput Include="@(RandoCodegenOutput)" Condition="!Exists('%(Identity)')" />
+    </ItemGroup>
+    <Delete Files="$(IntDir)rando_codegen.stamp" Condition="'@(_MissingRandoCodegenOutput)' != ''" />
+  </Target>
+  <Target Name="RandoCodegen" BeforeTargets="ClCompile"
+          DependsOnTargets="RandoCodegenState"
+          Inputs="@(RandoCodegenInput);$(IntDir)rando_codegen_inputs.txt"
+          Outputs="$(IntDir)rando_codegen.stamp">
     <Exec Command="python assets\rando_logic_gen.py" />
+    <Touch Files="$(IntDir)rando_codegen.stamp" AlwaysCreate="true" />
   </Target>
   <Target Name="RandoAssetsHash" BeforeTargets="ClCompile">
     <Exec Condition="Exists('zelda3_assets.dat')" Command="python assets\scripts\check_assets_signature.py" />

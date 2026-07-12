@@ -152,12 +152,11 @@ def main(argv: list[str]) -> int:
             return 1
 
     # --- Local artifact deletion guard ---------------------------------------
-    # Gitignored pot artifacts are optional inputs. If codegen runs with them
-    # present, then they are later deleted, a purely dependency-driven incremental
-    # build can consider stale pot-enabled outputs up to date because the missing
-    # files disappear from the input set. Guard the build-system contract that
-    # codegen is invoked every build; rando_logic_gen.py itself avoids rewriting
-    # unchanged outputs, so this does not churn mtimes in the no-op case.
+    # Gitignored registries are optional inputs. If codegen runs with one present,
+    # then it is later deleted, a naive dependency-driven incremental build can
+    # consider stale generated outputs up to date because the missing file simply
+    # disappears from the input set. Make keeps the simple force-run contract.
+    # MSBuild may either force-run or use the presence-aware stamp contract below.
     missing_force = []
     for bs in [Path("Makefile"), Path("src/platform/switch/Makefile")]:
         if not bs.exists():
@@ -169,7 +168,26 @@ def main(argv: list[str]) -> int:
     if vcx.exists():
         text = strip_comments(vcx, vcx.read_text(encoding="utf-8", errors="replace"))
         m = re.search(r'<Target\s+Name="RandoCodegen"[^>]*>.*?</Target>', text, flags=re.S)
-        if not m or re.search(r'\b(Inputs|Outputs)=', m.group(0)):
+        force_run = bool(m and not re.search(r'\b(Inputs|Outputs)=', m.group(0)))
+        incremental_contract = [
+            'RandoCodegenOptionalInput',
+            'assets\\rando\\chest_table.gen.bin',
+            'assets\\rando\\pots.gen.yaml',
+            'assets\\rando\\pot_key_depth.gen.yaml',
+            'assets\\rando\\terrain.gen.yaml',
+            'assets\\rando\\enemy_drops.gen.yaml',
+            'assets\\rando\\enemy_checks.gen.yaml',
+            'Name="RandoCodegenState"',
+            'rando_codegen_inputs.txt',
+            'WriteOnlyWhenDifferent="true"',
+            '_MissingRandoCodegenOutput',
+            '<Delete Files="$(IntDir)rando_codegen.stamp"',
+            'Inputs="@(RandoCodegenInput);$(IntDir)rando_codegen_inputs.txt"',
+            'Outputs="$(IntDir)rando_codegen.stamp"',
+            '<Touch Files="$(IntDir)rando_codegen.stamp" AlwaysCreate="true"',
+        ]
+        presence_aware = bool(m and all(token in text for token in incremental_contract))
+        if not force_run and not presence_aware:
             missing_force.append(vcx)
     if missing_force:
         for bs in missing_force:
@@ -177,9 +195,9 @@ def main(argv: list[str]) -> int:
                   f"artifact presence changes.")
         print(
             "\nThe gitignored pot YAMLs may be added or deleted outside git. Build\n"
-            "systems must invoke rando_logic_gen.py every build so stale pot-enabled\n"
-            "generated outputs are replaced by assetless empty tables when those\n"
-            "local artifacts disappear."
+            "systems must either invoke rando_logic_gen.py every build or maintain a\n"
+            "presence-aware stamp that invalidates on optional-file addition/deletion\n"
+            "and whenever a generated output is missing."
         )
         return 1
 
