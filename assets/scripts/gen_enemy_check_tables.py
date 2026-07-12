@@ -744,6 +744,18 @@ SCRIPTED_SPAWN_SPECS = {
     },
 }
 
+# These authored spawners have stable runtime identity, but their trigger cannot
+# be repeated after leaving the room. Eastern 0x0A9's four falling-Stalfos
+# parents are armed only by opening the big chest: the room-transition reset
+# clears byte_7E0B9E, while the already-open chest can never arm it again. A
+# missed child would therefore make its placed item permanently unavailable.
+# Keep the repeatable Falling Stalfos in room 0x00A and the proximity-triggered
+# Red Stalfos in 0x0A8; only this reviewed parent class is unsafe.
+SCRIPTED_SPAWN_PARENT_EXCLUSIONS = {
+    (0x0A9, slot, 0x05): "one_shot_big_chest_trigger"
+    for slot in range(2, 6)
+}
+
 
 def die(msg: str) -> None:
     print(f"gen_enemy_check_tables: ERROR: {msg}", file=sys.stderr)
@@ -1132,9 +1144,28 @@ def collect_scripted_spawn_candidates(
     rows: list[dict] = []
     excluded: Counter = Counter()
     excluded_rows: list[dict] = []
+    observed_one_shot_big_chest_parents: set[tuple[int, int, int]] = set()
     for room in range(len(offsets)):
         for list_index, y, x, typ in sprite_entries(sprites, offsets, room):
             if x < 0xE0:
+                continue
+            parent_key = (room, int(list_index), typ)
+            if room == 0x0A9 and typ == 0x05:
+                observed_one_shot_big_chest_parents.add(parent_key)
+            reason = SCRIPTED_SPAWN_PARENT_EXCLUSIONS.get(parent_key)
+            if reason is not None:
+                excluded[reason] += 1
+                excluded_rows.append({
+                    "room": room,
+                    "parent_source_slot": int(list_index),
+                    "overlord_type": typ,
+                    "parent_y": y,
+                    "parent_x": x,
+                    "runtime_identity": (
+                        f"scripted-parent:0x{room:03X}:{list_index}:0x{typ:02X}"
+                    ),
+                    "reason": reason,
+                })
                 continue
             spec = SCRIPTED_SPAWN_SPECS.get(typ)
             if spec is None:
@@ -1170,6 +1201,12 @@ def collect_scripted_spawn_candidates(
                         f"scripted:0x{room:03X}:{list_index}:0x{typ:02X}:{child_index}"
                     ),
                 })
+    if observed_one_shot_big_chest_parents != set(SCRIPTED_SPAWN_PARENT_EXCLUSIONS):
+        die(
+            "Eastern big-chest Falling Stalfos parent identities drifted: "
+            f"observed {sorted(observed_one_shot_big_chest_parents)}, expected "
+            f"{sorted(SCRIPTED_SPAWN_PARENT_EXCLUSIONS)}"
+        )
     excluded_rows.sort(
         key=lambda r: (int(r["room"]), int(r["parent_source_slot"]),
                        int(r["overlord_type"])))
@@ -1667,6 +1704,7 @@ def make_doc(assets: dict[str, bytes], assets_path: Path, key_depth_path: Path,
             "excluded_sources": [
                 "existing forced-key enemy-drop checks",
                 "overlords/control markers",
+                "one-shot scripted spawns whose trigger cannot be repeated after a missed kill",
                 "underworld sprite-table rooms with no key-depth ROOM row and no reviewed all-tier binding",
                 "overworld sprite-table rows with no stable active-list runtime identity",
                 "farmable, unbounded, projectile, bomb-trap, and non-killable dynamic spawns",

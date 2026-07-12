@@ -142,6 +142,12 @@
   all-enemy item inside its existing heart-container/dungeon-prize sequence,
   producing a corrupt-looking held item and three overlapping rewards. Dungeon
   bosses are now excluded; the three GT miniboss/refight checks remain. -->
+  <!-- owner F12 2026-07-12: Eastern room 0x0A9 scripts 02-05 are Falling
+  Stalfos armed only by opening the big chest. Room transition clears their
+  trigger, and the opened chest cannot arm them again, so an escaped or missed
+  child made its item permanently unavailable. Those four one-shot parents are
+  now excluded; repeatable room 0x00A Falling Stalfos and room 0x0A8 proximity
+  Red Stalfos remain all-tier checks. -->
 - [x] 6.6 Test thrown-pot kill logic with insufficient and sufficient pot counts
   while pot shuffle is off, plus the pot-sanity guard that disables those branches
   and requires the inventory-combat route while any effective pot tier is active.

@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 138  # bump_rando_corpus.py --apply - exclude dungeon bosses from all-enemy checks
+generator_version: 139  # bump_rando_corpus.py --apply - exclude one-shot big-chest Falling Stalfos checks
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -973,23 +973,23 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, enemy_drop_checks: all, accessibility: items }
     seed: "0x45414C4C00000005"
     label: "enemy-drop-all-wild-items"
-    expected_digest: "7ec5f737eafde255a4082ba711fae0164e0ddcb3c97c9fe2527c712e01602a1e"
-    expected_sphere_digest: "a73b6ade19b9d7751bc66b5378e9f150bf7e8abc2601756796da876fb2b8f062"
+    expected_digest: "7103d0645bd3ff336f40449f90f9455d350de25173322fa4a0544820b54d43ce"
+    expected_sphere_digest: "223167b2dd8426644198c833549dff19663e3dc1cca46659956e75842c04fa73"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: dungeon, enemy_drop_checks: all, accessibility: items }
     seed: "0x45414C4C00000012"
     label: "enemy-drop-all-dungeon-items"
-    expected_digest: "c7ee0ee6ab61d58dcc9d94d249292d082d6e126da236d43ca2e9dd847aa1a955"
-    expected_sphere_digest: "e0da709b428c207b103bb77e39de083fc615b1e81d5255956b698aca2c897144"
+    expected_digest: "b3159b932536bac8ecf6ae37308832653c49e426bd205bbb3f79d79bcc72c93a"
+    expected_sphere_digest: "bbab445ce4b7891ff1f927aaff0815d02de85ebf37d8c171cf8401ca5a9b0452"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, pot_shuffle: keys, enemy_drop_checks: all, accessibility: items }
     seed: "0x45414C4C00000007"
     label: "enemy-drop-all-pot-keys-wild-items"
-    expected_digest: "5b66575b716870723c63e284c4a7782a5ee6c5bd2a2618362b6de7dd27d83fab"
-    expected_sphere_digest: "13cf7baf5a842c41195385cb9a89d98507fa148d38f5c4cb3e4640c4dbd8978b"
+    expected_digest: "0a32d8cd477dcc62ebbcf043c8809ad6e8e3dfa05e6031ec020b9102b25586e5"
+    expected_sphere_digest: "bbb5bae5adbb694816118b09473a353226ff3a92b660b1f896cbb4314f12e722"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, door_shuffle: basic, enemy_drop_checks: all }
     seed: "0x45414C4C00000008"
     label: "enemy-drop-all-door-basic-active"
-    expected_digest: "e80268b0a8de8bbb97e1eba32aa6ff4c9383219d8b9ec7a7dca1d1fbdd1ce4bd"
-    expected_sphere_digest: "743ec0a886f8526fb9ed0ccf66063d2d872a349b413d6ec87f18caf5c70c0351"
+    expected_digest: "0e70f41701987d9b1faa6ea54195ccdaa41153ceb9ab26531f259244258d3947"
+    expected_sphere_digest: "a57031f7b04c68abae41b3da9f6072e25c20ade8479f81982eaf11bc9c56d4a6"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, enemy_shuffle: true, enemy_drop_checks: all }
     seed: "0x45414C4C00000009"
     label: "enemy-drop-all-enemy-shuffle-degrades-to-keys"
@@ -998,8 +998,8 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, boss_shuffle: true, enemy_drop_checks: all }
     seed: "0x45414C4C0000000A"
     label: "enemy-drop-all-boss-shuffle-active"
-    expected_digest: "a00ff2be2f124c956795ea62b55065f4931375ddb47396d1f92030f30753447d"
-    expected_sphere_digest: "80964ef13853ffa862d091c6ab59dc96e379b678a9644ca704755744c2bcbe7d"
+    expected_digest: "da537634d9e1b436ff8ee1f56176a78b81dd3805ecb842d408072608983c3303"
+    expected_sphere_digest: "c9a3290852b5c1a1001b004fa55a0393a70c48f1b972d36b8745cfb7f5df247e"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, shuffle_cave_entrances: true, enemy_drop_checks: all }
     seed: "0x45414C4C0000000B"
     label: "enemy-drop-all-cave-entrance-degrades-to-dungeon"
