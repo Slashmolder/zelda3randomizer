@@ -13,6 +13,7 @@
 #include "rando/rando_snapshot_tail.h"  // §8.8 / §8.8a TLV save/load + invariant counter
 #include "rando/rando_hints.h"  // Rando_DumpHintDebug (F12 hint-state diagnostic)
 #include "hud.h"  // per-frame tracker-overlay draw hook
+#include "sprite.h"  // scratch OBJ VRAM invalidation after reset/state load
 #include "load_gfx.h"  // g_recv_item_slot_owner (invalidated on snapshot restore)
 #include "util.h"
 #include "audio.h"
@@ -419,6 +420,7 @@ void ZeldaReset(bool preserve_sram) {
   ZeldaRestoreMusicAfterLoad_Locked(true);
   ZeldaApuUnlock();
   EmuSynchronizeWholeState();
+  Rando_ObjScratchInvalidateAll();
 
 }
 
@@ -431,6 +433,9 @@ static void LoadSnesState(SaveLoadFunc *func, void *ctx) {
   ZeldaRestoreMusicAfterLoad_Locked(false);
   ZeldaApuUnlock();
   EmuSynchronizeWholeState();
+  // VRAM and the decompressed source sheets were both replaced, while the
+  // scratch ownership mask is process-local. Reconcile it on the next frame.
+  Rando_ObjScratchInvalidateAll();
 }
 
 static void SaveSnesState(SaveLoadFunc *func, void *ctx) {

@@ -105,6 +105,10 @@ void Sprite_DrawMultiple(int k, const DrawMultipleData *src, int n, PrepOamCoord
 void Sprite_DrawMultiplePlayerDeferred(int k, const DrawMultipleData *src, int n, PrepOamCoordsRet *info);
 bool Rando_TryDrawEnemyDropCarrierField(int k);
 void Rando_DrawOverworldEnemyMarkerGlints(void);
+uint8 Rando_ObjScratchVisibleSlotMask(void);
+void Rando_ObjScratchMarkSlotsDirty(uint8 slots);
+void Rando_ObjScratchRestoreVisible(void);
+void Rando_ObjScratchInvalidateAll(void);
 bool Rando_EnemyDropMarkerNeedsOverlay(int k);
 bool Rando_TryDrawEnemyDropMarkerOverlay(int k);
 bool Rando_EnemyDropMarkerWantsGlint(int k, int *out_dy);

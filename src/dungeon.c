@@ -6860,6 +6860,7 @@ static bool RandoPot_DrawGoldGlintAt(int gx, int gy, uint8 tile, uint8 flags);
 static void RandoPot_DrawGoldOverlay(void) {
   if (!(enhanced_features1 & kFeatures1_RandomizerActive))
     return;
+  Rando_ObjScratchRestoreVisible();
   uint8 n = Rando_PotOverlayCount();
   uint16 enemy_mask = 0;
   for (int k = 0; k < 16; k++) {

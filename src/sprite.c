@@ -2219,6 +2219,8 @@ enum {
 static const uint8 kRandoEnemyMarkerSlotBase[kRandoEnemyMarkerIconSlots] = {
   0xF0, 0xF4, 0xF8, 0xFC,
 };
+static uint8 s_rando_obj_scratch_dirty_slots;
+static void Rando_EnemyMarkerInvalidateFrameState(void);
 
 static uint8 Rando_EnemyMarkerScratchSlotsForOamEntry(uint8 charnum,
                                                        uint8 flags,
@@ -2243,7 +2245,7 @@ static uint8 Rando_EnemyMarkerScratchSlotsForOamEntry(uint8 charnum,
   return used;
 }
 
-static uint8 Rando_EnemyMarkerVisibleScratchSlotMask(void) {
+uint8 Rando_ObjScratchVisibleSlotMask(void) {
   uint8 used = 0;
   for (int i = 0; i < 128; i++) {
     // The PPU treats only 0xF0 as Zelda's hidden-sprite sentinel. Y values
@@ -2254,6 +2256,51 @@ static uint8 Rando_EnemyMarkerVisibleScratchSlotMask(void) {
     }
   }
   return used;
+}
+
+static bool Rando_EnemyMarkerSheetUsesHighPlanes(uint8 sheet) {
+  return sheet == 0x52 || sheet == 0x53 || sheet == 0x5A ||
+         sheet == 0x5B || sheet == 0x5C || sheet == 0x5E || sheet == 0x5F;
+}
+
+static void Rando_EnemyMarkerConvertIconSlot(uint8 sheet, uint8 *dst,
+                                              const uint8 *src) {
+  if (Rando_EnemyMarkerSheetUsesHighPlanes(sheet))
+    Do3To4High16Bit(dst, src, 4);
+  else
+    Do3To4Low16Bit(dst, src, 4);
+}
+
+static void Rando_ObjScratchRestoreIconSlot(uint8 slot) {
+  if (slot >= kRandoEnemyMarkerIconSlots)
+    return;
+  const uint8 *src = &g_ram[0x8A00 + (0x30 + slot * 4) * 24];
+  uint8 *dst = (uint8 *)&g_zenv.vram[0x5F00 + slot * 0x40];
+  Rando_EnemyMarkerConvertIconSlot(sprite_gfx_subset_3, dst, src);
+  s_rando_obj_scratch_dirty_slots &= (uint8)~(1u << slot);
+}
+
+void Rando_ObjScratchMarkSlotsDirty(uint8 slots) {
+  s_rando_obj_scratch_dirty_slots |=
+      (uint8)(slots & ((1u << kRandoEnemyMarkerIconSlots) - 1));
+}
+
+void Rando_ObjScratchInvalidateAll(void) {
+  s_rando_obj_scratch_dirty_slots =
+      (uint8)((1u << kRandoEnemyMarkerIconSlots) - 1);
+  Rando_ObjScratchResetFrameReservation();
+  Rando_EnemyMarkerInvalidateFrameState();
+}
+
+void Rando_ObjScratchRestoreVisible(void) {
+  if (nmi_disable_core_updates != 0)
+    return;
+  uint8 restore = (uint8)(s_rando_obj_scratch_dirty_slots &
+                          Rando_ObjScratchVisibleSlotMask());
+  for (uint8 slot = 0; slot < kRandoEnemyMarkerIconSlots; slot++) {
+    if (restore & (uint8)(1u << slot))
+      Rando_ObjScratchRestoreIconSlot(slot);
+  }
 }
 
 static bool Rando_EnemyDropCarrierLiveState(uint8 state) {
@@ -2465,6 +2512,7 @@ static void Rando_EnemyMarkerUploadIconSlot(uint8 slot, const uint8 *tiles) {
   uint8 base = kRandoEnemyMarkerSlotBase[slot];
   for (int i = 0; i < 4; i++)
     memcpy(&g_zenv.vram[0x5000 + (base + i) * 16], tiles + i * 0x20, 0x20);
+  Rando_ObjScratchMarkSlotsDirty((uint8)(1u << slot));
 }
 
 static bool Rando_EnemyMarkerIconKeyEq(const RandoEnemyMarkerIconKey *a,
@@ -2676,6 +2724,13 @@ static bool s_enemy_marker_cache_valid;
 static uint8 s_enemy_marker_draw_failed_frame;
 static uint16 s_enemy_marker_draw_failed_mask;
 
+static void Rando_EnemyMarkerInvalidateFrameState(void) {
+  s_enemy_marker_cache_valid = false;
+  s_enemy_marker_candidate_count = 0;
+  s_enemy_marker_draw_failed_frame = (uint8)(frame_counter - 1);
+  s_enemy_marker_draw_failed_mask = 0;
+}
+
 static void Rando_EnemyMarkerMarkDrawFailed(int k) {
   if (k < 0 || k >= 16)
     return;
@@ -2709,7 +2764,7 @@ static void Rando_EnemyMarkerEnsureCache(void) {
                                       s_enemy_marker_candidate_count,
                                       resources_available,
                                       true,
-                                      Rando_EnemyMarkerVisibleScratchSlotMask());
+                                      Rando_ObjScratchVisibleSlotMask());
 }
 
 static bool Rando_EnemyMarkerCandidateDrawable(const RandoEnemyMarkerCandidate *c) {
@@ -2858,6 +2913,7 @@ static bool Rando_EnemyMarkerAllocateGlintOam(void) {
 void Rando_DrawOverworldEnemyMarkerGlints(void) {
   if (player_is_indoors || !(enhanced_features1 & kFeatures1_RandomizerActive))
     return;
+  Rando_ObjScratchRestoreVisible();
 
   uint16 enemy_glint_mask = 0;
   for (int k = 0; k < 16; k++) {
@@ -3118,6 +3174,17 @@ int Rando_EnemyMarkerAllocatorSelfCheck(void) {
   Rando_EnemyMarkerAllocateCandidates(c, 2, true, false, 1);
   if (c[0].slot != 1 || c[1].slot != 2)
     return 19;
+  {
+    uint8 raw[4 * 24] = {0};
+    uint8 vram[4 * 32];
+    memset(vram, 0xA5, sizeof(vram));
+    raw[0] = raw[16] = 0x80;
+    Rando_EnemyMarkerConvertIconSlot(0x10, vram, raw);
+    bool ok = vram[0] == 0x80 && vram[1] == 0 &&
+              vram[16] == 0x80 && vram[17] == 0;
+    if (!ok)
+      return 20;
+  }
   return 0;
 }
 

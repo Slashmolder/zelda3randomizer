@@ -2601,6 +2601,13 @@ uint8 Rando_ObjScratchOwnerThisFrame(void) {
   return s_rando_obj_scratch_owner;
 }
 
+void Rando_ObjScratchResetFrameReservation(void) {
+  s_rando_obj_scratch_owner = kRandoObjScratchOwner_None;
+  // Force the next reservation through SyncFrame even if a loaded snapshot
+  // happens to have the same frame-counter value as the pre-load state.
+  s_rando_obj_scratch_frame = (uint8)(frame_counter - 1);
+}
+
 enum {
   kRandoOverlayPaletteKind_Gold = 1,
   kRandoOverlayPaletteKind_CustomItem = 2,

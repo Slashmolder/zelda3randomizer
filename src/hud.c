@@ -1734,6 +1734,9 @@ static void Hud_RandoUploadGlyphs(void) {
       tile[r + 8] = p23;
     }
   }
+  // The seven tracker glyphs occupy F0..F6 (scratch slots 0 and 1). Record
+  // that ownership so vanilla art can be restored if a later frame needs it.
+  Rando_ObjScratchMarkSlotsDirty(0x03);
 }
 
 // Find the next free OAM slot at or below |*slot|, scanning downward. A slot
@@ -2195,6 +2198,10 @@ int Hud_RandoBuildIconAtlas(uint32 *out) {
 
 void Hud_RandoDrawTrackers(void) {
   if (!Hud_RandoOamTrackerWillDrawThisFrame())
+    return;
+  // The tracker is drawn after the game has completed OAM for this frame.
+  // Never replace scratch tiles that a vanilla sprite is already using.
+  if (Rando_ObjScratchVisibleSlotMask() & 0x03)
     return;
   if (!Rando_ObjScratchReserveForFrame(kRandoObjScratchOwner_LegacyTracker))
     return;

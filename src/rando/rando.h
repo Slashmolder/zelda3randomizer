@@ -372,6 +372,7 @@ enum {
 
 bool Rando_ObjScratchReserveForFrame(uint8 owner);
 uint8 Rando_ObjScratchOwnerThisFrame(void);
+void Rando_ObjScratchResetFrameReservation(void);
 
 bool Rando_OverlayPaletteRequestGold(uint8 row);
 bool Rando_OverlayPaletteRequestCustomItem(uint8 row, uint8 gfx);
