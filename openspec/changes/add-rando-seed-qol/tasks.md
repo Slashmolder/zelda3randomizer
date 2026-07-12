@@ -99,7 +99,12 @@ header-dep tracking → `make clean` after any `features.h`/`config.h` edit).
   Link remain visible through the accelerated flight. Owner confirms the full visible
   cutscene matrix was tested. F12 now also emits the complete 8 KiB SRAM image and
   heap-resident randomizer checked bitmap; only the paired fast-vs-vanilla semantic
-  state comparison remains. -->
+  state comparison remains. A 2026-07-12 Open-seed Death-Mountain world-warp test
+  exposed stale Light-World background graphics: the accelerator advanced multiple
+  NMI-dependent mirror stages in one host frame, so later stages replaced the single
+  queued DMA command. The scheduler now stops accelerated stepping as soon as any
+  NMI/core-update work is queued; build + subsystem self-tests pass, and the same
+  cross-world warp is pending owner retest. -->
 
 ## 5. F5 — Quick reset / warp-to-spawn (race-toggleable) — D6
 

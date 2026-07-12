@@ -359,12 +359,23 @@ void InitializeMirrorHDMA() {  // 80fdee
   HDMAEN_copy = 0xc0;
 }
 
+// Fast-forward may advance CPU-only mirror animation work more than once per
+// rendered frame, but AnimateMirrorWarp also uses a single NMI command slot and
+// shared staging buffers for its graphics stages. Once a step queues NMI work,
+// another step in the same frame would replace that command/buffer before the
+// upload runs, leaving the destination world rendered with stale graphics.
+static void MirrorWarp_RunFastForwardSteps() {
+  int steps = CutsceneFastForwardEnabled() ? 3 : 1;
+  do {
+    MirrorWarp_RunAnimationSubmodules();
+    if (nmi_subroutine_index != 0 || nmi_disable_core_updates != 0)
+      break;
+  } while (--steps);
+}
+
 void MirrorWarp_BuildWavingHDMATable() {  // 80fe64
-  MirrorWarp_RunAnimationSubmodules();
-  if (CutsceneFastForwardEnabled()) {
-    MirrorWarp_RunAnimationSubmodules();
-    MirrorWarp_RunAnimationSubmodules();
-  } else if (frame_counter & 1) {
+  MirrorWarp_RunFastForwardSteps();
+  if (!CutsceneFastForwardEnabled() && (frame_counter & 1)) {
     return;
   }
 
@@ -401,11 +412,8 @@ void MirrorWarp_BuildWavingHDMATable() {  // 80fe64
 }
 
 void MirrorWarp_BuildDewavingHDMATable() {  // 80ff2f
-  MirrorWarp_RunAnimationSubmodules();
-  if (CutsceneFastForwardEnabled()) {
-    MirrorWarp_RunAnimationSubmodules();
-    MirrorWarp_RunAnimationSubmodules();
-  } else if (frame_counter & 1) {
+  MirrorWarp_RunFastForwardSteps();
+  if (!CutsceneFastForwardEnabled() && (frame_counter & 1)) {
     return;
   }
   int y = 240 - 8;
