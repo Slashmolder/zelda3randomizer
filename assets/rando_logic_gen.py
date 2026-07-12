@@ -313,10 +313,10 @@ def _suppress_base_key_terms_under_dungeon(expr, item, dungeon):
 
 
 def _strip_door_vanilla_key_terms(expr: str, dungeon: int | None) -> str:
-    """Door-pot bridge predicates must not inherit vanilla same-dungeon key locks.
+    """Door bridge predicates must not inherit vanilla same-dungeon key locks.
 
     The bridge asks the door oracle whether the door-shuffled region containing
-    the pot is reachable. Any vanilla SmallKey/BigKey terms from the pot room's
+    the check is reachable. Any vanilla SmallKey/BigKey terms from the room's
     original predicate would double-count or contradict that oracle, so strip
     only terms for this same dungeon before compiling the bridge predicate.
     """
@@ -1048,8 +1048,8 @@ def load_enemy_drops(path: Path, logic_regions: dict[str, RegionDef] | None = No
                 raw["vanilla_item"], wild, dungeon, combined_wild)
             if terms:
                 can_reach = f"({can_reach}){terms}"
-            door_pred = _suppress_base_key_terms_under_enemy_dungeon(
-                base_can_reach, raw["vanilla_item"], dungeon)
+            door_pred = _strip_door_vanilla_key_terms(
+                base_can_reach, door_dungeon)
             door_bridge_rows.append({
                 "loc_id": int(raw["id"]),
                 "name": raw["name"],
@@ -1213,11 +1213,9 @@ def load_enemy_checks(path: Path, logic_regions: dict[str, RegionDef] | None = N
                 door_regions = [int(x) for x in raw.get("door_regions", []) or []]
                 if not door_regions:
                     door_regions = [int(raw["door_region"])]
-                item = raw.get("small_key_item")
                 door_pred = raw.get("base_can_reach") or base_can_reach
-                if item:
-                    door_pred = _suppress_base_key_terms_under_enemy_dungeon(
-                        door_pred, item, 0)
+                door_pred = _strip_door_vanilla_key_terms(
+                    door_pred, int(raw["door_dungeon"]))
                 door_bridge_rows.append({
                     "loc_id": loc.id,
                     "name": raw["name"],
@@ -1235,12 +1233,15 @@ def load_enemy_checks(path: Path, logic_regions: dict[str, RegionDef] | None = N
                 "loc_id": loc.id,
             })
             if "door_dungeon" in raw and "door_region" in raw:
+                door_dungeon = int(raw["door_dungeon"])
                 door_bridge_rows.append({
                     "loc_id": loc.id,
                     "name": raw["name"],
-                    "dungeon": int(raw["door_dungeon"]),
+                    "dungeon": door_dungeon,
                     "regions": [int(raw["door_region"])],
-                    "base_can_reach": raw.get("base_can_reach") or base_can_reach,
+                    "base_can_reach": _strip_door_vanilla_key_terms(
+                        raw.get("base_can_reach") or base_can_reach,
+                        door_dungeon),
                     "min_tier": 3,
                 })
         elif domain == "scripted_spawn":
@@ -1257,11 +1258,9 @@ def load_enemy_checks(path: Path, logic_regions: dict[str, RegionDef] | None = N
                 door_regions = [int(x) for x in raw.get("door_regions", []) or []]
                 if not door_regions:
                     door_regions = [int(raw["door_region"])]
-                item = raw.get("small_key_item")
                 door_pred = raw.get("base_can_reach") or base_can_reach
-                if item:
-                    door_pred = _suppress_base_key_terms_under_enemy_dungeon(
-                        door_pred, item, 0)
+                door_pred = _strip_door_vanilla_key_terms(
+                    door_pred, int(raw["door_dungeon"]))
                 door_bridge_rows.append({
                     "loc_id": loc.id,
                     "name": raw["name"],

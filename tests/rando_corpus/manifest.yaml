@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 136  # bump_rando_corpus.py --apply - include static Red Eyegore all-enemy checks
+generator_version: 137  # bump_rando_corpus.py --apply - gate Eastern room 0x099 behind its big-key door
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -917,8 +917,8 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, door_shuffle: basic, enemy_drop_checks: keys }
     seed: "0x4544524F50000004"
     label: "enemy-drop-keys-door-basic-active"
-    expected_digest: "ee07b723074141391b6d65b666d00765c3f59edf2de73e357c1957757dc785d2"
-    expected_sphere_digest: "496808989224e3407ec4d9d37f2315aa7d804c257bd887012bd5dd20bca24655"
+    expected_digest: "29648f23598487188ca9b99aeb126f9be2d68d15a6efcb75dcacfa22fd6ddd6f"
+    expected_sphere_digest: "08a58352e038e8b53c5a7115ba6c8763a53fbe3c58bba2264da6e9a6e295d28d"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, enemy_shuffle: true, enemy_drop_checks: keys }
     seed: "0x4544524F50000005"
     label: "enemy-drop-keys-enemy-shuffle-active"
@@ -937,8 +937,8 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, pot_shuffle: keys, door_shuffle: basic, enemy_drop_checks: keys }
     seed: "0x4544524F5000000D"
     label: "enemy-drop-keys-pot-keys-door-basic-active"
-    expected_digest: "dffe380013d6f8ad1c5c8e0a1b9f41129ad4bd6d328356cf527b6c8391fbb1cb"
-    expected_sphere_digest: "a37e81f9c6cefaa0a50e3f6069f5bbc38a93d628004fa9435184a3048f9695e6"
+    expected_digest: "a0cbb5db9dc03ebb9d3a3a2b40fa643f881e6355d0fd5e49d753a8cf9e7e5e1c"
+    expected_sphere_digest: "4c659da75ab8be67a4bf01bca851e63d17b64469121dea7f423da07690ae798b"
   # add-rando-dungeon-enemy-checks — ordinary eligible dungeon enemies become
   # first-class checks under enemy_drop_checks=dungeon. Door shuffle composes
   # with them through the generated enemy-check bridge; enemy shuffle still
@@ -956,8 +956,8 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, door_shuffle: basic, enemy_drop_checks: dungeon }
     seed: "0x45414C4C00000003"
     label: "enemy-drop-dungeon-door-basic-active"
-    expected_digest: "495556ed78dcbf50da4b7429dcfab3f3be1b3c018f7d1f8a38b7f21d13111127"
-    expected_sphere_digest: "0bf9a2c86cee734f4ec8c33c33e74b32d5c38f2e11fc88f8c54f3f483754a6a5"
+    expected_digest: "637c0ea34cb07782c054672c5cd1046292cca2a9f0ea99c29b67490b3600fd94"
+    expected_sphere_digest: "9d522c63df836f20e9f57e4289a4800cb5047676a3fee00bb1ac6f74f95dfff6"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, enemy_shuffle: true, enemy_drop_checks: dungeon }
     seed: "0x45414C4C00000004"
     label: "enemy-drop-dungeon-enemy-shuffle-degrades-to-keys"
@@ -987,8 +987,8 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, door_shuffle: basic, enemy_drop_checks: all }
     seed: "0x45414C4C00000008"
     label: "enemy-drop-all-door-basic-active"
-    expected_digest: "827fe6819c9e24c3215a16647f80c579237ee0f5a917b544fe70edada8500f3a"
-    expected_sphere_digest: "64e63b37d4b48cd294df47c8086bb8c5f697c4551fb758a13006e8318e9cfc00"
+    expected_digest: "8954d3564d215807e66e80248477ef3c36ee8b4ddb267f394385f7425dbe49a5"
+    expected_sphere_digest: "98cea5578a7b5633045d58ab61af5e2080d0422a7d62b9014ebd7c1c2eae1403"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, enemy_shuffle: true, enemy_drop_checks: all }
     seed: "0x45414C4C00000009"
     label: "enemy-drop-all-enemy-shuffle-degrades-to-keys"

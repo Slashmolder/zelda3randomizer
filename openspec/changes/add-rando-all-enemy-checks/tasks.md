@@ -131,6 +131,12 @@
   correct, but dense OAM starved later child markers. Marker fallback reservation
   and verified-free ancilla-region overflow landed under the marker change; owner
   retest of all four child spawn markers remains. -->
+  <!-- owner playtest 2026-07-12: the Eastern Palace big key was placed on room
+  0x099 slot 09 even though 0x099 is reached from 0x0A9 through the vanilla big-key
+  door. The authored Dark Eyegore forced-key predicate omitted BigKey_EasternPalace;
+  because enemy checks reuse that room predicate, sphere analysis falsely treated
+  the placement as reachable. The shared room binding now carries the explicit big-
+  key term for both the forced drop and every ordinary enemy check in 0x099. -->
 - [x] 6.6 Test thrown-pot kill logic with insufficient and sufficient pot counts
   while pot shuffle is off, plus the pot-sanity guard that disables those branches
   and requires the inventory-combat route while any effective pot tier is active.

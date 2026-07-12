@@ -92,6 +92,11 @@ room_can_reach:
   # ---
   "002": "CanKillEscapeThings(world) AND HAS_ITEM(SmallKey_HyruleCastleEscape) AND HAS_ITEM(Lamp)"
   "021": "CanKillEscapeThings(world) AND HAS_ITEM(Lamp)"
+  # --- Eastern Palace: room 0x099 (Eastern Darkness / Eastern Rupees) is
+  # entered from room 0x0A9 through Eastern Courtyard N, the vanilla big-key
+  # door. The dark-room flag supplied only Lamp navigation, so pot sanity could
+  # otherwise put the Eastern big key behind itself here just like enemy checks.
+  "099": "(HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND HAS_ITEM(BigKey_EasternPalace)"
   # --- ToH (gate-less region override above): room 0x017 is the stair floor
   # between the Big-Key-gated Big Chest (0x027) and boss (0x007). Region-bound but
   # un-gated (TRUE) -> 12 falsely-sphere-0 pots. Gate = the Big Chest's predicate. ---

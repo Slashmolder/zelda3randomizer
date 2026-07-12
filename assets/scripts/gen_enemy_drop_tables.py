@@ -116,7 +116,13 @@ SMALL_KEY_BINDINGS = {
         "door_region": 47,
         "region": "EasternPalace_Lobby",
         "vanilla_item": "SmallKey_EasternPalace",
-        "can_reach": "(HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND CanKillMostThings(world, 5)",
+        # Room 0x099 is entered from room 0x0A9 through Eastern Courtyard N,
+        # whose vanilla door kind is BigKey (0x220).  The key-depth dump opens
+        # big-key doors by design and therefore cannot supply this term; keep
+        # it explicit here so neither the forced key drop nor ordinary enemy
+        # checks in this room can hold the Eastern big key behind itself.
+        "can_reach": "(HAS_ITEM(Lamp) OR CanDarkRoomNav()) AND "
+                     "HAS_ITEM(BigKey_EasternPalace) AND CanKillMostThings(world, 5)",
     },
     0x0B0: {
         "drop_name": "Castle Tower - Circle of Pots Key Drop",

@@ -1816,6 +1816,46 @@ void Logic_SelfCheck(void) {
   RandoSettings settings;
   Settings_SetDefaults(&settings);
 
+  // Eastern room 0x099 is entered through the vanilla big-key door from
+  // room 0x0A9. Pin the generated predicates for every check domain that can
+  // occupy that room: the forced Eyegore key drop, seven ordinary enemies,
+  // and both pots. This is the exact self-lock class caught by the all-enemy
+  // playtest; key-depth data intentionally treats big-key doors as open, so
+  // these generated room predicates must carry the separate item gate.
+  {
+    static const uint16 kEasternDarknessLocations[] = {
+      LOC_Eastern_Palace_Dark_Eyegore_Key_Drop,
+      LOC_Enemy_Check_Room_0x099_Slot_02_Green_Eyegore,
+      LOC_Enemy_Check_Room_0x099_Slot_04_Popo,
+      LOC_Enemy_Check_Room_0x099_Slot_05_Popo,
+      LOC_Enemy_Check_Room_0x099_Slot_06_Popo2,
+      LOC_Enemy_Check_Room_0x099_Slot_07_Popo2,
+      LOC_Enemy_Check_Room_0x099_Slot_08_Popo2,
+      LOC_Enemy_Check_Room_0x099_Slot_09_Popo2,
+      LOC_EasternPalace_Lobby_Pot_R099_P1428,
+      LOC_EasternPalace_Lobby_Pot_R099_P1454,
+    };
+    RandoCounts dark_counts;
+    memset(&dark_counts, 0, sizeof(dark_counts));
+    for (uint32 i = 0; i < ITEM__COUNT; i++)
+      dark_counts.by_item_id[i] = 4;
+    dark_counts.by_item_id[ITEM_BigKey_EasternPalace] = 0;
+    for (uint32 i = 0; i < sizeof(kEasternDarknessLocations) / sizeof(kEasternDarknessLocations[0]); i++) {
+      const RandoLocationDef *loc = logic_selfcheck_find_location(kEasternDarknessLocations[i]);
+      LSC_ASSERT(loc != NULL, "Eastern Darkness location missing from generated registry");
+      LSC_ASSERT(!Predicate_Evaluate(kRandoPredicateStream + loc->can_reach_offset,
+                                    loc->can_reach_length, &dark_counts, &settings),
+                 "Eastern Darkness location reachable without Eastern big key");
+    }
+    dark_counts.by_item_id[ITEM_BigKey_EasternPalace] = 1;
+    for (uint32 i = 0; i < sizeof(kEasternDarknessLocations) / sizeof(kEasternDarknessLocations[0]); i++) {
+      const RandoLocationDef *loc = logic_selfcheck_find_location(kEasternDarknessLocations[i]);
+      LSC_ASSERT(Predicate_Evaluate(kRandoPredicateStream + loc->can_reach_offset,
+                                   loc->can_reach_length, &dark_counts, &settings),
+                 "Eastern Darkness location stayed closed with Eastern big key");
+    }
+  }
+
   // HAS_ITEM(5) when count[5] == 0 -> false
   {
     uint8 bc[] = { OP_HAS_ITEM, 5, 0 };
