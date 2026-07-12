@@ -103,6 +103,14 @@ The renderer must never silently substitute a key, rupee, or other stand-in for 
 real placed item in item mode. The acceptable outcomes are the exact placed item or
 the neutral glint.
 
+Before drawing exact icons, the dungeon overlay reserves one one-entry glint for
+every active pot/enemy marker. In sorted-sprite rooms, fallback glints allocate from
+the normal floor region first and may spill into the ancilla region only by scanning
+the finished frame's real OAM for physically hidden entries. The planner does not
+trust allocator base counters because vanilla overflow does not advance them. Exact
+icons may use only entries left after the baseline reservation. This keeps dense
+scripted-spawn rooms stable as enemies enter or leave without overwriting ancilla OAM.
+
 ## D6 - Interaction with other overlay systems
 
 Pot-sanity glints remain independent and may coexist with enemy item markers. The

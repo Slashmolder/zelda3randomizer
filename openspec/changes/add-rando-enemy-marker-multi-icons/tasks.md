@@ -47,6 +47,8 @@
 - [x] 3.8 Give the legacy OAM tracker priority over the `0xF0..0xFF` scratch range.
 - [x] 3.9 Default a missing `[Graphics] EnemyDropMarker` preference to the
   non-spoiler generic gold glint while retaining `item` as an explicit option.
+- [x] 3.10 Reserve one fallback glint per active check before exact-icon upgrades
+  and spill dense sorted-room glints into only verified-free ancilla OAM capacity.
 
 ## 4. Compatibility checks
 
@@ -71,3 +73,8 @@
   custom-art items, and receipt/direct-grant transitions.
   <!-- owner confirmation 2026-07-11: enemy and pot marker combinations were
   previously playtested. The separate F12 charnum proof in 5.4 remains. -->
+  <!-- owner F12 2026-07-12: Eastern room 0x0A8's four scripted Red Stalfos were
+  assigned checks correctly, but eight total Stalfos exhausted floor-region OAM;
+  later carriers had no marker and Moon Pearl alternated exact/glint as capacity
+  changed. The allocator now preserves fallback coverage before exact upgrades and
+  uses only live-free ancilla-region overflow. Owner retest remains. -->

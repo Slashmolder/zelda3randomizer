@@ -6869,9 +6869,14 @@ static void RandoPot_DrawGoldOverlay(void) {
   }
   if (n == 0 && enemy_mask == 0)
     return;
+  uint8 fallback_count = n;
+  for (uint16 m = enemy_mask; m != 0; m >>= 1)
+    fallback_count += (uint8)(m & 1);
+  Rando_EnemyMarkerBeginOverlay(fallback_count);
   // Exact enemy item markers must win both OAM and palette priority over the
-  // neutral gold glint fallback. Draw them before choosing the glint palette so
-  // the palette scan below sees their final OAM rows and avoids recoloring them.
+  // neutral gold glint fallback when OAM remains after reserving one fallback
+  // entry per visible check. Draw them before choosing the glint palette so the
+  // palette scan below sees their final OAM rows and avoids recoloring them.
   uint16 enemy_glint_mask = 0;
   for (int k = 0; k < 16; k++) {
     if (!(enemy_mask & (uint16)(1u << k)))
@@ -6957,9 +6962,7 @@ static bool RandoPot_DrawGoldGlintAt(int gx, int gy, uint8 tile, uint8 flags) {
 
 static bool RandoPot_AllocateGoldOverlayOam(void) {
   if (sort_sprites_setting) {
-    if (oam_region_base[3] + 4 >= 0xc1)
-      return false;
-    Oam_AllocateFromRegionD(4);
+    return Rando_EnemyMarkerClaimFallbackOam();
   } else {
     if (oam_region_base[0] + 4 >= 0x171)
       return false;
@@ -6972,6 +6975,10 @@ int RandoPot_OverlayOamSelfCheck(void) {
   uint8 saved_sort = sort_sprites_setting;
   uint16 saved_oam_cur = oam_cur_ptr;
   uint16 saved_oam_ext = oam_ext_cur_ptr;
+  OamEnt saved_oam[128];
+  uint8 saved_ext[128];
+  memcpy(saved_oam, oam_buf, sizeof(saved_oam));
+  memcpy(saved_ext, bytewise_extended_oam, sizeof(saved_ext));
   uint16 saved_regions[6];
   for (int i = 0; i < 6; i++)
     saved_regions[i] = oam_region_base[i];
@@ -6979,13 +6986,33 @@ int RandoPot_OverlayOamSelfCheck(void) {
   int fail = 0;
   sort_sprites_setting = 1;
   Oam_ResetRegionBases();
-  Oam_AllocateFromRegionD(8);
-  uint16 occupied = oam_cur_ptr;
-  if (!RandoPot_AllocateGoldOverlayOam() ||
-      oam_cur_ptr == occupied || oam_cur_ptr != 0x0838)
+  for (int i = 0; i < 128; i++)
+    oam_buf[i].y = 0;
+  for (int i = 0x30 / 4; i < 0xC0 / 4; i++)
+    oam_buf[i].y = 0xF0;
+  for (int i = 0x120 / 4; i < 0x140 / 4; i++)
+    oam_buf[i].y = 0xF0;
+  Rando_EnemyMarkerBeginOverlay(1);
+  if (!RandoPot_AllocateGoldOverlayOam() || oam_cur_ptr != 0x0830)
     fail = 1;
+
   oam_cur_ptr = 0xdead;
-  oam_region_base[3] = 0xc0;
+  for (int i = 0x30 / 4; i < 0xC0 / 4; i++)
+    oam_buf[i].y = 0;
+  Rando_EnemyMarkerBeginOverlay(1);
+  if (!RandoPot_AllocateGoldOverlayOam() || oam_cur_ptr != 0x0920)
+    fail = 1;
+
+  oam_cur_ptr = 0xdead;
+  oam_buf[0x120 / 4].y = 0;
+  Rando_EnemyMarkerBeginOverlay(1);
+  if (!RandoPot_AllocateGoldOverlayOam() || oam_cur_ptr != 0x0924)
+    fail = 1;
+
+  oam_cur_ptr = 0xdead;
+  for (int i = 0x120 / 4; i < 0x140 / 4; i++)
+    oam_buf[i].y = 0;
+  Rando_EnemyMarkerBeginOverlay(1);
   if (RandoPot_AllocateGoldOverlayOam() || oam_cur_ptr != 0xdead)
     fail = 1;
 
@@ -7001,8 +7028,11 @@ int RandoPot_OverlayOamSelfCheck(void) {
   sort_sprites_setting = saved_sort;
   oam_cur_ptr = saved_oam_cur;
   oam_ext_cur_ptr = saved_oam_ext;
+  memcpy(oam_buf, saved_oam, sizeof(saved_oam));
+  memcpy(bytewise_extended_oam, saved_ext, sizeof(saved_ext));
   for (int i = 0; i < 6; i++)
     oam_region_base[i] = saved_regions[i];
+  Rando_EnemyMarkerBeginOverlay(0);
   return fail;
 }
 

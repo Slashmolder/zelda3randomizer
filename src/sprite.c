@@ -2726,6 +2726,61 @@ static uint8 s_enemy_marker_frame;
 static bool s_enemy_marker_cache_valid;
 static uint8 s_enemy_marker_draw_failed_frame;
 static uint16 s_enemy_marker_draw_failed_mask;
+enum { kRandoEnemyMarkerOverlayOamSlots = 44 };
+static bool s_enemy_marker_overlay_plan_active;
+static uint8 s_enemy_marker_reserved_oam[kRandoEnemyMarkerOverlayOamSlots];
+static uint8 s_enemy_marker_extra_oam[kRandoEnemyMarkerOverlayOamSlots];
+static uint8 s_enemy_marker_reserved_count, s_enemy_marker_reserved_next;
+static uint8 s_enemy_marker_extra_count, s_enemy_marker_extra_next;
+
+void Rando_EnemyMarkerBeginOverlay(uint8 fallback_count) {
+  s_enemy_marker_overlay_plan_active = sort_sprites_setting != 0;
+  s_enemy_marker_reserved_count = s_enemy_marker_reserved_next = 0;
+  s_enemy_marker_extra_count = s_enemy_marker_extra_next = 0;
+  if (!s_enemy_marker_overlay_plan_active)
+    return;
+
+  uint8 free_slots[kRandoEnemyMarkerOverlayOamSlots];
+  uint8 free_count = 0;
+  // Region D ($30..$bf) is the sorted floor-0 sprite region. Region E
+  // ($120..$13f) is ancilla-owned, but the overlay runs after Ancilla_Main and
+  // may claim entries that are physically hidden this frame. Scan real OAM:
+  // vanilla overflow does not advance oam_region_base, so its counter can lie.
+  for (uint8 i = 0x30 / 4; i < 0xC0 / 4; i++) {
+    if (oam_buf[i].y == 0xF0)
+      free_slots[free_count++] = i;
+  }
+  for (uint8 i = 0x120 / 4; i < 0x140 / 4; i++) {
+    if (oam_buf[i].y == 0xF0)
+      free_slots[free_count++] = i;
+  }
+  uint8 reserve = fallback_count < free_count ? fallback_count : free_count;
+  for (uint8 i = 0; i < reserve; i++)
+    s_enemy_marker_reserved_oam[s_enemy_marker_reserved_count++] = free_slots[i];
+  for (uint8 i = reserve; i < free_count; i++)
+    s_enemy_marker_extra_oam[s_enemy_marker_extra_count++] = free_slots[i];
+}
+
+bool Rando_EnemyMarkerClaimFallbackOam(void) {
+  if (!s_enemy_marker_overlay_plan_active ||
+      s_enemy_marker_reserved_next >= s_enemy_marker_reserved_count)
+    return false;
+  uint8 slot = s_enemy_marker_reserved_oam[s_enemy_marker_reserved_next++];
+  oam_cur_ptr = (uint16)(0x800 + slot * 4);
+  oam_ext_cur_ptr = (uint16)(0xA20 + slot);
+  return true;
+}
+
+static bool Rando_EnemyMarkerClaimExactOam(uint8 pieces, uint8 *out_slots) {
+  if (!s_enemy_marker_overlay_plan_active || out_slots == NULL || pieces == 0 ||
+      s_enemy_marker_reserved_next >= s_enemy_marker_reserved_count ||
+      s_enemy_marker_extra_count - s_enemy_marker_extra_next < pieces - 1)
+    return false;
+  out_slots[0] = s_enemy_marker_reserved_oam[s_enemy_marker_reserved_next++];
+  for (uint8 i = 1; i < pieces; i++)
+    out_slots[i] = s_enemy_marker_extra_oam[s_enemy_marker_extra_next++];
+  return true;
+}
 
 static void Rando_EnemyMarkerInvalidateFrameState(void) {
   s_enemy_marker_cache_valid = false;
@@ -2847,22 +2902,33 @@ static bool Rando_DrawEnemyMarkerIconAt(int k,
     return false;
   uint8 pieces = Rando_EnemyMarkerPieceCount(c->key.footprint);
   uint8 nbytes = (uint8)(pieces * 4);
-  if (!Rando_EnemyMarkerCanAllocateOam(c->oam_region, nbytes))
-    return false;
-  Rando_EnemyMarkerAllocateOam(c->oam_region, nbytes);
+  uint8 planned_slots[4];
+  OamEnt *piece_oam[4];
+  if (s_enemy_marker_overlay_plan_active) {
+    if (!Rando_EnemyMarkerClaimExactOam(pieces, planned_slots))
+      return false;
+    for (uint8 i = 0; i < pieces; i++)
+      piece_oam[i] = &oam_buf[planned_slots[i]];
+  } else {
+    if (!Rando_EnemyMarkerCanAllocateOam(c->oam_region, nbytes))
+      return false;
+    Rando_EnemyMarkerAllocateOam(c->oam_region, nbytes);
+    OamEnt *oam = GetOamCurPtr();
+    for (uint8 i = 0; i < pieces; i++)
+      piece_oam[i] = oam + i;
+  }
   uint8 base = kRandoEnemyMarkerSlotBase[c->slot];
   uint8 flags = c->key.oam_flags;
   if (c->key.palette_policy == kRandoEnemyMarkerPalette_Dynamic)
     flags = (uint8)((flags & ~0x0Fu) | (c->palette_row << 1));
   flags = (uint8)((flags & ~1u) | 1u);
-  OamEnt *oam = GetOamCurPtr();
-  SetOamHelper0(oam, c->x, c->y, base, flags, 0);
+  SetOamHelper0(piece_oam[0], c->x, c->y, base, flags, 0);
   if (c->key.footprint == kRandoEnemyMarkerFootprint_8x16) {
-    SetOamHelper0(oam + 1, c->x, c->y + 8, (uint8)(base + 2), flags, 0);
+    SetOamHelper0(piece_oam[1], c->x, c->y + 8, (uint8)(base + 2), flags, 0);
   } else if (c->key.footprint == kRandoEnemyMarkerFootprint_16x16) {
-    SetOamHelper0(oam + 1, c->x + 8, c->y, (uint8)(base + 1), flags, 0);
-    SetOamHelper0(oam + 2, c->x, c->y + 8, (uint8)(base + 2), flags, 0);
-    SetOamHelper0(oam + 3, c->x + 8, c->y + 8, (uint8)(base + 3), flags, 0);
+    SetOamHelper0(piece_oam[1], c->x + 8, c->y, (uint8)(base + 1), flags, 0);
+    SetOamHelper0(piece_oam[2], c->x, c->y + 8, (uint8)(base + 2), flags, 0);
+    SetOamHelper0(piece_oam[3], c->x + 8, c->y + 8, (uint8)(base + 3), flags, 0);
   }
   if (c->key.palette_policy == kRandoEnemyMarkerPalette_Dynamic)
     Rando_OverlayPaletteRequestCustomItem(c->palette_row, c->key.gfx);
@@ -2902,9 +2968,7 @@ bool Rando_TryDrawEnemyDropCarrierField(int k) {
 
 static bool Rando_EnemyMarkerAllocateGlintOam(void) {
   if (sort_sprites_setting) {
-    if (oam_region_base[3] + 4 >= kOamGetBufferPos_Tab0[3])
-      return false;
-    Oam_AllocateFromRegionD(4);
+    return Rando_EnemyMarkerClaimFallbackOam();
   } else {
     if (oam_region_base[0] + 4 >= kOamGetBufferPos_Tab0[0])
       return false;
@@ -2917,6 +2981,13 @@ void Rando_DrawOverworldEnemyMarkerGlints(void) {
   if (player_is_indoors || !(enhanced_features1 & kFeatures1_RandomizerActive))
     return;
   Rando_ObjScratchRestoreVisible();
+
+  uint8 fallback_count = 0;
+  for (int k = 0; k < 16; k++) {
+    if (Rando_GetEnemyDropCarrierMarkerInfo(k, NULL))
+      fallback_count++;
+  }
+  Rando_EnemyMarkerBeginOverlay(fallback_count);
 
   uint16 enemy_glint_mask = 0;
   for (int k = 0; k < 16; k++) {
@@ -3187,6 +3258,72 @@ int Rando_EnemyMarkerAllocatorSelfCheck(void) {
               vram[16] == 0x80 && vram[17] == 0;
     if (!ok)
       return 20;
+  }
+  {
+    uint8 saved_sort = sort_sprites_setting;
+    bool saved_plan_active = s_enemy_marker_overlay_plan_active;
+    uint8 saved_reserved[kRandoEnemyMarkerOverlayOamSlots];
+    uint8 saved_extra[kRandoEnemyMarkerOverlayOamSlots];
+    memcpy(saved_reserved, s_enemy_marker_reserved_oam, sizeof(saved_reserved));
+    memcpy(saved_extra, s_enemy_marker_extra_oam, sizeof(saved_extra));
+    uint8 saved_reserved_count = s_enemy_marker_reserved_count;
+    uint8 saved_reserved_next = s_enemy_marker_reserved_next;
+    uint8 saved_extra_count = s_enemy_marker_extra_count;
+    uint8 saved_extra_next = s_enemy_marker_extra_next;
+    uint16 saved_oam_cur = oam_cur_ptr;
+    uint16 saved_oam_ext = oam_ext_cur_ptr;
+    OamEnt saved_oam[128];
+    uint8 saved_ext[128];
+    memcpy(saved_oam, oam_buf, sizeof(saved_oam));
+    memcpy(saved_ext, bytewise_extended_oam, sizeof(saved_ext));
+    uint16 saved_regions[6];
+    memcpy(saved_regions, oam_region_base, sizeof(saved_regions));
+    sort_sprites_setting = 1;
+    Oam_ResetRegionBases();
+    // F12 regression: eight room-0x0A8 Stalfos leave four entries in region D,
+    // while unused region E has eight. Reserve eight physical one-entry markers;
+    // four 8x16 icons may each upgrade with one extra E entry, leaving four
+    // reserved glints. Never trust Region E's allocator base: scan actual OAM.
+    for (int i = 0; i < 128; i++)
+      oam_buf[i].y = 0;
+    for (uint8 i = 0xB0 / 4; i < 0xC0 / 4; i++)
+      oam_buf[i].y = 0xF0;
+    for (uint8 i = 0x120 / 4; i < 0x140 / 4; i++)
+      oam_buf[i].y = 0xF0;
+    oam_region_base[4] = 0x120;  // deliberately uninformative
+    Rando_EnemyMarkerBeginOverlay(8);
+    bool exact_ok = true;
+    for (uint8 i = 0; i < 4; i++) {
+      uint8 slots[4];
+      if (!Rando_EnemyMarkerClaimExactOam(2, slots) ||
+          slots[0] != (uint8)(0xB0 / 4 + i) ||
+          slots[1] != (uint8)(0x130 / 4 + i))
+        exact_ok = false;
+    }
+    uint8 slots[4];
+    bool fifth_exact = Rando_EnemyMarkerClaimExactOam(2, slots);
+    bool fallback_ok = true;
+    for (uint8 i = 0; i < 4; i++) {
+      if (!Rando_EnemyMarkerClaimFallbackOam() ||
+          oam_cur_ptr != (uint16)(0x920 + i * 4))
+        fallback_ok = false;
+    }
+    bool ninth_marker = Rando_EnemyMarkerClaimFallbackOam();
+    sort_sprites_setting = saved_sort;
+    s_enemy_marker_overlay_plan_active = saved_plan_active;
+    memcpy(s_enemy_marker_reserved_oam, saved_reserved, sizeof(saved_reserved));
+    memcpy(s_enemy_marker_extra_oam, saved_extra, sizeof(saved_extra));
+    s_enemy_marker_reserved_count = saved_reserved_count;
+    s_enemy_marker_reserved_next = saved_reserved_next;
+    s_enemy_marker_extra_count = saved_extra_count;
+    s_enemy_marker_extra_next = saved_extra_next;
+    oam_cur_ptr = saved_oam_cur;
+    oam_ext_cur_ptr = saved_oam_ext;
+    memcpy(oam_buf, saved_oam, sizeof(saved_oam));
+    memcpy(bytewise_extended_oam, saved_ext, sizeof(saved_ext));
+    memcpy(oam_region_base, saved_regions, sizeof(saved_regions));
+    if (!exact_ok || fifth_exact || !fallback_ok || ninth_marker)
+      return 21;
   }
   return 0;
 }

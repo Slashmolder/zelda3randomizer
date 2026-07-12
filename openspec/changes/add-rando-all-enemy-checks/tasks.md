@@ -127,6 +127,10 @@
   prize-pack sequencing and all special/boss rewards remain intact. The client-local
   marker default is now the non-spoiler generic gold glint; placed-item markers remain
   available as an explicit preference. Final owner retest remains. -->
+  <!-- owner F12 2026-07-12: room 0x0A8 scripted Red Stalfos identities/grants were
+  correct, but dense OAM starved later child markers. Marker fallback reservation
+  and verified-free ancilla-region overflow landed under the marker change; owner
+  retest of all four child spawn markers remains. -->
 - [x] 6.6 Test thrown-pot kill logic with insufficient and sufficient pot counts
   while pot shuffle is off, plus the pot-sanity guard that disables those branches
   and requires the inventory-combat route while any effective pot tier is active.

@@ -594,8 +594,10 @@ the post-sprite overlay pass, and only when that slot is not already visible in
 OAM; this avoids corrupting boomerangs, field items, receipts, and other live OBJ
 users. More than one distinct visible marker item, unsupported custom palette
 state, active receipts, receive-slot conflicts, or OAM pressure fall back to the
-glint, so the player still sees an unchecked dungeon check without mistaking the
-marker for a stand-in item. Static overworld `all` carriers attempt the same exact
+glint. Dense sorted-sprite rooms reserve one glint entry per active check before
+spending OAM on exact icons and may use verified-free ancilla OAM entries after the
+normal sprite region fills, so earlier exact markers do not hide later checks.
+Static overworld `all` carriers attempt the same exact
 placed-item marker inline in `item` mode; overworld carriers that cannot draw the
 exact placed-item marker, including additional distinct markers beyond the current
 shared icon slot, fall back to the same gold glint in a post-sprite overworld

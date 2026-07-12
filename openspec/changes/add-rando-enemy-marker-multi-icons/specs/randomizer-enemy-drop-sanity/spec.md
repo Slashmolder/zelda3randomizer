@@ -59,6 +59,15 @@ placed item.
   cleanly according to the documented fallback policy
 - **AND** no marker draws corrupt or stale item graphics
 
+#### Scenario: Dense sorted room preserves a marker per check
+- **WHEN** exact enemy icons and active pot/enemy checks compete for sorted-sprite
+  OAM in a dense room
+- **THEN** the overlay reserves one glint entry per active check before allocating
+  multi-entry exact icons
+- **AND** fallback glints MAY use verified-free ancilla-region entries after the
+  normal floor region fills
+- **AND** the overlay SHALL NOT overwrite OAM already allocated to an ancilla
+
 #### Scenario: Multi-entry icon slot is incomplete
 - **WHEN** an active enemy marker's placed item requires a multi-entry OBJ footprint
   and the marker pool cannot reserve every required tile cell

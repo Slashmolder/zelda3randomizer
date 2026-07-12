@@ -109,6 +109,8 @@ uint8 Rando_ObjScratchVisibleSlotMask(void);
 void Rando_ObjScratchMarkSlotsDirty(uint8 slots);
 void Rando_ObjScratchRestoreVisible(void);
 void Rando_ObjScratchInvalidateAll(void);
+void Rando_EnemyMarkerBeginOverlay(uint8 fallback_count);
+bool Rando_EnemyMarkerClaimFallbackOam(void);
 bool Rando_EnemyDropMarkerNeedsOverlay(int k);
 bool Rando_TryDrawEnemyDropMarkerOverlay(int k);
 bool Rando_EnemyDropMarkerWantsGlint(int k, int *out_dy);
