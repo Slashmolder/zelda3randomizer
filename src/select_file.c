@@ -2862,11 +2862,15 @@ static bool EnemyDropAllTierSelectable(const RandoSettings *s) {
       s != NULL &&
       (s->world_state == kWorldState_Open || s->world_state == kWorldState_Standard) &&
       (s->shuffle_cave_entrances || s->shuffle_dungeon_entrances);
+  // Match generation exactly: enemy/entrance shuffle degrade the tier
+  // (Settings_EffectiveEnemyDropChecks) and all-tier x effective
+  // accessibility=locations is refused (Placement_PreflightSettings —
+  // overworld enemy checks are missable); door and boss shuffle PRESERVE
+  // enemy_drop_checks=All, so they must not hide the tier here.
   return s != NULL &&
-         Settings_EffectiveDoorShuffle(s) == kDoorShuffle_Vanilla &&
          !s->enemy_shuffle &&
-         !s->boss_shuffle &&
-         !entrance_shuffle;
+         !entrance_shuffle &&
+         Settings_EffectiveAccessibility(s) != kAccessibility_Locations;
 }
 
 // Cycle a row's value forward (delta=+1) or backward (delta=-1). Bool rows
@@ -3039,9 +3043,9 @@ static void CycleRow(int row, int delta) {
         }
       }
       {
-        bool dungeon_tier =
-            Settings_EffectiveDoorShuffle(s) == kDoorShuffle_Vanilla &&
-            !s->enemy_shuffle;
+        // Only enemy shuffle degrades the Dungeon tier
+        // (Settings_EffectiveEnemyDropChecks); door shuffle composes with it.
+        bool dungeon_tier = !s->enemy_shuffle;
         uint8 max_tier = EnemyDropAllTierSelectable(s)
                              ? kEnemyDropChecks_All
                              : (dungeon_tier ? kEnemyDropChecks_Dungeon

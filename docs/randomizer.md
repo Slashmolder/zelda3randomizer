@@ -559,13 +559,15 @@ The native window and file-select UI expose `all` only as a separate tier; they 
 not label the dungeon-only tier as all.
 
 Static overworld rows are gated by their logic region, active overworld stage,
-and a conservative inventory kill route. Post-Agahnim stage-2 overworld enemy
-checks stay in the fillable pool, but they reject item classes needed to enter
-or clear Agahnim's Tower (swords, HCT keys/generic keys, Lamp/dark-room combat
-stand-ins, Cape, and the weapons/magic support that can satisfy the tower combat
-gate). Without that placement rule, multiple progressive copies can all land
-behind the same post-Aga sprite-stage gate and make `accessibility=items` seeds
-fail after placement.
+and a conservative inventory kill route. Overworld enemy checks stay in the
+fillable pool, but every one of them — at every stage, not only post-Agahnim —
+rejects ALL progression items (weapons, utility items, dungeon keys, bottles,
+prizes, Triforce pieces, magic upgrades): they receive junk only. Stage windows
+make these checks missable — a stage flip can permanently remove a live enemy
+before its check is collected — so the junk-only placement rule is what makes
+that missability safe; allowing any progression there could strand items the
+logic still counts as reachable and make `accessibility=items` seeds fail after
+placement.
 
 The forced-key generator scans vanilla dungeon sprite assets for forced-key
 markers, emits 13 active small-key enemy-drop locations, and emits the one

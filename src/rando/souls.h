@@ -18,9 +18,10 @@
 
 #include "../types.h"
 
-// 12 bytes = 96 bits: 46 enemy/boss souls + 23 NPC souls (add-npc-souls
-// widened 8->12; sidecar v7 + length-grown TLV carry the widened field, and
-// pre-widening saves load with the tail zeroed).
+// 12 bytes = 96 bits: kSoulCount (46) enemy/boss souls + kNpcSoulCount (24)
+// NPC souls (add-npc-souls widened 8->12; sidecar v7 + length-grown TLV carry
+// the widened field, and pre-widening saves load with the tail zeroed).
+// souls.c statically asserts the sum fits.
 #define kSoulFlagsBytes 12
 
 // Active souls tier (SoulsShuffle enum value). 0 (Off) when no slot is active

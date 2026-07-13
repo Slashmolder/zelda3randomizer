@@ -1666,16 +1666,20 @@ static void Hud_ReorderItem(int direction) {
 // These overlays draw via OAM sprites so they composite over live gameplay on
 // every renderer backend (the in-game HUD strip is a static BG tilemap and
 // cannot host a fixed overlay that doesn't scroll). The glyph graphics are a
-// tiny self-contained 4bpp font written into a free scratch region of sprite
-// VRAM each frame, so the overlay never depends on which area's sprite gfx
-// subset happens to be loaded.
+// tiny self-contained 4bpp font written over borrowed sprite VRAM each frame,
+// so the overlay never depends on which area's sprite gfx subset happens to be
+// loaded.
 //
-// Scratch VRAM: per-area sprite gfx subsets fill VRAM 0x5000..0x5eff (four
-// 0x300-word subsets at 0x5000/0x5400/0x5800/0x5c00; see load_gfx.c
-// Gfx_LoadSpritesInner). VRAM 0x5f00..0x5fff is therefore free during
-// gameplay — that maps to objTileAdr2 (PPU obj name-select bit, OAM flag 0x01)
-// charnums 0xF0..0xFF. We rewrite the glyphs there every frame so an area
-// reload can't leave us pointing at stale tiles.
+// Borrowed VRAM: per-area sprite gfx subsets fill VRAM 0x5000..0x5fff (four
+// 0x400-word subsets — 64 tiles x 16 words — at 0x5000/0x5400/0x5800/0x5c00;
+// see load_gfx.c InitializeTilesets + Do3To4Low/High). objTileAdr2 (PPU obj
+// name-select bit, OAM flag 0x01) charnums 0xF0..0xFF = VRAM 0x5f00..0x5fff
+// are therefore the LAST ROW of the live subset-3 sheet (e.g. the vanilla
+// cucco's bottom tiles land at chars 0xFA/0xFB), NOT free space. We rewrite
+// the glyphs there every frame (an area reload can't leave us pointing at
+// stale tiles) and mark the scratch slots dirty via
+// Rando_ObjScratchMarkSlotsDirty so the sheet row is restored the moment a
+// visible sprite needs those chars (Rando_ObjScratchRestoreVisible).
 //
 // The tracker visibility flags (g_rando_show_item_tracker /
 // g_rando_show_location_tracker) are owned by rando.c (declared in

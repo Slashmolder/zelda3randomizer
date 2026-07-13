@@ -2063,8 +2063,11 @@ enum { kDungeonMapRandoDigitTileBase = 0xf0 };
 
 // The dungeon-map OBJ sheet contains only floor digits 1..8 at chars 0x1e..0x25;
 // chars 0x26/0x27 are map-border pieces, not 9/0. Upload a complete decimal font
-// into the same objTileAdr2 scratch range used by the mutually-exclusive rando
-// HUD/marker overlays. Those overlays reload their tiles after the map closes.
+// into the same borrowed objTileAdr2 chars (0xF0.. — the subset-3 sheet's 4th
+// row, here the map tileset's) used by the mutually-exclusive rando HUD/marker
+// overlays. DungeonMap_RecoverGFX re-runs InitializeTilesets on map close, which
+// reloads the dungeon sheets and clears the stamp masks; stamping here keeps the
+// release restore correct for any path that leaves map mode without that reload.
 static const uint8 kDungeonMapRandoDigitRows[10][8] = {
   {0x3c, 0x66, 0x6e, 0x76, 0x66, 0x66, 0x3c, 0x00}, // 0
   {0x18, 0x38, 0x18, 0x18, 0x18, 0x18, 0x7e, 0x00}, // 1
@@ -2088,6 +2091,9 @@ static void DungeonMap_UploadRandoDigitTiles(void) {
       tile[row + 8] = pixels;
     }
   }
+  // Digits occupy chars 0xF0..0xF9 = scratch slots 0-2; record the ownership
+  // so live sprite art is restored once the map overlay stops drawing them.
+  Rando_ObjScratchMarkSlotsDirty(0x07);
 }
 
 static int DungeonMap_DrawRandoCheckCount(int spr_pos) {

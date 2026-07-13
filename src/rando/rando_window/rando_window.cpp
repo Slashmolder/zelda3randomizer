@@ -348,9 +348,15 @@ static bool EnemyDropAllTierSelectable(const RandoSettings *s) {
       s != nullptr &&
       (s->world_state == kWorldState_Open || s->world_state == kWorldState_Standard) &&
       (s->shuffle_cave_entrances || s->shuffle_dungeon_entrances);
+  // Placement_PreflightSettings refuses all-tier x effective
+  // accessibility=locations (the Completionist goal forces locations) —
+  // overworld enemy checks are missable, so 100%-locations seeds can't
+  // include them. Grey the tier instead of offering a combo generation
+  // always rejects.
   return s != nullptr &&
          !s->enemy_shuffle &&
-         !entrance_shuffle;
+         !entrance_shuffle &&
+         Settings_EffectiveAccessibility(s) != kAccessibility_Locations;
 }
 // Phase B tricks (multi-select bitmask; index == settings.tricks bit). Mirrors
 // the kTrickNames table in rando_settings.c + op_registry.yaml `tricks:`. The
@@ -1282,10 +1288,15 @@ static void Panel_Shuffles() {
         s->enemy_drop_checks = combo_value;
         changed = true;
       }
-      HelpTooltip("Keys turns forced enemy key drops into checks. Dungeon also turns eligible dungeon enemies into checks. All adds eligible overworld, reviewed underworld, GT-miniboss, and repeatable scripted enemies. Enemy shuffle lowers Dungeon/All to Keys; entrance shuffle lowers All to Dungeon.");
+      HelpTooltip("Keys turns forced enemy key drops into checks. Dungeon also turns eligible dungeon enemies into checks. All adds eligible overworld, reviewed underworld, GT-miniboss, and repeatable scripted enemies. Enemy shuffle lowers Dungeon/All to Keys; entrance shuffle lowers All to Dungeon. All is unavailable with 100% Locations accessibility (or Completionist).");
       ImGui::EndDisabled();
       if (enemy_drops_off) {
         ImGui::TextDisabled("Enemy drop checks require Wild, Retro, or Dungeon small keys.");
+      } else if (s->enemy_drop_checks >= kEnemyDropChecks_All &&
+                 Settings_EffectiveAccessibility(s) == kAccessibility_Locations) {
+        ImGui::TextDisabled(
+            "All needs accessibility below 100%% Locations (overworld enemy "
+            "checks are missable).");
       }
     }
 

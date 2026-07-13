@@ -843,12 +843,24 @@ static bool widen_set_fillable(const uint8 live[4], bool is_dungeon, uint8 sig_i
 void EnemyShuffle_ReshuffleCurrentRoomSheets(const uint8 *tileset_row) {
   if (!g_enemy_shuffle_active || tileset_row == NULL) return;
 
-  // Only act inside a dungeon (0x07) or overworld (0x08 load / 0x09 transition)
-  // room load. Other InitializeTilesets callers (attract, select-file, ending,
-  // dungeon-map preview) must not be touched.
+  // Act on every gameplay room/area sheet load; stay inert for the
+  // non-gameplay InitializeTilesets callers (attract, select-file, ending,
+  // dungeon-map, flute/world-map). Dungeon loads run under 0x07 room-to-room,
+  // but the ENTRANCE load runs under 0x06 (Module_PreDungeon — it flips
+  // main_module_index to 7 only afterwards; also every dungeon-chain hop) and
+  // a falling entrance under 0x11 (Module11_02_LoadEntrance). The overworld
+  // side runs under 0x08 (load) / 0x09 (transition) plus 0x0A (the
+  // PreOverworld load returning from a special-overworld area). In all six the
+  // key + sprite data are valid before the InitializeTilesets call and the
+  // picker consumes the committed sheets strictly later: Dungeon_LoadEntrance
+  // sets dungeon_room_index(2) first and Dungeon_ResetSprites runs after
+  // (dungeon.c Module_PreDungeon; Module11 case 3), and
+  // LoadOverworldFromSpecialOverworld restores overworld_area_index before
+  // PreOverworld_LoadProperties reaches InitializeTilesets, with
+  // Sprite_ReloadAll_Overworld after (overworld.c).
   uint8 module = g_ram[0x10];                 // main_module_index
-  bool is_dungeon = (module == 0x07);
-  bool is_ow = (module == 0x08 || module == 0x09);
+  bool is_dungeon = (module == 0x06 || module == 0x07 || module == 0x11);
+  bool is_ow = (module == 0x08 || module == 0x09 || module == 0x0A);
   if (!is_dungeon && !is_ow) return;
   if (g_ram[0xAA3] >= 0x80) return;           // sprite_graphics_index: 0x80| = map preview
   uint8 context = is_dungeon ? kEsResolvedContext_Dungeon : kEsResolvedContext_Overworld;
@@ -1385,6 +1397,63 @@ void EnemyShuffle_SelfCheck(void) {
     write_resolved_sheet_snapshot(kEsResolvedContext_Dungeon, 0x51);
     if (EnemyShuffle_PickDungeon(0x52, 3, 0x12) != 0x12)
       enemy_selfcheck_die("PickDungeon substituted with a stale room sheet snapshot");
+
+    // Module gate: the reshuffle must ACT (write the room/area snapshot the
+    // fail-closed picker above requires) on every gameplay sheet-load module —
+    // 0x07 room-to-room, 0x06 dungeon entrance (Module_PreDungeon, incl.
+    // dungeon-chain hops), 0x11 falling entrance, 0x08/0x09 overworld, 0x0A
+    // special-overworld return — and stay INERT for non-gameplay callers. An
+    // entrance-room miss leaves the snapshot stale, so the whole room silently
+    // plays vanilla.
+    {
+      uint8 sav_module = g_ram[0x10];
+      uint8 sav_gfxidx = g_ram[0xAA3];
+      uint8 sav_room_lo = g_ram[0xA0], sav_room_hi = g_ram[0xA1];
+      uint8 sav_area_lo = g_ram[0x40A], sav_area_hi = g_ram[0x40B];
+      // An all-zero row owns no slot: the gate + snapshot write run, the
+      // subset commit does not — no live sheet state is disturbed.
+      static const uint8 kZeroRow[4] = { 0, 0, 0, 0 };
+      static const uint8 kDungeonGateModules[3] = { 0x06, 0x07, 0x11 };
+      static const uint8 kOverworldGateModules[3] = { 0x08, 0x09, 0x0A };
+      static const uint8 kInertGateModules[5] = { 0x00, 0x01, 0x0E, 0x14, 0x1A };
+      g_ram[0xAA3] = 0;
+      g_ram[0xA0] = 0x52; g_ram[0xA1] = 0;
+      g_ram[0x40A] = 0x05; g_ram[0x40B] = 0;
+      for (int mi = 0; mi < 3; mi++) {
+        clear_resolved_sheet_snapshot();
+        g_ram[0x10] = kDungeonGateModules[mi];
+        EnemyShuffle_ReshuffleCurrentRoomSheets(kZeroRow);
+        if (g_ram[kRam_EnemyShuffleLiveContext] != kEsResolvedContext_Dungeon ||
+            ram_read_u16(kRam_EnemyShuffleLiveKey) != 0x52)
+          enemy_selfcheck_die("reshuffle must resolve dungeon sheets under modules 0x06/0x07/0x11");
+      }
+      for (int mi = 0; mi < 3; mi++) {
+        clear_resolved_sheet_snapshot();
+        g_ram[0x10] = kOverworldGateModules[mi];
+        EnemyShuffle_ReshuffleCurrentRoomSheets(kZeroRow);
+        if (g_ram[kRam_EnemyShuffleLiveContext] != kEsResolvedContext_Overworld ||
+            ram_read_u16(kRam_EnemyShuffleLiveKey) != 0x05)
+          enemy_selfcheck_die("reshuffle must resolve overworld sheets under modules 0x08/0x09/0x0A");
+      }
+      for (int mi = 0; mi < 5; mi++) {
+        clear_resolved_sheet_snapshot();
+        g_ram[0x10] = kInertGateModules[mi];
+        EnemyShuffle_ReshuffleCurrentRoomSheets(kZeroRow);
+        if (g_ram[kRam_EnemyShuffleLiveContext] != kEsResolvedContext_None)
+          enemy_selfcheck_die("reshuffle must stay inert outside gameplay sheet-load modules");
+      }
+      // Dungeon-map preview guard: gameplay module but a map tileset loaded.
+      clear_resolved_sheet_snapshot();
+      g_ram[0x10] = 0x07;
+      g_ram[0xAA3] = 0x80;
+      EnemyShuffle_ReshuffleCurrentRoomSheets(kZeroRow);
+      if (g_ram[kRam_EnemyShuffleLiveContext] != kEsResolvedContext_None)
+        enemy_selfcheck_die("reshuffle must stay inert for the dungeon-map preview tileset");
+      g_ram[0x10] = sav_module;
+      g_ram[0xAA3] = sav_gfxidx;
+      g_ram[0xA0] = sav_room_lo; g_ram[0xA1] = sav_room_hi;
+      g_ram[0x40A] = sav_area_lo; g_ram[0x40B] = sav_area_hi;
+    }
     write_resolved_sheet_snapshot(kEsResolvedContext_Dungeon, 0x52);
 
     // Determinism: same (room, slot, type) → same pick.

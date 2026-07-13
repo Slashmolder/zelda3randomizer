@@ -45,8 +45,15 @@ iteration accidents.
 ## D3 - Dedicated marker tile pool
 
 Enemy item markers SHALL NOT DMA placed-item graphics into unowned OBJ cells or the
-shared receive-item slot. Exact enemy markers use the marker-owned scratch OBJ range
-`0xF0..0xFF` in objTileAdr2, which maps to VRAM `0x5f00..0x5fff`.
+shared receive-item slot. Exact enemy markers use the BORROWED OBJ range
+`0xF0..0xFF` in objTileAdr2, which maps to VRAM `0x5f00..0x5fff`. That range is not
+statically free: sprite subsets are `0x400` words each (64 tiles x 16 words), so
+subset 3 spans `0x5c00..0x5fff` inclusive and chars `0xF0..0xFF` are the live
+subset-3 sheet's 4th row (the vanilla cucco's bottom tiles render from chars
+`0xFA/0xFB`, inside marker slots 2/3). Marker uploads therefore stamp the chars
+they paint (`Rando_ObjScratchStampChars`); the NMI release pass restores any char
+no overlay re-stamped that frame from the current subset-3 sheet
+(`Gfx_RestoreSpriteSubset3Chars`), and a full subset reload clears the stamps.
 
 The pool size is intentionally bounded at four distinct visual icon keys. The fixed
 slots are `F0-F3`, `F4-F7`, `F8-FB`, and `FC-FF`, with each slot laid out as

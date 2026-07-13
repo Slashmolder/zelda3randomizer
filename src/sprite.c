@@ -592,6 +592,20 @@ static bool Rando_EnemyCheckEntryActive(const RandoEnemyCheckLookupEntry *check)
          (!check->all_tier_only || Rando_EnemyChecksAllActiveRuntime());
 }
 
+// Forward-declared to avoid pulling rando_placement.h into this hot file
+// (same seam as misc.c). See rando_placement.c.
+uint16 Placement_Lookup(uint16 location_id, uint16 vanilla_item_id);
+
+// Placement-presence guard, mirroring rando_pot_is_active /
+// rando_terrain_is_active (rando.c): an enemy-check location absent from the
+// installed placement must be a clean no-op. Dispatching it would mark the
+// location checked and hand the caller the fallback receive code for a
+// placement that doesn't exist — with the old fallback of 0 that was a
+// phantom GiveSwordAndShield.
+static bool Rando_EnemyCheckLocPlaced(uint16 loc_id) {
+  return Placement_Lookup(loc_id, 0xFFFFu) != 0xFFFFu;
+}
+
 static const RandoOverworldEnemyCheckLookupEntry *Rando_FindOverworldEnemyCheck(
     uint8 area, uint8 stage, uint8 source_slot) {
   uint32 want = ((uint32)area << 16) | ((uint32)stage << 8) | source_slot;
@@ -724,9 +738,10 @@ static bool Rando_TryGrantOverworldEnemyCheck(int k) {
     return false;
   uint16 block = sprite_N_word[k];
   uint16 loc_id = Rando_OverworldEnemyCheckLocForBlock(block);
-  if (loc_id == 0 || Rando_IsLocationChecked(loc_id))
+  if (loc_id == 0 || !Rando_EnemyCheckLocPlaced(loc_id) ||
+      Rando_IsLocationChecked(loc_id))
     return false;
-  uint8 lttp = Rando_DispatchVanillaGrant(loc_id, 0xFFFFu, 0);
+  uint8 lttp = Rando_DispatchVanillaGrant(loc_id, 0xFFFFu, kRandoLttpSkip);
   uint16 item = Rando_LastDispatchedItemId();
   Rando_QuietReceiveOrConfirm(lttp, item);
   if (block < kRandoOverworldEnemyBlockCount) {
@@ -743,12 +758,13 @@ static bool Rando_TryGrantDynamicEnemyCheck(int k) {
       k < 0 || k >= 16)
     return false;
   uint16 loc_id = s_rando_dynamic_enemy_check_loc[k];
-  if (loc_id == 0 || Rando_IsLocationChecked(loc_id)) {
+  if (loc_id == 0 || !Rando_EnemyCheckLocPlaced(loc_id) ||
+      Rando_IsLocationChecked(loc_id)) {
     if (loc_id != 0)
       s_rando_dynamic_enemy_check_loc[k] = 0;
     return false;
   }
-  uint8 lttp = Rando_DispatchVanillaGrant(loc_id, 0xFFFFu, 0);
+  uint8 lttp = Rando_DispatchVanillaGrant(loc_id, 0xFFFFu, kRandoLttpSkip);
   uint16 item = Rando_LastDispatchedItemId();
   Rando_QuietReceiveOrConfirm(lttp, item);
   s_rando_dynamic_enemy_check_loc[k] = 0;
@@ -766,9 +782,10 @@ static bool Rando_TryGrantEnemyCheck(int k) {
   const RandoEnemyCheckLookupEntry *check =
       Rando_FindEnemyCheck(dungeon_room_index2, sprite_N[k]);
   if (!Rando_EnemyCheckEntryActive(check) ||
+      !Rando_EnemyCheckLocPlaced(check->loc_id) ||
       Rando_IsLocationChecked(check->loc_id))
     return false;
-  uint8 lttp = Rando_DispatchVanillaGrant(check->loc_id, 0xFFFFu, 0);
+  uint8 lttp = Rando_DispatchVanillaGrant(check->loc_id, 0xFFFFu, kRandoLttpSkip);
   uint16 item = Rando_LastDispatchedItemId();
   Rando_QuietReceiveOrConfirm(lttp, item);
   return true;
@@ -797,9 +814,10 @@ void Rando_TryGrantBossEnemyCheckForCurrentEvent(void) {
           game_dungeon, room_b, kRandoBossEnemyCheckKind_GtMiniboss);
     }
   }
-  if (check == NULL || Rando_IsLocationChecked(check->loc_id))
+  if (check == NULL || !Rando_EnemyCheckLocPlaced(check->loc_id) ||
+      Rando_IsLocationChecked(check->loc_id))
     return;
-  uint8 lttp = Rando_DispatchVanillaGrant(check->loc_id, 0xFFFFu, 0);
+  uint8 lttp = Rando_DispatchVanillaGrant(check->loc_id, 0xFFFFu, kRandoLttpSkip);
   uint16 item = Rando_LastDispatchedItemId();
   Rando_QuietReceiveOrConfirm(lttp, item);
 }
@@ -2574,7 +2592,12 @@ static bool Rando_LoadEnemyMarkerIconSlot(uint8 slot,
 }
 
 static uint8 Rando_EnemyMarkerVisiblePaletteMask(void) {
-  uint8 used = 1u << 7;
+  // Seed with Link's equipment rows 3/5/7: Link draws AFTER this scan runs, so
+  // the OAM walk below cannot see his rows — an earlier fixed row 7 painted
+  // Link gold, and sword/shield can land on rows 3/5 (same fix as the dungeon
+  // glint picker, dungeon.c RandoPot_DrawGoldOverlay). This mask also feeds the
+  // dynamic custom-item icon palette rows in both dungeon and overworld.
+  uint8 used = (1u << 3) | (1u << 5) | (1u << 7);
   for (int i = 0; i < 128; i++) {
     if (oam_buf[i].y != 0xf0)
       used |= 1u << ((oam_buf[i].flags >> 1) & 7);
@@ -2654,6 +2677,26 @@ dynamic_assigned:
   }
 }
 
+// Side-effect-free equivalent of the Sprite_Get16BitCoords +
+// Sprite_PrepOamCoordOrDoubleRet pair for overlay CANDIDATE collection: the
+// engine helper resets sprite_pause[k], can Sprite_KillSelf an off-screen
+// sprite, and clobbers the cur_sprite_x/y + dungmap_var7 scratch — mutations
+// overlay code must never perform (benign post-Sprite_Main today, but the
+// historical marker-bug pattern). Same coordinate math and on-screen window
+// (incl. the ExtendScreen64 widening and the tall-sprite flags4 exemption);
+// returns false where the engine helper double-returns.
+static bool Rando_EnemyMarkerScreenCoords(int k, uint16 *out_x, uint16 *out_y) {
+  uint16 x = (uint16)(Sprite_GetX(k) - BG2HOFS_copy2);
+  uint16 y = (uint16)(Sprite_GetY(k) - BG2VOFS_copy2);
+  int xt = (enhanced_features0 & kFeatures0_ExtendScreen64) ? 0x40 : 0;
+  if ((uint16)(x + 0x40 + xt) >= (uint16)(0x170 + xt * 2) ||
+      ((uint16)(y + 0x40) >= 0x170 && !(sprite_flags4[k] & 0x20)))
+    return false;
+  *out_x = x;
+  *out_y = (uint16)(y - sprite_z[k]);
+  return true;
+}
+
 static void Rando_EnemyMarkerAddCandidate(RandoEnemyMarkerCandidate *c,
                                           uint8 *n,
                                           uint8 sprite_index,
@@ -2661,9 +2704,8 @@ static void Rando_EnemyMarkerAddCandidate(RandoEnemyMarkerCandidate *c,
                                           const RandoEnemyDropMarkerInfo *info) {
   if (*n >= kRandoEnemyMarkerMaxCandidates || info == NULL)
     return;
-  PrepOamCoordsRet oam_info;
-  Sprite_Get16BitCoords(sprite_index);
-  if (Sprite_PrepOamCoordOrDoubleRet(sprite_index, &oam_info))
+  uint16 mx, my;
+  if (!Rando_EnemyMarkerScreenCoords(sprite_index, &mx, &my))
     return;
   RandoEnemyMarkerCandidate *dst = &c[(*n)++];
   memset(dst, 0, sizeof(*dst));
@@ -2677,8 +2719,8 @@ static void Rando_EnemyMarkerAddCandidate(RandoEnemyMarkerCandidate *c,
   dst->slot = kRandoEnemyMarkerNoSlot;
   dst->palette_row = 0xFF;
   dst->oam_region = Rando_EnemyMarkerOamRegionForSprite(sprite_index);
-  dst->x = (int16)oam_info.x;
-  dst->y = (int16)(oam_info.y + (kind == kRandoEnemyMarkerKind_Pickup
+  dst->x = (int16)mx;
+  dst->y = (int16)(my + (kind == kRandoEnemyMarkerKind_Pickup
       ? 0 : Rando_EnemyMarkerCarrierVisualTopOffset(sprite_index) - 16));
   if (Rando_EnemyMarkerPlanIcon(info->loc_id, &dst->key)) {
     dst->has_icon = true;
@@ -3013,7 +3055,11 @@ void Rando_DrawOverworldEnemyMarkerGlints(void) {
   if (enemy_glint_mask == 0)
     return;
 
-  uint8 used = 1u << 7;
+  // Reserve a sprite sub-palette row no on-screen sprite uses (NMI golds it);
+  // seed with Link's equipment rows 3/5/7 — Link draws after us, so the scan
+  // can't see his rows (same fix as the dungeon glint picker, dungeon.c
+  // RandoPot_DrawGoldOverlay).
+  uint8 used = (1u << 3) | (1u << 5) | (1u << 7);
   for (int i = 0; i < 128; i++) {
     if (oam_buf[i].y != 0xf0)
       used |= 1u << ((oam_buf[i].flags >> 1) & 7);
@@ -3057,8 +3103,9 @@ void Rando_DrawTerrainGlints(void) {
   if (n == 0)
     return;
   // Reserve a sprite sub-palette row no on-screen sprite uses (NMI golds it);
-  // never take Link's row 7. Same scan as the enemy glint.
-  uint8 used = 1u << 7;
+  // seed with Link's equipment rows 3/5/7 — Link draws after us, so the scan
+  // can't see his rows (sword/shield land on 3/5). Same scan as the enemy glint.
+  uint8 used = (1u << 3) | (1u << 5) | (1u << 7);
   for (int i = 0; i < 128; i++) {
     if (oam_buf[i].y != 0xf0)
       used |= 1u << ((oam_buf[i].flags >> 1) & 7);
