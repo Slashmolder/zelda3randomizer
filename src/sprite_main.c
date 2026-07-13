@@ -24293,6 +24293,8 @@ void CrystalMaiden_RunCutscene(int k) {  // 9ece39
     sprite_ai_state[k]++;
     break;
   case 2:  // generate sparkles
+    if (CutsceneFastForwardEnabled())
+      poly_config1 = 0;
     if (poly_config1 < 6) {
       poly_config1 = 0;
       sprite_ai_state[k]++;
@@ -24306,7 +24308,10 @@ void CrystalMaiden_RunCutscene(int k) {  // 9ece39
     sprite_ai_state[k]++;
   case 4:
     if (!(sprite_E[k] & 1)) {
-      PaletteFilter_SP5F();
+      do {
+        PaletteFilter_SP5F();
+      } while (CutsceneFastForwardEnabled() &&
+               BYTE(palette_filter_countdown) != 0);
       if (!BYTE(palette_filter_countdown)) {
         sprite_ai_state[k]++;
         flag_is_link_immobilized = 1;

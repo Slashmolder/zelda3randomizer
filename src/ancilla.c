@@ -3953,11 +3953,18 @@ void ItemReceipt_TransmuteToRisingCrystal(int k) {  // 88cbe4
 void Ancilla_RisingCrystal(int k) {  // 88cbf2
   ancilla_z[k] = 0;
   AncillaAdd_OccasionalSparkle(k);
-  uint8 yy = ancilla_y_vel[k] - 1;
-  if (yy < 0xf0)
-    yy = 0xf0;
-  ancilla_y_vel[k] = yy;
-  Ancilla_MoveY(k);
+  if (CutsceneFastForwardEnabled()) {
+    // The rise is purely visual. Land just above the handoff threshold so the
+    // normal transition below still owns every prize/fade/cutscene side effect.
+    ancilla_y_vel[k] = 0xf0;
+    Ancilla_SetY(k, BG2VOFS_copy + 0x48);
+  } else {
+    uint8 yy = ancilla_y_vel[k] - 1;
+    if (yy < 0xf0)
+      yy = 0xf0;
+    ancilla_y_vel[k] = yy;
+    Ancilla_MoveY(k);
+  }
 
   uint16 y = Ancilla_GetY(k) - BG2VOFS_copy;
   if (y < 0x49) {

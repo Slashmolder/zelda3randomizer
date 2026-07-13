@@ -26,6 +26,11 @@
 #include "rando/chain_seams.gen.h"
 #include "rando/chains_runtime.h"
 
+static bool CutsceneFastForwardEnabled(void) {
+  return (enhanced_features0 & kFeatures0_CutsceneFastForward) &&
+         !ZeldaIsEmulatorAttached();
+}
+
 // todo: move to config
 static const uint16 kBossRooms[] = {
   200, 51, 7,
@@ -8233,7 +8238,10 @@ void Module07_17_PressurePlate() {  // 8297c8
 void Module07_18_RescuedMaiden() {  // 82980a
   switch (subsubmodule_index) {
   case 0:
-    PaletteFilter_RestoreBGSubstractiveStrict();
+    do {
+      PaletteFilter_RestoreBGSubstractiveStrict();
+    } while (CutsceneFastForwardEnabled() &&
+             BYTE(darkening_or_lightening_screen) != 255);
     main_palette_buffer[0] = main_palette_buffer[32];
     if (BYTE(darkening_or_lightening_screen) != 255)
       return;
