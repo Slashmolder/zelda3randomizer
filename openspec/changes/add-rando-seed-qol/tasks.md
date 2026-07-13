@@ -85,7 +85,7 @@ header-dep tracking → `make clean` after any `features.h`/`config.h` edit).
 - [x] 4.2 Add mirror-warp + flute-travel **animation** speed-up (visual submodule
   chain only); leave `MirrorWarp_FinalizeAndLoadDestination` (position/camera/music)
   untouched. Do NOT change screen-scroll timing.
-- [ ] 4.3 Build + **F12 settled-state preservation compare per cutscene**: at the
+- [x] 4.3 Build + **F12 settled-state preservation compare per cutscene**: at the
   same stable checkpoint, compare the live save block, serialized SRAM, randomizer
   checked bitmap, progression flags, and destination/player state. Ignore the FF
   feature bit, frame counter, animation/audio timers, and render scratch that must
@@ -113,8 +113,10 @@ header-dep tracking → `make clean` after any `features.h`/`config.h` edit).
   cutscene family. A subsequent crystal replay caught a remaining functional delay:
   the shortened 0x18-frame receipt timer never decremented while the crystal-specific
   immobilization flag was 2, so the handoff still waited for the full APU fanfare.
-  The dedicated fast-crystal countdown fix builds and passes subsystem self-tests;
-  one final owner replay of crystal pickup -> maiden text remains required. -->
+  The dedicated fast-crystal countdown fix builds and passes subsystem self-tests.
+  Owner replay confirmed the corrected behavior in both modes: fast mode reaches
+  the maiden text quickly, while disabling Faster Fanfares preserves the long
+  original fanfare. -->
 
 ## 5. F5 — Quick reset / warp-to-spawn (race-toggleable) — D6
 
