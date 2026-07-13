@@ -369,6 +369,38 @@ def forced_drop_rooms(assets) -> set:
     return out
 
 
+DROPS_REGISTRY = REPO / "assets" / "rando" / "enemy_drops.gen.yaml"
+
+
+def assert_keys_tier_rooms_pinned(pin_rooms: set) -> None:
+    """Every Keys-tier (forced-drop) check room must be in the emitted pin set.
+
+    Settings_EffectiveEnemyDropChecks (src/rando/rando_settings.c) degrades
+    enemy-drop checks to the Keys tier under enemy_shuffle on the premise
+    that every forced-drop room keeps its vanilla species — i.e. is in
+    kRandoSoulPinRooms. pin_rooms already contains forced_drop_rooms(assets)
+    scanned from the assets directly; this additionally cross-checks the
+    rooms the drops registry actually EMITTED (an independent scan owned by
+    gen_enemy_drop_tables.py, plus any future room rebind there), so the two
+    generators cannot drift apart silently."""
+    if not DROPS_REGISTRY.exists():
+        print(f"gen_soul_room_tables: WARNING {DROPS_REGISTRY} absent — "
+              f"Keys-tier pin coverage not cross-checked. Safe only because "
+              f"an absent drops registry emits no EnemyDrop locations; "
+              f"regenerate this table after gen_enemy_drop_tables.py runs.",
+              file=sys.stderr)
+        return
+    doc = yaml.safe_load(DROPS_REGISTRY.read_text(encoding="utf-8")) or {}
+    rows = doc.get("enemy_drops", []) or []
+    missing = sorted({int(r["room"]) for r in rows} - pin_rooms)
+    if missing:
+        die("Keys-tier enemy-check room(s) missing from the soul pin set: "
+            + ", ".join(f"0x{r:03X}" for r in missing)
+            + " — souls=all composing with enemy_shuffle relies on every "
+              "forced-drop room being pinned to vanilla species; regenerate "
+              "both registries from the same assets or fix the marker scan")
+
+
 def assert_boss_home_rooms_unmixed(assets, enemy_soul_for) -> None:
     """See parse_boss_home_rooms — fail generation if any boss home room gains
     an enemy-family-soul resident (a suppressed bystander would hold the
@@ -501,6 +533,10 @@ def make_doc(assets_path: Path, assets, graph: DoorGraph,
     # pinned for the same reason (their soul terms name vanilla residents).
     drop_rooms = forced_drop_rooms(assets)
     pin_rooms |= drop_rooms
+    # souls=all × enemy_shuffle soundness rests on the pin set covering every
+    # Keys-tier check room (see the degrade site in rando_settings.c) —
+    # cross-check against the emitted drops registry, hard-failing on a gap.
+    assert_keys_tier_rooms_pinned(pin_rooms)
 
     return {
         "format_version": 1,

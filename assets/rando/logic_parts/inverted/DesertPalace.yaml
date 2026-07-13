@@ -159,8 +159,8 @@ locations_notes: |
     - Desert Palace - Map Chest (Standard php:56; default TRUE)
     - Desert Palace - Torch (Standard php:88-90; HAS_ITEM(Boots))
     - Desert Palace - Compass Chest (Standard php:84-86; HAS_ITEM(SmallKey_DesertPalace))
-  CanKillLanmolas macro is also defined in 10_desert_palace.yaml:162-165;
-  no redefinition here.
+  The CanKillLanmolas macro is defined in 10_desert_palace.yaml (its sole
+  definition); no redefinition here.
 
   Inverted-only DROPPED entry routes:
     - $side (php:28-38): Inverted's Mire-side mirror-warp entry — gated on

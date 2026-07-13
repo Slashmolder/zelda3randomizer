@@ -448,6 +448,47 @@ def _terrain_registry_digest(rows: list[tuple[int, int, int, int]]) -> int:
     return h
 
 
+def _enemy_check_registry_digest(dungeon_rows, overworld_rows, boss_rows,
+                                 scripted_rows) -> int:
+    # FNV over the four sorted enemy-check lookup domains, in emit order, each
+    # prefixed with its row count — the sidecar/snapshot activation-guard value
+    # (kRandoEnemyCheckRegistryDigest), mirroring _terrain_registry_digest.
+    # Every emitted field is folded (incl. all_tier_only) so a
+    # same-kGeneratorVersion registry change — renumbered loc_ids, added or
+    # dropped rows, tier flips — is drift-detected.
+    if not (dungeon_rows or overworld_rows or boss_rows or scripted_rows):
+        return 0
+    h = 0x811C9DC5
+    h = _fnv32_u32(h, len(dungeon_rows))
+    for r in dungeon_rows:
+        h = _fnv32_u16(h, int(r["room"]))
+        h = _fnv32_u8(h, int(r["source_slot"]))
+        h = _fnv32_u16(h, int(r["loc_id"]))
+        h = _fnv32_u8(h, 1 if r.get("all_tier_only") else 0)
+    h = _fnv32_u32(h, len(overworld_rows))
+    for r in overworld_rows:
+        h = _fnv32_u8(h, int(r["area"]))
+        h = _fnv32_u8(h, int(r["stage"]))
+        h = _fnv32_u8(h, int(r["source_slot"]))
+        h = _fnv32_u16(h, int(r["block"]))
+        h = _fnv32_u16(h, int(r["loc_id"]))
+    h = _fnv32_u32(h, len(boss_rows))
+    for r in boss_rows:
+        h = _fnv32_u8(h, int(r["game_dungeon"]))
+        h = _fnv32_u16(h, int(r["room"]))
+        h = _fnv32_u8(h, 2 if r.get("boss_kind") == "gt_miniboss" else 1)
+        h = _fnv32_u16(h, int(r["loc_id"]))
+    h = _fnv32_u32(h, len(scripted_rows))
+    for r in scripted_rows:
+        h = _fnv32_u16(h, int(r["room"]))
+        h = _fnv32_u8(h, int(r["parent_source_slot"]))
+        h = _fnv32_u8(h, int(r["overlord_type"]))
+        h = _fnv32_u8(h, int(r["child_index"]))
+        h = _fnv32_u8(h, int(r["child_type"]))
+        h = _fnv32_u16(h, int(r["loc_id"]))
+    return h
+
+
 def _door_enemy_drop_bridge_digest(rows: list[dict]) -> int:
     h = 0x811C9DC5
     for r in rows:
@@ -650,16 +691,59 @@ def _enemy_source_counts(doc: dict) -> dict[str, dict[str, int]]:
     return out
 
 
+# Vanilla placed/chest small-key counts per dungeon (structural fact; mirrors
+# kVanillaSmallKeyCounts in src/rando/rando_placement.c / ALTTPR config
+# `small_keys.*`). _enemy_depth_terms needs a WILD cap for EVERY key dungeon,
+# but enemy_drops.gen.yaml's small_key_source_counts only carries rows for the
+# dungeons that HAVE forced enemy key drops — Swamp/Thieves'/Desert/Hera/PoD
+# have none, and the old "no row -> leave wild uncapped" fallback emitted their
+# raw pot-inclusive door depth (e.g. HAS_AMOUNT(SmallKey_SwampPalace, 6)) as a
+# hard WILD requirement. Whenever pot keys are NOT itemized (pots off, or pots
+# forced off by cave entrance shuffle) the wild pool only holds the chest keys
+# (SP/TT/DP: 1 each), so those gates were permanently unsatisfiable — the
+# constant 63-location enemy-check strand under entrance shuffle × wild keys ×
+# enemy_drop_checks. The pot-inclusive bound belongs ONLY in the separate
+# combined term guarded by POT_KEYS_WILD(); with pots off the pot keys drop
+# vanilla-free at runtime, so they can never be an external requirement.
+VANILLA_CHEST_KEY_COUNTS: dict[str, int] = {
+    "SmallKey_HyruleCastleEscape": 1,
+    "SmallKey_EasternPalace": 0,
+    "SmallKey_DesertPalace": 1,
+    "SmallKey_TowerOfHera": 1,
+    "SmallKey_HyruleCastleTower": 2,
+    "SmallKey_PalaceOfDarkness": 6,
+    "SmallKey_SwampPalace": 1,
+    "SmallKey_SkullWoods": 3,
+    "SmallKey_ThievesTown": 1,
+    "SmallKey_IcePalace": 2,
+    "SmallKey_MiseryMire": 3,
+    "SmallKey_TurtleRock": 4,
+    "SmallKey_GanonsTower": 4,
+}
+
+
 def _enemy_depth_terms(row: dict, item: str, source_counts: dict[str, dict[str, int]],
                        pot_key_counts: dict[str, int]) -> tuple[int | None, int | None, int | None]:
     raw_wild = int(row["key_depth"]) if "key_depth" in row else 0
     raw_dungeon = int(row["key_mindepth"]) if "key_mindepth" in row else 0
-    counts = source_counts.get(item, {})
-    enemy_cap = int(counts.get("chest", 0)) + int(counts.get("enemy", 0))
-    if enemy_cap > 0:
-        wild = min(raw_wild, enemy_cap)
+    counts = source_counts.get(item)
+    if counts is not None:
+        chest = int(counts.get("chest", 0))
+        # Drift guard: the generated chest count is the same vanilla fact as the
+        # fallback table; a disagreement means a stale/renamed artifact.
+        if item in VANILLA_CHEST_KEY_COUNTS and chest != VANILLA_CHEST_KEY_COUNTS[item]:
+            raise RuntimeError(
+                f"small_key_source_counts chest_count for {item} is {chest}, "
+                f"expected the vanilla {VANILLA_CHEST_KEY_COUNTS[item]} — "
+                f"regenerate enemy_drops.gen.yaml (gen_enemy_drop_tables.py)")
+        enemy_cap = chest + int(counts.get("enemy", 0))
     else:
-        wild = raw_wild
+        # No source row = a dungeon with no forced enemy key drops. Its only
+        # wild-poolable keys are the vanilla chest keys; cap there instead of
+        # failing open to the raw (pot-inclusive) depth. A cap of 0 emits no
+        # WILD term at all (every key door en route is fed by free drops).
+        enemy_cap = VANILLA_CHEST_KEY_COUNTS.get(item, 0)
+    wild = min(raw_wild, enemy_cap)
     combined_cap = enemy_cap + int(pot_key_counts.get(item, 0))
     combined_wild = min(raw_wild, combined_cap) if combined_cap > 0 else wild
     if combined_wild <= wild:
@@ -2960,6 +3044,8 @@ def emit_enemy_check_lookup(rows, path: Path) -> int:
                 "enemy_check_lookup: duplicate scripted row "
                 f"room=0x{key[0]:03x} parent={key[1]} type=0x{key[2]:02x} child={key[3]}")
         seen.add(key)
+    digest = _enemy_check_registry_digest(
+        dungeon_rows, overworld_rows, boss_rows, scripted_rows)
     lines = [
         HEADER_BANNER, "",
         "// enemy_check_lookup.h — runtime lookup tables for ordinary Enemy checks.",
@@ -3053,12 +3139,19 @@ def emit_enemy_check_lookup(rows, path: Path) -> int:
     else:
         lines.append("// EMPTY: no all-tier scripted-spawn enemy-check rows.")
         lines.append("static const RandoScriptedEnemyCheckLookupEntry kRandoScriptedEnemyCheckLookup[1] = { { 0, 0, 0, 0, 0, 0 } };")
+    total_rows = (len(dungeon_rows) + len(overworld_rows) + len(boss_rows)
+                  + len(scripted_rows))
     lines += [
         "",
         f"#define kRandoEnemyCheckLookup_COUNT {len(dungeon_rows)}",
         f"#define kRandoOverworldEnemyCheckLookup_COUNT {len(overworld_rows)}",
         f"#define kRandoBossEnemyCheckLookup_COUNT {len(boss_rows)}",
         f"#define kRandoScriptedEnemyCheckLookup_COUNT {len(scripted_rows)}",
+        "",
+        "// Registry identity for the sidecar/snapshot activation guard (all four",
+        "// domains folded — see _enemy_check_registry_digest).",
+        f"#define kRandoEnemyCheckRegistryCount {total_rows}",
+        f"#define kRandoEnemyCheckRegistryDigest 0x{digest:08x}u",
         "",
         "#endif  // ZELDA3_RANDO_ENEMY_CHECK_LOOKUP_H_",
     ]
@@ -4314,6 +4407,23 @@ def main(argv=None):
     # default placements stay byte-identical.
     _apply_npc_soul_gates(Path("assets/rando/npc_souls.yaml"),
                           logic_loc_preds, world_state_overrides, logic_edges)
+
+    # Under Inverted, Link starts in `LinksHouse_Inverted`, and base
+    # `LinksHouse` has NO in-edges (Logic_SelfCheck asserts it stays
+    # unreachable there — region scoping is by graph topology). The room-0x104
+    # pots are region-bound to base LinksHouse via pot_logic_overrides.yaml,
+    # yet the runtime Inverted start house IS room 0x104 — sphere-0 collectible
+    # but phantom-unreachable in logic. Rebind them with a per-world-state
+    # override, the same mechanism as the Link's Uncle rebind in
+    # logic_parts/inverted/HyruleCastleEscape.yaml. Synthesized here rather
+    # than authored in a committed YAML because pot names only exist when the
+    # gitignored pots.gen.yaml is present (a name-keyed YAML entry would
+    # hard-error assetless codegen runs). Runs AFTER every predicate wrap so
+    # the override copy carries the pot's final can_reach.
+    for _pot in pot_locs.values():
+        if _pot.region == "LinksHouse":
+            world_state_overrides.setdefault(_pot.name, {})[kWorldState_Inverted] = \
+                dataclasses.replace(_pot, region="LinksHouse_Inverted")
 
     # Merge macros from macros.yaml and logic.yaml (logic.yaml takes precedence).
     all_macros = {**macros, **logic_macros}

@@ -64,15 +64,25 @@ overrides:
   # Checkerboard-area rocks (rows 5-6, top plateau): ALTTPR Checkerboard Cave
   # = canLiftRocks && MagicMirror && Mire access (Standard/LightWorld/
   # South.php:150-155). Class gate supplies the lift; gate the plateau.
-  - {lo: 0x0280, hi: 0x0390, gate: 'HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(DarkWorld_Mire)'}
+  # World-state-aware: under Inverted the DW-Mire portal drops onto the
+  # plateau without the Mirror — Inverted Checkerboard Cave is
+  # 'MoonPearl AND canLiftRocks' (Inverted/LightWorld/South.php:171-177,
+  # mirrored in logic_parts/inverted/LightWorld/South.yaml), and the pearl is
+  # already carried by the TerrainWorldGateLW class gate; nothing extra
+  # remains, so the Inverted arm is TRUE here.
+  - {lo: 0x0280, hi: 0x0390, gate: 'WORLDSTATE_EQ(inverted) OR (HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(DarkWorld_Mire))'}
   # Palace-forecourt bushes (rows 20-21): behind the Book tablet — ALTTPR
-  # Desert Ledge = DesertPalace.canEnter = Book OR (Mirror AND Mire)
-  # (South.php:161-163).
-  - {lo: 0x0A00, hi: 0x0B00, gate: 'HAS_ITEM(BookOfMudora) OR (HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(DarkWorld_Mire))'}
+  # Desert Ledge = DesertPalace.canEnter (South.php:161-163). Gate on DP-lobby
+  # reachability, mirroring the canonical `Desert Ledge` row
+  # (logic_parts/41_lightworld_south.yaml): the lobby entry edge carries the
+  # Book gate in vanilla layouts AND is remapped by dungeon-entrance shuffle
+  # (Entrance_ApplyEdgeOverrides), so the forecourt tracks the shuffled graph
+  # instead of a hardcoded vanilla walk-through-DP expansion.
+  - {lo: 0x0A00, hi: 0x0B00, gate: 'OP_REGION_REACHABLE(DesertPalace_Lobby)'}
   # West-edge bushes rows 40-41 col 3: possibly ON the Desert Ledge lower
   # level — over-gate with the same Desert Ledge predicate (if they are on
   # the free sand this only delays junk). PLAYTEST.
-  - {lo: 0x1400, hi: 0x1490, gate: 'HAS_ITEM(BookOfMudora) OR (HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(DarkWorld_Mire))'}
+  - {lo: 0x1400, hi: 0x1490, gate: 'OP_REGION_REACHABLE(DesertPalace_Lobby)'}
   # Remaining objects (south strip bushes + the row-59 Mitt rock) stay plain
   # LightWorld_South (the walkable band; class gates apply).
 # --- Dark World ---

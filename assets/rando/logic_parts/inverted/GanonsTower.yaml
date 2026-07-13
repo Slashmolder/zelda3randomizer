@@ -322,7 +322,7 @@ locations:
     source: "app/Region/Inverted/GanonsTower.php:458-464 (can_complete = Moldorm Chest + Aga2 beat)"
 
 macros_notes: |
-  CanKillLanmolas, CanKillMoldorm, CanKillAgahnim2, and CanKillArmosKnights
-  are defined in `33_ganons_tower.yaml` (and 40_lightworld_northwest /
-  related dungeon files for ArmosKnights). Codegen merges macros globally,
-  so this file does not re-emit them.
+  CanKillLanmolas is defined in `10_desert_palace.yaml`, CanKillMoldorm in
+  `11_tower_of_hera.yaml`, CanKillAgahnim2 in `33_ganons_tower.yaml`, and
+  CanKillArmosKnights in the related dungeon files. Codegen merges macros
+  globally, so this file does not re-emit them.
