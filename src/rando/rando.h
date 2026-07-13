@@ -949,6 +949,7 @@ const char *Rando_GetActiveShareString(void);
 // Runtime crystal gate. Unknown/v1 settings fail closed to vanilla's seven-
 // crystal requirement. The load hook pre-opens GT for a zero-crystal setting.
 bool Rando_HasRequiredTowerCrystals(void);
+bool Rando_HasRequiredGanonCrystals(void);
 void Rando_ApplyLoadedSaveRuntimeSettings(void);
 void Rando_DungeonCheckCounts(uint8 rando_dungeon, uint16 *checked, uint16 *total);
 

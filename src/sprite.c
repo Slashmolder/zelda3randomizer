@@ -4160,6 +4160,13 @@ void Sprite_ApplyCalculatedDamage(int k, int a) {  // 86ed89
 }
 
 void Sprite_GiveDamage(int k, uint8 dmg, uint8 r0_hit_timer) {  // 86edc5
+  // Randomizer crystal requirements make the real Ganon (and his D7 dispatch
+  // variant) invulnerable until the configured threshold is met. Keeping the
+  // gate here covers every sword, swordless-hammer, and projectile damage path
+  // before any pending damage or hit-flash state is installed.
+  if ((sprite_type[k] == 0xd6 || sprite_type[k] == 0xd7) &&
+      !Rando_HasRequiredGanonCrystals())
+    dmg = 0;
   if (dmg == 249) {
     Sprite_Func18(k, 0xe3);
     return;

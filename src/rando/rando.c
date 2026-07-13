@@ -4873,6 +4873,15 @@ bool Rando_HasRequiredTowerCrystals(void) {
   return rando_count_crystals() >= required;
 }
 
+bool Rando_HasRequiredGanonCrystals(void) {
+  // Vanilla combat has no crystal-count vulnerability gate. Preserve that
+  // behavior for non-randomizer and legacy slots whose canonical settings are
+  // unavailable; current randomizer slots honor their configured threshold.
+  if (!g_rando_slot_active || !g_rando_active_settings_valid)
+    return true;
+  return rando_count_crystals() >= g_rando_active_settings.crystals_ganon;
+}
+
 void Rando_ApplyLoadedSaveRuntimeSettings(void) {
   if (!g_rando_slot_active || !g_rando_active_settings_valid)
     return;
@@ -8021,6 +8030,8 @@ static void Rando_CrystalGateSelfCheck(void) {
   link_has_crystals = 0;
   if (Rando_HasRequiredTowerCrystals())
     tsc_die("CrystalGate: vanilla zero crystals passed");
+  if (!Rando_HasRequiredGanonCrystals())
+    tsc_die("CrystalGate: vanilla Ganon combat was gated");
   link_has_crystals = 0x7f;
   if (!Rando_HasRequiredTowerCrystals())
     tsc_die("CrystalGate: vanilla seven crystals failed");
@@ -8029,6 +8040,7 @@ static void Rando_CrystalGateSelfCheck(void) {
   g_rando_active_settings_valid = true;
   Settings_SetDefaults(&g_rando_active_settings);
   g_rando_active_settings.crystals_tower = 0;
+  g_rando_active_settings.crystals_ganon = 1;
   link_has_crystals = 0;
   if (!Rando_HasRequiredTowerCrystals())
     tsc_die("CrystalGate: zero-crystal tower requirement failed");
@@ -8036,6 +8048,16 @@ static void Rando_CrystalGateSelfCheck(void) {
   Rando_ApplyLoadedSaveRuntimeSettings();
   if (!(save_ow_event_info[0x43] & 0x20))
     tsc_die("CrystalGate: zero-crystal tower was not pre-opened");
+  if (Rando_HasRequiredGanonCrystals())
+    tsc_die("CrystalGate: zero crystals passed a one-crystal Ganon gate");
+  link_has_crystals = 0x01;
+  if (!Rando_HasRequiredGanonCrystals())
+    tsc_die("CrystalGate: one crystal failed a one-crystal Ganon gate");
+
+  g_rando_active_settings.crystals_ganon = 0;
+  link_has_crystals = 0;
+  if (!Rando_HasRequiredGanonCrystals())
+    tsc_die("CrystalGate: zero-crystal Ganon requirement failed");
 
   g_rando_active_settings.crystals_tower = 3;
   link_has_crystals = 0x03;
@@ -8053,6 +8075,8 @@ static void Rando_CrystalGateSelfCheck(void) {
   link_has_crystals = 0x07;
   if (Rando_HasRequiredTowerCrystals())
     tsc_die("CrystalGate: unknown settings did not fail closed to seven");
+  if (!Rando_HasRequiredGanonCrystals())
+    tsc_die("CrystalGate: unknown settings did not preserve vanilla Ganon combat");
 
   g_rando_slot_active = saved_slot_active;
   g_rando_active_settings_valid = saved_settings_valid;
