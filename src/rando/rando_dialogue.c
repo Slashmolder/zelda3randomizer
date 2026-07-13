@@ -251,6 +251,21 @@ static void rewrite_zora_reward(uint8 *buf) {
   memcpy(buf, tmp, (size_t)(head + tail_len));
 }
 
+static void write_ganon_crystal_warning(uint8 *buf, unsigned required) {
+  char text[64];
+  snprintf(text, sizeof(text), "You need %u crystal%s to harm me.",
+           required, required == 1 ? "" : "s");
+  write_wrapped_message(buf, text);
+}
+
+static void rewrite_ganon_crystal_warning(uint8 *buf) {
+  const RandoSettings *settings = Rando_GetActiveSettings();
+  if (settings == NULL || settings->crystals_ganon == 0 ||
+      Rando_HasRequiredGanonCrystals())
+    return;
+  write_ganon_crystal_warning(buf, settings->crystals_ganon);
+}
+
 static uint16 fairy_next_location(void) {
   if (!savegame_is_darkworld) {
     if (!Rando_IsLocationChecked(LOC_Waterfall_Fairy_Left)) return LOC_Waterfall_Fairy_Left;
@@ -291,6 +306,7 @@ void Rando_RewriteRewardDialogue(uint16 msg_id, uint8 *buf) {
   case 0x142: write_choice_message(buf, "Want my item?", "Ask price", "Just visiting"); return;
   case 0x143: write_choice_message(buf, "It costs 500", "Pay", "Quit"); return;
   case 0x144: rewrite_zora_reward(buf); return;
+  case 0x16F: rewrite_ganon_crystal_warning(buf); return;
   case 0x176: {
     // 0x176 is shared with the Bottle Merchant's outdoor fish animation. Room
     // alone is unsafe because dungeon_room_index can remain stale outdoors.
@@ -404,6 +420,19 @@ void RandoDialogue_SelfCheck(void) {
   for (int i = 0; i < 80 && buf[i] != kCmdEnd; i++)
     if (buf[i] == kCmdChoose) has_choose = true;
   if (!has_choose) selfcheck_fail("generic choice command");
+
+  memset(buf, kCmdEnd, sizeof(buf));
+  write_ganon_crystal_warning(buf, 1);
+  if (!buffer_contains_ascii(buf, "You need 1") ||
+      !buffer_contains_ascii(buf, "crystal to") ||
+      !buffer_contains_ascii(buf, "harm me"))
+    selfcheck_fail("Ganon singular crystal warning");
+
+  memset(buf, kCmdEnd, sizeof(buf));
+  write_ganon_crystal_warning(buf, 2);
+  if (!buffer_contains_ascii(buf, "You need 2") ||
+      !buffer_contains_ascii(buf, "crystals to"))
+    selfcheck_fail("Ganon plural crystal warning");
 
   // Both non-US modes must remain byte-for-byte untouched: bit 0 is the EU/new
   // command grammar; bit 1 is a translated original-format font alphabet.
