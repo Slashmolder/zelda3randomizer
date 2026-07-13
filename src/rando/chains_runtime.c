@@ -6,6 +6,7 @@
 #include "chain_seams.gen.h"
 #include "door_tables.gen.h"
 #include "rando.h"
+#include "souls.h"
 
 #include "../assets.h"
 #include "../dungeon.h"
@@ -41,6 +42,16 @@ _Static_assert(kChainBossEntranceCount == 9,
 #define kChainsDesertEastExitRoom 0x085
 #define kChainsDesertWestExitRoom 0x083
 #define kChainsDesertBackExitRoom 0x063
+
+// TR's Dark Death Mountain ledge doors (unshuffled aux portals, like DP's).
+// Each exit room is the interior room its entrance loads into; all three are
+// exit-table rooms, so a chain exit can resolve an overworld door from them.
+#define kChainsTurtleLazyEyesEntranceId 0x15
+#define kChainsTurtleEyeBridgeEntranceId 0x18
+#define kChainsTurtleBigChestEntranceId 0x19
+#define kChainsTurtleLazyEyesExitRoom 0x023
+#define kChainsTurtleEyeBridgeExitRoom 0x0D5
+#define kChainsTurtleBigChestExitRoom 0x024
 
 uint8 Chains_BossEntranceForRandoDungeon(uint8 rando_dungeon) {
   for (uint8 i = 0; i < kChainBossEntranceCount; i++) {
@@ -214,8 +225,15 @@ static bool Chains_IsDesertAuxExitRoom(uint16 room) {
          room == kChainsDesertBackExitRoom;
 }
 
+static bool Chains_IsTurtleAuxExitRoom(uint16 room) {
+  return room == kChainsTurtleLazyEyesExitRoom ||
+         room == kChainsTurtleEyeBridgeExitRoom ||
+         room == kChainsTurtleBigChestExitRoom;
+}
+
 static bool Chains_IsValidOriginExitRoom(uint16 room) {
-  return Chains_IsMainExitRoom(room) || Chains_IsDesertAuxExitRoom(room);
+  return Chains_IsMainExitRoom(room) || Chains_IsDesertAuxExitRoom(room) ||
+         Chains_IsTurtleAuxExitRoom(room);
 }
 
 bool Chains_RuntimeGetSession(ChainsRuntimeSession *out) {
@@ -405,22 +423,35 @@ static const ChainSeamRow *Chains_FindOutboundSeam(uint8 kind,
   return NULL;
 }
 
-// DP's aux doors can reach its boss seam without a chain-start door. Use the
-// loaded aux entrance as a minimal origin so the logic edge has runtime coupling.
+// DP's and TR's aux doors can reach their boss seams without a chain-start
+// door. Use the loaded aux entrance as a minimal origin so the logic edge has
+// runtime coupling.
 static uint16 Chains_AuxOriginExitRoomForCurrentEntrance(uint8 rando_dungeon) {
-  if (rando_dungeon != kRandoDungeon_DesertPalace)
-    return 0;
-
-  switch (which_entrance) {
-    case kChainsDesertEastEntranceId:
-      return kChainsDesertEastExitRoom;
-    case kChainsDesertWestEntranceId:
-      return kChainsDesertWestExitRoom;
-    case kChainsDesertBackEntranceId:
-      return kChainsDesertBackExitRoom;
-    default:
-      return 0;
+  if (rando_dungeon == kRandoDungeon_DesertPalace) {
+    switch (which_entrance) {
+      case kChainsDesertEastEntranceId:
+        return kChainsDesertEastExitRoom;
+      case kChainsDesertWestEntranceId:
+        return kChainsDesertWestExitRoom;
+      case kChainsDesertBackEntranceId:
+        return kChainsDesertBackExitRoom;
+      default:
+        return 0;
+    }
   }
+  if (rando_dungeon == kRandoDungeon_TurtleRock) {
+    switch (which_entrance) {
+      case kChainsTurtleLazyEyesEntranceId:
+        return kChainsTurtleLazyEyesExitRoom;
+      case kChainsTurtleEyeBridgeEntranceId:
+        return kChainsTurtleEyeBridgeExitRoom;
+      case kChainsTurtleBigChestEntranceId:
+        return kChainsTurtleBigChestExitRoom;
+      default:
+        return 0;
+    }
+  }
+  return 0;
 }
 
 static bool Chains_RequestTerminalExit(uint16 source_room,
@@ -465,6 +496,25 @@ static bool Chains_TerminalRewardChecked(uint8 rando_dungeon) {
   return prize_loc != 0xFFFFu && Rando_IsLocationChecked(prize_loc);
 }
 
+// True while the loaded room is this terminal's boss room and its boss spawn
+// was soul-suppressed on the room load (souls_shuffle >= bosses, soul unfound).
+// Every static in the 9 pool boss rooms is the boss or one of its parts (the
+// EP overlord entry bypasses the souls gate), so a nonzero suppressed count
+// means the fight cannot start: no kill -> no prize -> the reward-gated
+// escapes would seal Link in (Kholdstare's room has no door at all). The count
+// is recomputed by every room sprite load, so this goes false the moment the
+// soul is owned and the boss can spawn.
+static bool Chains_TerminalBossSuppressed(uint8 rando_dungeon) {
+  const ChainBossEntranceCheck *row = Chains_CheckForRandoDungeon(rando_dungeon);
+  return row != NULL && row->room == dungeon_room_index &&
+         Souls_RoomSuppressedCount() != 0;
+}
+
+static bool Chains_TerminalEscapeAllowed(uint8 rando_dungeon) {
+  return Chains_TerminalRewardChecked(rando_dungeon) ||
+         Chains_TerminalBossSuppressed(rando_dungeon);
+}
+
 bool Chains_TryTerminalOutboundSeam(uint8 kind,
                                     uint8 direction,
                                     uint16 source_room,
@@ -493,7 +543,7 @@ bool Chains_TryClearedTerminalReentryExit(void) {
   const ChainBossEntranceCheck *row = Chains_CheckForRandoDungeon(g_chains_terminal_dungeon);
   if (row == NULL || row->room != dungeon_room_index)
     return false;
-  if (!Chains_TerminalRewardChecked(g_chains_terminal_dungeon))
+  if (!Chains_TerminalEscapeAllowed(g_chains_terminal_dungeon))
     return false;
 
   return Chains_RequestTerminalExit(dungeon_room_index, dungeon_room_index);
@@ -574,8 +624,10 @@ bool Chains_TryApplyBossEntranceLanding(void) {
   if (boss_row == NULL)
     return false;
   if (g_chains_terminal_active &&
-      g_chains_terminal_dungeon == boss_row->rando_dungeon &&
-      Chains_TerminalRewardChecked(boss_row->rando_dungeon)) {
+      g_chains_terminal_dungeon == boss_row->rando_dungeon) {
+    // Escape eligibility (reward checked / boss soul-suppressed) is decided at
+    // the module-7 consume: this runs inside Dungeon_LoadEntrance, before the
+    // landing room's sprite load recomputes the suppressed count.
     g_chains_cleared_terminal_exit_pending = true;
   }
 
@@ -758,6 +810,11 @@ void Chains_RuntimeSelfCheck(void) {
   if (dp_boss_seam == NULL ||
       dp_boss_seam->rando_dungeon != kRandoDungeon_DesertPalace)
     Chains_RuntimeSelfCheckDie("DP boss seam fixture missing");
+  const ChainSeamRow *tr_boss_seam = Chains_FindBossSeam(
+      kChainSeamKind_Door, kDoorTblDir_North, 0x0B4, 0x0A4, 0);
+  if (tr_boss_seam == NULL ||
+      tr_boss_seam->rando_dungeon != kRandoDungeon_TurtleRock)
+    Chains_RuntimeSelfCheckDie("TR boss seam fixture missing");
 
   uint8 saved_which_entrance = which_entrance;
   uint8 saved_player_is_indoors = player_is_indoors;
@@ -826,6 +883,30 @@ void Chains_RuntimeSelfCheck(void) {
       kChainsDesertBackExitRoom)
     Chains_RuntimeSelfCheckDie("DP aux origin did not consume through successor exit");
   layout.chain_successor[dp_pool_idx] = Chains_BossElement(kRandoDungeon_DesertPalace);
+
+  int tr_pool_idx = Chains_PoolIndexForDungeon(kRandoDungeon_TurtleRock);
+  if (tr_pool_idx < 0)
+    Chains_RuntimeSelfCheckDie("TR pool index missing");
+  layout.chain_successor[tr_pool_idx] = Chains_DungeonElement(ep);
+  if (!Chains_RuntimeInstallLayout(&layout))
+    Chains_RuntimeSelfCheckDie("TR aux-origin layout install failed");
+  Chains_RuntimeClearOrigin();
+  which_entrance = kChainsTurtleEyeBridgeEntranceId;
+  if (!Chains_TryBossSeamHop(tr_boss_seam->kind, tr_boss_seam->direction,
+                             tr_boss_seam->source_room, tr_boss_seam->dest_room,
+                             tr_boss_seam->slot))
+    Chains_RuntimeSelfCheckDie("TR aux boss seam did not hop");
+  if (which_entrance != Chains_MainEntranceForRandoDungeon(ep))
+    Chains_RuntimeSelfCheckDie("TR aux boss seam picked wrong successor");
+  if (!g_chains_origin_active ||
+      g_chains_origin_exit_room != kChainsTurtleEyeBridgeExitRoom)
+    Chains_RuntimeSelfCheckDie("TR aux boss seam did not synthesize ledge origin");
+  if (!Chains_ConsumeHopPending() || Chains_ConsumeHopPending())
+    Chains_RuntimeSelfCheckDie("TR aux boss seam pending flag mismatch");
+  if (Chains_RuntimeConsumeMainExitOrigin(Chains_MainExitRoomForRandoDungeon(ep)) !=
+      kChainsTurtleEyeBridgeExitRoom)
+    Chains_RuntimeSelfCheckDie("TR aux origin did not consume through successor exit");
+  layout.chain_successor[tr_pool_idx] = Chains_BossElement(kRandoDungeon_TurtleRock);
 
   layout.chain_successor[ep_pool_idx] = Chains_BossElement(kRandoDungeon_DesertPalace);
   if (!Chains_RuntimeInstallLayout(&layout))
@@ -937,6 +1018,12 @@ void Chains_RuntimeSelfCheck(void) {
   if (Chains_RuntimeConsumeMainExitOrigin(Chains_MainExitRoomForRandoDungeon(ep)) !=
       kChainsDesertBackExitRoom)
     Chains_RuntimeSelfCheckDie("DP aux-origin session did not consume");
+  aux_session.origin_exit_room = kChainsTurtleEyeBridgeExitRoom;
+  if (!Chains_RuntimeRestoreSession(&aux_session))
+    Chains_RuntimeSelfCheckDie("TR aux-origin session restore failed");
+  if (Chains_RuntimeConsumeMainExitOrigin(Chains_MainExitRoomForRandoDungeon(ep)) !=
+      kChainsTurtleEyeBridgeExitRoom)
+    Chains_RuntimeSelfCheckDie("TR aux-origin session did not consume");
 
   ChainsRuntimeSession terminal_session;
   memset(&terminal_session, 0, sizeof(terminal_session));
@@ -978,6 +1065,7 @@ void Chains_RuntimeSelfCheck(void) {
 
   g_rando_slot_active = 1;
   memset(g_rando_checked_bitmap, 0, kRandoCheckedBitmapBytes);
+  Souls_ResetRoomSuppressed();  // escape consume reads this room's count
   uint16 dp_prize_loc = Rando_BossPrizeLocationForGameDungeon(
       Rando_GameDungeonFromRandoDungeon(kRandoDungeon_DesertPalace));
   which_entrance = Chains_BossEntranceForRandoDungeon(kRandoDungeon_DesertPalace);
@@ -1001,6 +1089,21 @@ void Chains_RuntimeSelfCheck(void) {
     Chains_RuntimeSelfCheckDie("cleared terminal reentry did not consume session");
   if (Chains_TryClearedTerminalReentryExit())
     Chains_RuntimeSelfCheckDie("cleared terminal reentry escape repeated");
+  if (!Chains_RuntimeRestoreSession(&terminal_session))
+    Chains_RuntimeSelfCheckDie("suppressed-escape session restore failed");
+  memset(g_rando_checked_bitmap, 0, kRandoCheckedBitmapBytes);
+  Souls_NoteRoomSuppressed();  // soul-suppressed terminal boss, reward unchecked
+  which_entrance = Chains_BossEntranceForRandoDungeon(kRandoDungeon_DesertPalace);
+  dungeon_room_index = dungeon_room_index2 = 0x033;
+  if (!Chains_TryApplyBossEntranceLanding())
+    Chains_RuntimeSelfCheckDie("suppressed terminal landing was not applied");
+  if (!Chains_TryClearedTerminalReentryExit())
+    Chains_RuntimeSelfCheckDie("suppressed terminal reentry escape did not fire");
+  if (dungeon_room_index != Chains_MainExitRoomForRandoDungeon(ep))
+    Chains_RuntimeSelfCheckDie("suppressed terminal escape did not target origin exit room");
+  if (g_chains_origin_active || g_chains_terminal_active)
+    Chains_RuntimeSelfCheckDie("suppressed terminal escape did not consume session");
+  Souls_ResetRoomSuppressed();
   if (!Chains_RuntimeRestoreSession(&terminal_session))
     Chains_RuntimeSelfCheckDie("terminal session restore after reentry failed");
   memset(g_rando_checked_bitmap, 0, kRandoCheckedBitmapBytes);

@@ -61,9 +61,11 @@ bool Chains_TryTerminalOutboundSeam(uint8 kind,
                                     uint16 vanilla_destination_room,
                                     uint8 slot);
 
-// One-shot escape for entering an already-cleared terminal boss room whose
-// post-kill shutters would otherwise seal Link inside before any transition can
-// reach Chains_TryTerminalOutboundSeam.
+// One-shot escape for entering a terminal boss room that cannot be exited from
+// inside: an already-cleared terminal (post-kill shutters seal Link before any
+// transition can reach Chains_TryTerminalOutboundSeam), or a terminal whose
+// boss spawn is currently soul-suppressed (no kill -> no prize -> no reward
+// gate; Kholdstare's room has no door at all).
 bool Chains_TryClearedTerminalReentryExit(void);
 
 // Consumed at the top of Dungeon_LoadEntrance. True means this entrance load is
