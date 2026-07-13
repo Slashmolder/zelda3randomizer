@@ -656,7 +656,18 @@ static void seed_dungeon_free_key_drops(RandoCounts *counts, const RandoSettings
           itemized++;
       }
     }
-    if (itemized == 0 || itemized >= kDoorDropTotal[d]) continue;
+    // itemized == 0 must still grant: the ENEMY_DROP_KEYS_DUNGEON /
+    // POT_KEYS_DUNGEON min-depth gates are emitted per-row for EVERY dungeon
+    // and the ops are GLOBAL (Settings_*Active), so a dungeon with no
+    // itemized sources of its own (Swamp/Thieves'/Desert have no forced enemy
+    // drops; cave-entrance shuffle forces their key pots off) still evaluates
+    // its gates — while at runtime ALL of its drop keys fall vanilla-free.
+    // The old `itemized == 0` skip left the model at pool-only (1 chest key)
+    // against min-depth gates up to 5, permanently stranding 42 dungeon-tier
+    // enemy checks under entrance shuffle x dungeon keys x enemy_drop_checks
+    // (the DUNGEON-arm sibling of the wild-cap fix in rando_logic_gen.py's
+    // _enemy_depth_terms).
+    if (itemized >= kDoorDropTotal[d]) continue;
     counts->by_item_id[key_id] += (uint16)(kDoorDropTotal[d] - itemized);
   }
 }
@@ -762,6 +773,19 @@ static bool trap_replacement_candidate(uint16 item_id) {
   }
 }
 
+// True iff loc_id is an OVERWORLD enemy check. LOCTYPE_Enemy spans four
+// domains: overworld rows (outdoor) plus dungeon/boss/scripted rows (all
+// interiors — including cave rooms, which bind to OW-named regions, so the
+// region's dungeon_id cannot discriminate). Membership in the generated
+// overworld lookup is the authoritative outdoor signal; both the table and
+// the Enemy locations come from the same local registry, so a build without
+// it has neither. Placement-time only (linear scan is fine).
+static bool trap_loc_is_overworld_enemy_check(uint16 loc_id) {
+  for (uint32 i = 0; i < kRandoOverworldEnemyCheckLookup_COUNT; i++)
+    if (kRandoOverworldEnemyCheckLookup[i].loc_id == loc_id) return true;
+  return false;
+}
+
 static uint16 inject_traps_into_junk_placements(uint16 *placement_at,
                                                 const uint8 *junk_filled,
                                                 const uint16 *open_loc_idx,
@@ -806,6 +830,14 @@ static uint16 inject_traps_into_junk_placements(uint16 *placement_at,
         kRandoRegions[loc->region_id].dungeon_id != 0xFF)
       loc_flags |= kTrapLoc_IsDungeon;
     if (loc->type >= LOCTYPE_Standing && loc->type <= LOCTYPE_Dig)
+      loc_flags |= kTrapLoc_IsOutdoor;
+    // Grass/rock checks are overworld-only by construction; enemy checks are
+    // outdoor exactly when they row in the overworld enemy-check lookup (see
+    // trap_loc_is_overworld_enemy_check — interiors keep flags 0, so
+    // outdoor-locked effects still never roll there).
+    if (loc->type == LOCTYPE_Grass || loc->type == LOCTYPE_Rock ||
+        (loc->type == LOCTYPE_Enemy &&
+         trap_loc_is_overworld_enemy_check(loc->id)))
       loc_flags |= kTrapLoc_IsOutdoor;
     placement_at[idx] = Rando_PickTrapEffectId(
         seed_u64, loc->id, settings ? settings->trap_categories : 0, loc_flags);
@@ -1126,9 +1158,9 @@ uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 ca
     for (uint16 i = 0; i < soul_count; i++)
       n = pool_add(out_items, n, capacity, (uint16)(ITEM_Soul_ArmosKnights + i), 1);
   }
-  // add-npc-souls — independent of the tier: 23 NPC souls when the toggle is
-  // on (no fail-closed arm needed: the site/gate tables are COMMITTED, not
-  // asset-derived-gitignored like soul_rooms).
+  // add-npc-souls — independent of the tier: kNpcSoulCount NPC souls when the
+  // toggle is on (no fail-closed arm needed: the site/gate tables are
+  // COMMITTED, not asset-derived-gitignored like soul_rooms).
   if (settings->npc_souls) {
     for (uint16 i = 0; i < kNpcSoulCount; i++)
       n = pool_add(out_items, n, capacity, (uint16)(ITEM_Soul_Npc_Sahasrahla + i), 1);
@@ -2055,6 +2087,16 @@ static const RandoReachability *compute_reachability_collecting_placed(
       if (r == NULL || !Reachability_HasLocation(r, loc->id)) continue;
       if (local.by_item_id[item] < 0xFFFF)
         local.by_item_id[item]++;
+      // Door-oracle key single-count: a key collected from a bridge row the
+      // oracle's key budget credits internally (active key-source pot /
+      // enemy-drop / enemy-check row) must not ALSO raise the held-key input,
+      // or the key funds a threshold gate twice. Record it per dungeon;
+      // door_oracle_get subtracts. No-op when no door layout is installed.
+      {
+        uint8 src_d = Rando_DoorKeySourceDungeon(loc->id, item);
+        if (src_d != 0xFF && local.door_source_keys_collected[src_d] != 0xFF)
+          local.door_source_keys_collected[src_d]++;
+      }
       collected[k] = 1;
       added = true;
     }
@@ -3106,13 +3148,20 @@ bool Logic_ComputeSpheres(const RandoSettings *settings,
     sphere++;
   }
   // distinguish "fixed-point reached" from "kSphereMaxCount hit".
-  // The latter is rare (logic depth > 32) but silent failure would mark
-  // late-sphere reachable placements as unreachable — surface it explicitly.
+  // The latter is rare (logic depth > kSphereMaxCount) but silent failure
+  // would mark late-sphere REACHABLE placements as unreachable — they flow
+  // into unreachable_count below and can refuse an accessibility-gated seed
+  // as if the placement were genuinely broken. Surface the cap explicitly so
+  // a cap-induced refusal is distinguishable from real unreachability.
   if (sphere == kSphereMaxCount && remaining > 0) {
     hit_sphere_cap = true;
     fprintf(stderr,
-      "Logic_ComputeSpheres: WARNING hit kSphereMaxCount=%d cap with %u "
-      "placements unprocessed — logic depth exceeds sphere table.\n",
+      "Logic_ComputeSpheres: SPHERE-CAP OVERFLOW — hit kSphereMaxCount=%d "
+      "with %u placements unprocessed. These are still-expanding (NOT proven "
+      "unreachable) but will be counted as unreachable; any accessibility "
+      "refusal of this seed may be a false negative. Raise kSphereMaxCount "
+      "(src/rando/rando_placement.h) — the cap is a loop bound, not an array "
+      "size.\n",
       (int)kSphereMaxCount, (unsigned)remaining);
   }
   (void)hit_sphere_cap;  // already logged; spheres struct doesn't carry it
@@ -3499,9 +3548,12 @@ void Placement_SelfCheck(void) {
         for (uint32 i = 0; i < kRandoLocationsCount; i++)
           if (kRandoLocations[i].type == LOCTYPE_Pot &&
               kRandoLocations[i].vanilla_item_id == key) npots++;
-        if (npots == 0) continue;  // no pot keys -> no min-depth gate -> no free-grant
         if (npots > kDoorDropTotal[d])
           selfcheck_die("pot keys exceed door-rando drop total (pots.gen.yaml drift)");
+        // npots == 0 dungeons still free-grant their whole drop total: the
+        // key-depth ops are GLOBAL, so their gates evaluate everywhere while
+        // every non-itemized drop falls vanilla-free at runtime (the 42-check
+        // entrance x dungeon-keys strand fix).
         uint16 want = (uint16)(kDoorDropTotal[d] - npots);
         if (seeded.by_item_id[key] != want)
           selfcheck_die("Dungeon free-drop seeding drifted for pot-only keys");
@@ -3828,7 +3880,11 @@ void Placement_SelfCheck(void) {
               kRandoLocations[i].vanilla_item_id == key) enemies++;
         if (enemies > kDoorDropTotal[d])
           selfcheck_die("enemy-drop key sources exceed door-rando drop total");
-        uint16 want = enemies == 0 ? 0 : (uint16)(kDoorDropTotal[d] - enemies);
+        // enemies == 0 dungeons (Swamp/Thieves'/Desert) still free-grant their
+        // full drop total — their pots are inactive here and all drops fall
+        // vanilla-free at runtime while the global ENEMY_DROP_KEYS_DUNGEON
+        // min-depth gates stay live (the 42-check entrance strand fix).
+        uint16 want = (uint16)(kDoorDropTotal[d] - enemies);
         if (seeded.by_item_id[key] != want)
           selfcheck_die("Dungeon free-drop seeding drifted for enemy-only keys");
       }
@@ -3845,9 +3901,9 @@ void Placement_SelfCheck(void) {
               loc->vanilla_item_id == key)
             itemized++;
         }
-        if (itemized == 0) continue;
         if (itemized > kDoorDropTotal[d])
           selfcheck_die("combined key sources exceed door-rando drop total");
+        // itemized == 0 asserts want == total (see the enemy-only note above).
         uint16 want = (uint16)(kDoorDropTotal[d] - itemized);
         if (seeded.by_item_id[key] != want)
           selfcheck_die("Dungeon free-drop seeding drifted for pot+enemy keys");
@@ -3964,10 +4020,10 @@ void Placement_SelfCheck(void) {
       if (Souls_ItemIsSoul(pool[i])) souls_in_pool++;
     if (souls_in_pool != 0)
       selfcheck_die("souls must degrade to off under door shuffle");
-    // add-npc-souls — 23 NPC souls when on (0 when off is covered by every
-    // other arm above: none of them set npc_souls). Independent of the tier
-    // AND of door shuffle (no degrade). Also: worst-case progression count
-    // must fit the placer's fixed arrays (progression[256]/prog_slot[256]).
+    // add-npc-souls — kNpcSoulCount NPC souls when on (0 when off is covered
+    // by every other arm above: none of them set npc_souls). Independent of
+    // the tier AND of door shuffle (no degrade). Also: worst-case progression
+    // count must fit the placer's fixed arrays (progression[256]/prog_slot[256]).
     RandoSettings snp;
     Settings_SetDefaults(&snp);
     snp.npc_souls = 1;

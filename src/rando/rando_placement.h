@@ -171,7 +171,13 @@ bool Goal_ShouldRefuse(const RandoSettings *settings,
 // signal that the placement is broken (or the logic graph is incomplete).
 // ---------------------------------------------------------------------------
 #define kSphereIndexUnreachable 0xFF
-#define kSphereMaxCount         32   // hard cap; logical depth is typically < 20
+// Hard cap on sphere depth. Vanilla-graph logical depth is typically < 20,
+// but deep pot-key ladders + dungeon chains approach 32, and hitting the cap
+// silently converts still-reachable late-sphere placements into phantom
+// unreachables (refusing locations-tier seeds). Raising it is free: no array
+// is sized by it (sphere indices are one uint8 per placement either way); the
+// only bound is staying below the kSphereIndexUnreachable sentinel.
+#define kSphereMaxCount         64
 
 typedef struct RandoSpheres {
   // For each entry index in the placement table: which sphere it belongs to.

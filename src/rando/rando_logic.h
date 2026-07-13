@@ -129,6 +129,15 @@ typedef struct RandoCounts {
   // Set only by assumed-fill/prover inventories that include synthetic nonpot
   // door-rando drops for pot-key dungeon mode. Runtime live counts leave this 0.
   uint8 pot_nonpot_drops_seeded;
+  // Per-dungeon (kDoorTblDungeons index) small keys the assumed-fill collect
+  // model gathered FROM rows the door oracle's key budget already credits
+  // internally (active key-source pots, enemy-drop / enemy-check key sources).
+  // door_oracle_get subtracts these from its held-key input so every key
+  // source funds the budget exactly once — as held inventory or as an
+  // oracle-internal source credit, never both. Runtime live counts and the
+  // conservative fill model leave this all-zero. Sized to cover
+  // kDoorTbl_DungeonCount (asserted in rando_logic.c).
+  uint8 door_source_keys_collected[16];
 } RandoCounts;
 // The registry must stay within this fixed inventory-snapshot capacity —
 // souls.c carries a _Static_assert(ITEM__COUNT <= 256) (item_ids.h is not
@@ -334,6 +343,7 @@ uint32 RandoCapacityProbe_rando(void);
 uint32 RandoCapacityProbe_auto_tracker(void);
 uint32 RandoCapacityProbe_rando_generate(void);
 uint32 RandoCapacityProbe_rando_hints(void);
+uint32 RandoCapacityProbe_rando_logic(void);
 uint32 RandoCapacityProbe_rando_placement(void);
 uint32 RandoCapacityProbe_rando_save(void);
 uint32 RandoCapacityProbe_rando_snapshot_tail(void);
@@ -641,5 +651,15 @@ static inline bool Rando_DoorEnemyCheckActive(const RandoDoorEnemyCheckLocation 
 struct DoorShuffleLayout;
 void Rando_SetDoorLogicLayout(const struct DoorShuffleLayout *layout, uint16 active_mask);
 const struct DoorShuffleLayout *Rando_GetDoorLogicLayout(uint16 *active_mask_out);
+
+// Single-count support for the collect-model fill: returns the
+// kDoorTblDungeons index whose door-oracle key budget internally credits
+// `loc_id` as a small-key source under the INSTALLED layout (active
+// key-source pot / enemy-drop / enemy-check bridge row of a shuffled dungeon)
+// when `item_id` is that dungeon's small key; 0xFF otherwise (including when
+// no layout is installed). Callers record collected keys from credited rows
+// in RandoCounts.door_source_keys_collected so the oracle's held-key input
+// stays disjoint from its internal source credits.
+uint8 Rando_DoorKeySourceDungeon(uint16 loc_id, uint16 item_id);
 
 #endif  // ZELDA3_RANDO_LOGIC_H_

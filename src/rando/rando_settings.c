@@ -285,6 +285,15 @@ static void apply_derived_rules(RandoSettings *s) {
   // actually-generated seed, same convention as enemy_drop_checks above. Must
   // run AFTER the door-shuffle normalization so it sees the final value.
   s->souls_shuffle = Settings_EffectiveSoulsShuffle(s);
+  // add-rando-trap-catalog — trap_categories is meaningless with traps off,
+  // and the full mask spells out what the 0 zero-sentinel already means ("all
+  // categories while traps>0", see kTrapCategory_All). Collapse both to the
+  // sentinel so the (struct -> canonical) mapping is many-to-one in a
+  // well-defined way and two functionally-identical seeds can't hash
+  // differently (the coupled/GT-bit convention above).
+  if (s->traps == kTrapFrequency_Off || s->trap_categories == kTrapCategory_All) {
+    s->trap_categories = 0;
+  }
 }
 
 bool Settings_EffectiveShuffleCaveEntrances(const RandoSettings *s) {
@@ -344,6 +353,12 @@ uint8 Settings_EffectiveEnemyDropChecks(const RandoSettings *s) {
   uint8 small_keys = Settings_EffectiveSmallKeysMode(s);
   if (small_keys != kDungeonItemMode_Wild && small_keys != kDungeonItemMode_Dungeon)
     return kEnemyDropChecks_Off;
+  // Degrading to Keys under enemy_shuffle is sound only because every
+  // Keys-tier (forced-drop) check room is in the species/soul pin set
+  // (kRandoSoulPinRooms), so enemy shuffle never substitutes the drop source
+  // whose vanilla soul/slot the check's logic and runtime key on. The codegen
+  // that owns the pin table asserts that coverage against the emitted drops
+  // registry (gen_soul_room_tables.py, assert_keys_tier_rooms_pinned).
   if (s->enemy_drop_checks >= kEnemyDropChecks_All) {
     if (s->enemy_shuffle)
       return kEnemyDropChecks_Keys;
@@ -646,6 +661,10 @@ bool Settings_Validate(const RandoSettings *s) {
   if (s->souls_shuffle > kSoulsShuffle_BossesEnemies) return false;
   // [28] bit 4: npc_souls is a strict boolean (add-npc-souls).
   if (s->npc_souls > 1) return false;
+  // [29] grass_shuffle bits 0-1 / rock_shuffle bits 2-3: TerrainShuffle enum,
+  // 0..2 defined (add-rando-grass-rock-shuffle); 3 is reserved.
+  if (s->grass_shuffle > kTerrainShuffle_All) return false;
+  if (s->rock_shuffle > kTerrainShuffle_All) return false;
   return true;
 }
 

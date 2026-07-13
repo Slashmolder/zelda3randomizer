@@ -166,13 +166,13 @@ static void format_reward_item(uint16 item_id, char *out, size_t cap) {
   }
   if (!strncmp(tok, "Prize_", 6)) tok += 6;
   if (!strncmp(tok, "Soul_Npc_", 9)) {
-    char tmp[48];
+    char tmp[40];  // 39 chars + " Soul" must fit the smallest 48-byte reward buffer
     split_registry_token(tok + 9, tmp, sizeof(tmp));
     snprintf(out, cap, "%s Soul", tmp);
     return;
   }
   if (!strncmp(tok, "Soul_", 5)) {
-    char tmp[48];
+    char tmp[40];  // 39 chars + " Soul" must fit the smallest 48-byte reward buffer
     split_registry_token(tok + 5, tmp, sizeof(tmp));
     snprintf(out, cap, "%s Soul", tmp);
     return;

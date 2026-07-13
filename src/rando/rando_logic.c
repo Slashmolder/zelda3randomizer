@@ -994,6 +994,19 @@ static const DoorExploreResult *door_oracle_get(uint8 dungeon, const PredicateCo
       held_keys[i] = (held_keys[i] > pot_keys) ? (uint8)(held_keys[i] - pot_keys) : 0;
     }
   }
+  // Single-count of key sources between the inventory and the oracle's
+  // internal credits: DoorExplore_Core's key budget already counts every
+  // reachable active key-source row (key pots, enemy drops, enemy checks).
+  // Keys the assumed-fill collect model gathered FROM those rows re-entered
+  // by_item_id, so remove them from the held-key input — each source key
+  // funds the budget exactly once, on one side or the other. Runtime live
+  // counts and the conservative fill model carry all-zero fields (no-op).
+  if (ctx->counts != NULL) {
+    for (int i = 0; i < kDoorTbl_DungeonCount; i++) {
+      uint8 src = ctx->counts->door_source_keys_collected[i];
+      held_keys[i] = (held_keys[i] > src) ? (uint8)(held_keys[i] - src) : 0;
+    }
+  }
   gates_out->vm_pred = door_vm_pred_cb;
   gates_out->pot_pred = door_pot_pred_cb;
   gates_out->enemy_drop_pred = door_enemy_drop_pred_cb;
@@ -1209,6 +1222,78 @@ static bool eval_doors_loc_reachable(Cursor *c, const PredicateContext *ctx) {
       return false;
   }
   return door_enemy_check_pred_cb((void *)ctx, ec);
+}
+
+_Static_assert(kDoorTbl_DungeonCount <=
+                   sizeof(((RandoCounts *)0)->door_source_keys_collected),
+               "RandoCounts.door_source_keys_collected must cover every "
+               "door-table dungeon");
+
+// Single-count support for the collect-model fill (see
+// RandoCounts.door_source_keys_collected): classify `loc_id` against the three
+// bridge-row classes DoorExplore_Core credits internally as key sources. The
+// filters mirror the credit exactly — Door_CountActivePotKeySources
+// (kDoorPot_KeySource + active tier), Door_CountActiveEnemyDropKeySources
+// (enemy_drop_keys), Door_CountActiveEnemyCheckKeySources (active tier) — plus
+// the shuffled-mask gate the location bridge applies (rows of unshuffled
+// dungeons resolve through vanilla logic, so the oracle takes no credit for
+// them). Region reachability and the row predicate need no re-test here: a
+// COLLECTED row already passed both via its bridge, and both are monotone in
+// the inventory. Returns the kDoorTblDungeons index when `item_id` is that
+// dungeon's small key and the row is credited; 0xFF otherwise (including when
+// no door layout is installed).
+uint8 Rando_DoorKeySourceDungeon(uint16 loc_id, uint16 item_id) {
+  if (g_door_logic_layout == NULL)
+    return 0xFF;
+  int lo = 0, hi = (int)kRandoDoorPotLocationsCount - 1;
+  while (lo <= hi) {
+    int mid = (lo + hi) >> 1;
+    if (kRandoDoorPotLocations[mid].loc_id == loc_id) {
+      const RandoDoorPotLocation *p = &kRandoDoorPotLocations[mid];
+      if ((p->flags & kDoorPot_KeySource) &&
+          Rando_DoorPotActive(p, g_door_logic_layout->pot_tier) &&
+          ((g_door_logic_mask >> p->dungeon) & 1) &&
+          p->dungeon < kDoorTbl_DungeonCount &&
+          item_id == kDoorTblDungeons[p->dungeon].small_key_item)
+        return p->dungeon;
+      return 0xFF;
+    }
+    if (kRandoDoorPotLocations[mid].loc_id < loc_id) lo = mid + 1;
+    else hi = mid - 1;
+  }
+  lo = 0;
+  hi = (int)kRandoDoorEnemyDropLocationsCount - 1;
+  while (lo <= hi) {
+    int mid = (lo + hi) >> 1;
+    if (kRandoDoorEnemyDropLocations[mid].loc_id == loc_id) {
+      const RandoDoorEnemyDropLocation *e = &kRandoDoorEnemyDropLocations[mid];
+      if (g_door_logic_layout->enemy_drop_keys &&
+          ((g_door_logic_mask >> e->dungeon) & 1) &&
+          e->dungeon < kDoorTbl_DungeonCount &&
+          item_id == kDoorTblDungeons[e->dungeon].small_key_item)
+        return e->dungeon;
+      return 0xFF;
+    }
+    if (kRandoDoorEnemyDropLocations[mid].loc_id < loc_id) lo = mid + 1;
+    else hi = mid - 1;
+  }
+  lo = 0;
+  hi = (int)kRandoDoorEnemyCheckLocationsCount - 1;
+  while (lo <= hi) {
+    int mid = (lo + hi) >> 1;
+    if (kRandoDoorEnemyCheckLocations[mid].loc_id == loc_id) {
+      const RandoDoorEnemyCheckLocation *ec = &kRandoDoorEnemyCheckLocations[mid];
+      if (Rando_DoorEnemyCheckActive(ec, g_door_logic_layout->enemy_check_tier) &&
+          ((g_door_logic_mask >> ec->dungeon) & 1) &&
+          ec->dungeon < kDoorTbl_DungeonCount &&
+          item_id == kDoorTblDungeons[ec->dungeon].small_key_item)
+        return ec->dungeon;
+      return 0xFF;
+    }
+    if (kRandoDoorEnemyCheckLocations[mid].loc_id < loc_id) lo = mid + 1;
+    else hi = mid - 1;
+  }
+  return 0xFF;
 }
 
 // ---------------------------------------------------------------------------
@@ -2606,3 +2691,6 @@ void Logic_SelfCheck(void) {
 
   fprintf(stderr, "[Logic_SelfCheck] OK\n");
 }
+
+// Cross-TU capacity ABI probe -- see rando_logic.h / Rando_SelfCheckCapacityABI.
+RANDO_DEFINE_CAPACITY_PROBE(rando_logic)
