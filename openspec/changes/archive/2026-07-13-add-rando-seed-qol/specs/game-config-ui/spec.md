@@ -8,8 +8,9 @@ speed as a multi-value selector (`normal`/`fast`/`instant`) rather than a bare
 checkbox, the F4 cutscene/transition fast-forward, the F6 auto-dash, and the F5
 warp-to-spawn binding as a `zelda3.ini` key command
 (`kKeys_*`). The F5 control SHALL carry a one-line note that a race ruleset may
-ban it. Each toggle SHALL persist through the same `features0 = ...` / key-binding INI
-round-trip the existing options use.
+ban it. Each feature bit SHALL persist through the existing named `[Features]`
+boolean keys, and text speed plus the key binding SHALL use their existing managed
+INI value/key-binding round trips.
 
 #### Scenario: Text speed persists through the INI round-trip
 - **WHEN** the player sets text speed to `instant` and the config is written and
@@ -23,4 +24,4 @@ round-trip the existing options use.
 
 #### Scenario: New feature bits survive features0 serialization
 - **WHEN** the F4 or F6 bit is enabled and `zelda3.ini` is written and reloaded
-- **THEN** the bit round-trips through `features0 = ...` unchanged
+- **THEN** the bit round-trips through its named `[Features]` boolean key unchanged

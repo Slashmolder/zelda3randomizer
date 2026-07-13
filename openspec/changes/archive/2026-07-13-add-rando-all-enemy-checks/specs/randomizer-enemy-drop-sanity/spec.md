@@ -1,3 +1,51 @@
+## MODIFIED Requirements
+
+### Requirement: Enemy-drop check tiered scope
+
+The randomizer SHALL provide an `enemy_drop_checks` axis with values `Off` (0),
+`Keys` (1), `Dungeon` (2), and `All` (3). `Keys` covers vanilla dungeon enemy
+forced small-key drops plus the reviewed Hyrule Castle one-shot forced big-key check.
+`Dungeon` adds generated ordinary dungeon enemies. `All` adds the compatible static
+overworld rows, reviewed all-tier underworld exceptions, reviewed GT-miniboss events,
+and reviewed repeatable finite scripted children.
+
+The existing `drop_shuffle` axis SHALL remain a deterministic prize-pack permutation;
+enemy-drop checks remain a separate location-expansion axis. Derived settings SHALL
+apply consistently to placement, logic, runtime, spoiler, and trackers: vanilla keys
+normalize every enemy-check tier to `Off`; door shuffle preserves supported `Keys`,
+`Dungeon`, and `All` through generated bridge rows; enemy shuffle normalizes
+`Dungeon`/`All` to `Keys` (or `Off` when keys are unsupported); entrance shuffle
+normalizes `All` to `Dungeon`; boss shuffle and pot shuffle preserve `All`, with
+thrown-pot routes disabled while pot sanity is active.
+
+#### Scenario: Off preserves current enemy drops
+- **WHEN** `enemy_drop_checks = Off`
+- **THEN** no enemy-drop location is active, forced key drops remain vanilla/free
+  drops, and `drop_shuffle` continues to affect only non-forced prize-pack drops
+
+#### Scenario: Vanilla keys normalize enemy checks off
+- **WHEN** any non-off enemy-drop tier is requested with effective vanilla small keys
+- **THEN** the effective enemy-drop tier is `Off`
+
+#### Scenario: Door shuffle preserves supported tiers
+- **WHEN** door shuffle is active with a requested `Keys`, `Dungeon`, or `All` tier
+- **THEN** the requested tier remains effective through the generated enemy-check
+  bridge and digest/replay contract
+
+#### Scenario: Enemy shuffle keeps only the forced-key tier
+- **WHEN** enemy shuffle is active with requested `Dungeon` or `All`
+- **THEN** the effective tier is `Keys`, or `Off` when forced-key checks are unsupported
+
+#### Scenario: Entrance shuffle excludes overworld all-tier rows
+- **WHEN** entrance shuffle is active with requested `All`
+- **THEN** the effective tier is `Dungeon` unless another rule lowers it further
+
+#### Scenario: All activates every compatible reviewed domain
+- **WHEN** `enemy_drop_checks = All` remains effective
+- **THEN** keys, dungeon enemies, static overworld enemies, reviewed underworld
+  exceptions, reviewed GT minibosses, and reviewed repeatable scripted children are
+  active
+
 ## ADDED Requirements
 
 ### Requirement: All tier covers every supported stable enemy source domain
@@ -7,11 +55,11 @@ compatible generated static overworld ordinary enemy source in the shipped
 all-tier registry. It MAY also include audited underworld cave/interior ordinary
 enemy sources when their room access can be modeled directly without dungeon
 key-depth metadata. It SHALL include reviewed GT-miniboss event checks and
-finite authored scripted-spawn enemy checks when their runtime identity,
+repeatable finite authored scripted-spawn enemy checks when their runtime identity,
 reachability, death dispatch, persistence, and reward coexistence are modeled.
 The shipped registry scope is dungeon ordinary enemies, static authored overworld
 ordinary enemies, reviewed underworld exceptions, reviewed GT-miniboss events,
-and reviewed finite scripted-spawn enemies with stable source identity,
+and reviewed repeatable finite scripted-spawn enemies with stable source identity,
 reachability, death dispatch, and checked-state grant/marker suppression.
 Killable source classes that are banned from carrying dungeon keys or are flying
 MAY be excluded from the normal `dungeon` tier, but SHALL be emitted as
@@ -20,7 +68,7 @@ are modeled for `enemy_drop_checks=all`.
 
 The all-enemy audit SHALL classify every scanned source in the supported static
 dungeon/overworld domains, every reviewed underworld exception candidate, every
-reviewed GT-miniboss event, and every reviewed finite scripted-spawn candidate
+reviewed GT-miniboss event, and every reviewed repeatable finite scripted-spawn candidate
 as included or excluded with a stable reason.
 Non-killable actors such as thieves and NPC-like sprites, non-enemy hazards,
 projectiles, decorative sprites, and unbounded farmable dynamic spawns SHALL NOT
@@ -81,15 +129,15 @@ death dispatch, persistence, and logic are modeled.
 - **THEN** codegen fails instead of producing an incomplete shipped all-tier
   registry
 
-#### Scenario: Boss or miniboss event is emitted
-- **WHEN** the all-enemy audit finds a reviewed boss or miniboss event with stable
-  dungeon/room identity and modeled kill logic
+#### Scenario: Reviewed GT miniboss event is emitted
+- **WHEN** the all-enemy audit finds a reviewed Ganon's Tower miniboss event with
+  stable physical-room identity and modeled kill logic
 - **THEN** it emits one all-tier `Enemy` location for that event
-- **AND** the runtime grants it exactly once without suppressing the existing boss
-  prize, heart container, dungeon prize, or scripted progression behavior
+- **AND** the runtime grants it exactly once without suppressing existing scripted
+  progression behavior
 
-#### Scenario: Finite scripted-spawn source is emitted
-- **WHEN** the all-enemy audit finds a reviewed finite scripted-spawn child with
+#### Scenario: Repeatable finite scripted-spawn source is emitted
+- **WHEN** the all-enemy audit finds a reviewed repeatable finite scripted-spawn child with
   stable parent room/source-slot/type identity and child ordinal
 - **AND** its child kill route is modeled through inventory or counted throwable
   objects
@@ -109,8 +157,8 @@ Every emitted all-enemy location SHALL be keyed by an authored source identity,
 not by enemy type alone. Dungeon rows and reviewed underworld exceptions MAY use
 the existing room/source-slot identity; underworld exceptions SHALL carry an
 all-tier activation bit in the runtime lookup. Overworld rows SHALL carry an
-equivalent stable source tuple. Boss/miniboss rows SHALL carry stable event
-dungeon/room identity. Finite scripted-spawn rows SHALL carry stable parent
+equivalent stable source tuple. GT-miniboss rows SHALL carry stable event
+dungeon/room identity. Repeatable finite scripted-spawn rows SHALL carry stable parent
 room/source-slot/type identity plus child index and child type.
 
 Enemy shuffle SHALL NOT change the location identity. In the first all-enemy

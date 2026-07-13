@@ -4,7 +4,7 @@
 
 Every emitted `enemy_drop_checks=all` location SHALL require both source reachability
 and a reviewed kill route. Reachability SHALL use the correct dungeon room, reviewed
-underworld cave/interior predicate, overworld area/screen, boss arena, or
+underworld cave/interior predicate, overworld area/screen, GT-miniboss arena, or
 scripted-spawn parent predicate. Kill routes SHALL use the effective enemy type and
 HP for the source.
 

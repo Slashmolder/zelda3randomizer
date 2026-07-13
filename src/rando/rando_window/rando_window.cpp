@@ -454,7 +454,7 @@ static const RecFeatureRow kRecRows[] = {
     {kFeatures0_DimFlashes, "Dim screen flashes",
      "Reduce full-screen flash intensity.", 0},
     {kFeatures0_RandoDungeonCheckCounts, "Dungeon check counts",
-     "Show per-dungeon checked/total counts on the pause-map dungeon view.", 1},
+     "Show the remaining check count on the pause-map dungeon view.", 1},
     {kFeatures0_FastFanfare, "Fast item fanfare",
      "Shorten item, small-key, map, and compass get holds.", 1},
     {kFeatures0_CutsceneFastForward, "Cutscene fast-forward",
@@ -1282,7 +1282,7 @@ static void Panel_Shuffles() {
         s->enemy_drop_checks = combo_value;
         changed = true;
       }
-      HelpTooltip("Keys turns forced enemy key drops into checks. Dungeon also turns eligible dungeon enemies into checks. All adds eligible overworld, boss, and reviewed scripted or underworld enemies. Enemy shuffle lowers Dungeon/All to Keys; entrance shuffle lowers All to Dungeon.");
+      HelpTooltip("Keys turns forced enemy key drops into checks. Dungeon also turns eligible dungeon enemies into checks. All adds eligible overworld, reviewed underworld, GT-miniboss, and repeatable scripted enemies. Enemy shuffle lowers Dungeon/All to Keys; entrance shuffle lowers All to Dungeon.");
       ImGui::EndDisabled();
       if (enemy_drops_off) {
         ImGui::TextDisabled("Enemy drop checks require Wild, Retro, or Dungeon small keys.");

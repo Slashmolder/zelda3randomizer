@@ -514,8 +514,9 @@ external clients can filter them.
 
 ### Enemy drop checks (experimental)
 
-`enemy_drop_checks` (`add-rando-enemy-drop-sanity`,
-`add-rando-dungeon-enemy-checks`, and `add-rando-all-enemy-checks`) is a separate
+`enemy_drop_checks` ([enemy-drop sanity](../openspec/changes/archive/2026-07-11-add-rando-enemy-drop-sanity/),
+[dungeon enemy checks](../openspec/changes/archive/2026-07-11-add-rando-dungeon-enemy-checks/), and
+[all enemy checks](../openspec/changes/archive/2026-07-13-add-rando-all-enemy-checks/)) is a separate
 location-expansion setting. An ordinary active enemy check's placed item replaces
 that kill's normal prize-pack pickup; non-check enemies still use the normal drop
 table, optionally permuted by `drop_shuffle`. Forced key drops, items swallowed by
@@ -581,9 +582,10 @@ Zelda's Cell requires the derived big key, and Zelda rescue requires the sewer
 key as well.
 
 Ordinary dungeon-enemy checks use a separate `Enemy` location type and grant at
-enemy death time. The checked bitmap suppresses already-collected ordinary
-enemies on room reload while preserving source-slot identity for the rest of the
-room. Their generated reachability is a reviewed room predicate plus an
+enemy death time. On room reload, checked ordinary enemies follow vanilla respawn
+and prize-drop behavior; the checked bitmap suppresses only their randomizer marker
+and duplicate placed-item grant while preserving source-slot identity. Their
+generated reachability is a reviewed room predicate plus an
 enemy-specific kill predicate. Thrown pots count as a valid kill route when the
 engine damage table shows the enemy takes normal pot damage and the room has at
 least the required number of reachable liftable pots. Active unchecked carriers

@@ -2,13 +2,10 @@
 
 ## D1 - Definition of "all"
 
-As built in the first shipped `all` phase, the `all` tier means every generated
-compatible ordinary enemy source in the local static registry: the `keys` tier,
-the `dungeon` tier, static overworld ordinary enemies whose runtime identity is
-stable, and reviewed underworld cave/interior exceptions whose access can be
-modeled directly. The longer-term definition remains every finite, authored,
-killable enemy source that can be assigned a stable one-shot location identity. It
-includes:
+As built, the `all` tier means every generated compatible source in the reviewed
+registry: the `keys` tier, the `dungeon` tier, static overworld ordinary enemies,
+reviewed underworld cave/interior exceptions, three reviewed GT miniboss events,
+and reviewed repeatable finite scripted children. It includes:
 
 - forced enemy-drop checks from the `keys` tier;
 - ordinary dungeon enemies from the `dungeon` tier;
@@ -22,12 +19,10 @@ includes:
   in-room pot routes are used only when the reviewed access side actually reaches
   enough pots; the shared Fairy Cave pot in room `0x10C` is not counted for Mimic
   Cave enemies;
-- future ordinary dungeon audit-only sources once their room reachability is
-  modeled;
-- future miniboss and boss combat sources when their death event and existing
-  prize/heart behavior can coexist with a separate enemy check;
-- future finite scripted spawn groups when each emitted child can be assigned a
-  stable bounded source identity.
+- reviewed GT miniboss events with stable physical-room identity and existing
+  scripted progression preserved;
+- reviewed repeatable finite scripted spawn groups whose children have stable
+  bounded identities.
 
 For ordinary enemy sources, the randomized check is the kill reward and replaces
 the probabilistic prize-pack pickup. This prevents one kill from visibly producing
@@ -47,13 +42,11 @@ The tier excludes actors that are not valid one-shot kill checks:
 - sources whose death cannot be detected, dispatched, and guarded without
   duplicate grants or source-slot drift.
 
-The generated `all` registry is complete for the currently shipped static
-dungeon+overworld domains plus the reviewed underworld exception list only if every
-emitted source has stable identity, logic, death dispatch, and checked-source
-grant suppression. Bosses, minibosses, finite scripted spawns, and unbounded/farmable
-spawns are not quiet exclusions from a completed future full-all domain; they
-remain explicit future domains until their audits can classify each source as
-included or excluded with a stable reason.
+The generated `all` registry is complete for these reviewed domains only if every
+emitted source has stable identity, logic, death dispatch, and checked-source grant
+suppression. Dungeon bosses remain excluded because their heart-container and
+dungeon-prize sequence is already their randomized reward. One-shot missable scripts
+and unbounded/farmable spawns are excluded rather than becoming progression checks.
 
 ## D2 - Setting semantics
 
@@ -175,7 +168,7 @@ their check; they direct-grant at death to avoid stranding checked state.
 ## D5 - Logic and kill routes
 
 Every emitted all-enemy location requires both reachability and a kill route.
-Reachability uses the appropriate dungeon room, overworld area, boss arena, or
+Reachability uses the appropriate dungeon room, overworld area, GT-miniboss arena, or
 scripted-spawn parent predicate.
 
 Static overworld rows include the generated logic region, the active overworld
@@ -261,7 +254,7 @@ unchecked check without drawing an item stand-in.
 Because `all` can place markers on dense screens, the renderer may prioritize visible
 markers and fall back or suppress under OAM pressure, but tracker/spoiler state must
 still expose every emitted location. Spoilers and trackers group checks by dungeon
-room, overworld area/screen, boss arena, or scripted parent source. Names must include
+room, overworld area/screen, GT-miniboss arena, or scripted parent source. Names must include
 enough source identity to distinguish duplicate enemy types in the same area.
 
 For every all-tier domain that renders in-world markers, the generated data must
@@ -282,7 +275,7 @@ Required validation includes:
 - logic selfchecks for reachability plus kill-route predicates;
 - Release build and `--rando-selftest`;
 - corpus rows for `all` under Wild/Retro/Dungeon keys, pot shuffle, enemy shuffle
-  normalization, door shuffle normalization, boss shuffle normalization, cave
+  normalization, door-shuffle bridge composition, boss-shuffle composition, cave
   entrance interaction, and dense marker rooms;
 - runtime tests for shipped dungeon, reviewed underworld, static overworld,
   GT-miniboss, and finite scripted-spawn death grants;

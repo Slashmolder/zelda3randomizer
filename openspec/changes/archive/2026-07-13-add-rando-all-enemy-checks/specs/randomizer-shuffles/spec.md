@@ -60,10 +60,10 @@ check and a future thrown weapon.
 - **WHEN** door shuffle is active and non-key all-enemy door bridge support is absent
 - **THEN** requested `All` normalizes to `Keys`
 
-#### Scenario: Boss shuffle excludes boss-domain all until modeled
-- **WHEN** boss shuffle is active before boss-domain all-enemy identity is modeled
-- **THEN** requested `All` normalizes to `Dungeon` unless another rule lowers the
-  effective tier further
+#### Scenario: Boss shuffle preserves all
+- **WHEN** boss shuffle and effective `enemy_drop_checks=all` are active
+- **THEN** `All` remains effective because dungeon bosses are excluded and the
+  reviewed GT-miniboss checks are outside the shuffleable dungeon-boss room set
 
 #### Scenario: Entrance shuffle excludes all-domain rows until modeled
 - **WHEN** entrance shuffle is active before all-enemy entrance-graph reachability is

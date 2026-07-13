@@ -49,10 +49,11 @@ identities, not the line offsets. Decision labels (D1…) are referenced from
   submodule chain leaves the finalize (position/camera/music) byte-identical.
 - **Pause dungeon map.** Drawn under Module 0x0E via `Module0E_03_DungeonMap` /
   `Module0E_03_01_DrawMap` (`src/messaging.c` ~:67) submodules to VRAM. There is
-  **no per-dungeon checked/total accessor today**; `Rando_IsLocationChecked(loc)`
-  (`src/rando/rando.c` ~:1763) reads the sparse checked bitmap per location. A new
-  helper must iterate the location registry filtered by dungeon. **GOTCHA:** iterating
-  every frame is O(N over ~328-1163 locations); compute once per map-open and cache.
+  The implementation adds a per-dungeon remaining-count accessor;
+  `Rando_IsLocationChecked(loc)` (`src/rando/rando.c` ~:1763) reads the sparse
+  checked bitmap per location. The helper must scan active placement and location
+  metadata rather than assume every registry row is active. **GOTCHA:** do not put
+  this O(N) scan in the frame loop; call it from the map render path.
 - **Goal/requirement data is C-static, not `g_ram`.** Crystal requirements live in
   `RandoSettings.crystals_ganon` / `.crystals_tower` reached via
   `Rando_GetActiveSettings()`; the hunt counter is `g_rando_triforce_piece_count`
@@ -80,20 +81,22 @@ identities, not the line offsets. Decision labels (D1…) are referenced from
   `LinkState_Dashing()` (~:1256) runs *after* the dash is already active (its
   `link_countdown_for_dash` is the active-dash frame counter, already zeroed there), so it
   is the WRONG place to remove the charge wait. F6 must re-grep the real charge trigger.
-- **Auto-tracker.** `AutoTracker_ServiceFrame()` (`src/rando/auto_tracker.c`) emits a
-  per-frame JSON snapshot (locations/items/reachability) over TCP (default
+- **Auto-tracker.** `AutoTracker_ServiceFrame()` (`src/rando/auto_tracker.c`) services
+  a state-change-driven JSON snapshot (locations/items/reachability) over TCP each
+  frame (default
   127.0.0.1:17400). Door/entrance overrides live in the door/entrance runtime sparse
   tables (`src/rando/door_runtime.h` + entrance runtime); a `discovered_*` field is a
   new snapshot key.
-- **Settings-window pattern.** The Seed QoL tab renders `kRecBits[]` / `kRecLabels[]`
-  (+ a defaults array) in `Panel_RecommendedFeatures()` (`rando_window.cpp` ~:405-460);
-  adding a checkbox = add parallel entries + a `features.h` bit. Game Settings toggles
+- **Settings-window pattern.** The Seed QoL tab renders `kRecRows[]`
+  in `Panel_RecommendedFeatures()` (`rando_window.cpp` ~:405-460); adding a
+  recommendation row means adding its feature bit, label, and default together.
+  Game Settings toggles
   use `FeatureCheckbox()` in `game_config_panels.cpp` editing `features0` live.
   `kSettingsCanonicalLen = 28` is **not touched** by this change.
 
 ## Decisions
 
-### D1 — Everything is a feature bit / config / render; nothing touches placement
+### D1 — Gameplay settings use feature bits/config; tracker export is observation-only
 
 No `RandoSettings` axis, no `settings_hash`, no `kSettingsCanonicalLen`, no
 `kGeneratorVersion` bump, no on-disk save-format change. This is the invariant that
@@ -103,7 +106,7 @@ contiguous):
 
 | Bit | Flag | Feature | In `RandoSeedQolMask`? |
 |---|---|---|---|
-| 20 | `kFeatures0_RandoDungeonCheckCounts` | F1 map counts/dots | yes (rando-only) |
+| 20 | `kFeatures0_RandoDungeonCheckCounts` | F1 map remaining count | yes (rando-only) |
 | 21 | reserved | deferred F2 seed overlay | no |
 | 22 | `kFeatures0_FastFanfare` | F3 item/dungeon-item get holds | yes |
 | 23 | `kFeatures0_CutsceneFastForward` | F4 cutscene/transition FF | yes |
@@ -121,13 +124,13 @@ existing Seed QoL convention.
 
 ### D2 — F1 dungeon check-info: new cached per-dungeon accessor, drawn on Module 0x0E
 
-Add `Rando_DungeonCheckCounts(dungeon_id, &checked, &total)` that iterates the
-location registry filtered by dungeon, using `Rando_IsLocationChecked`. Compute on
-map-open (or on checked-bitmap change), cache in a small static (not `g_ram`) —
-never per-frame (the O(N) gotcha). Draw the count on the dungeon map render.
-**Phase 1** = the count; **Phase 2** = dots at located remaining checks (needs a
-location→map-cell mapping; ships after the count is validated). Counts only, so
-race-safe.
+Add `Rando_DungeonCheckCounts(dungeon_id, &remaining)` that scans the active
+placement, resolves each active location's metadata, filters it into the requested
+dungeon bucket, and checks its collected bit. Compute only when the map render asks
+for it, not from the frame loop. Draw the remaining count on the dungeon map render.
+Hyrule Castle proper shares the Escape/Sewers bucket so its map still receives the
+combined count. Located-check dots need a location-to-map-cell model and are deferred
+to another change. Count-only output is race-safe.
 
 ### D3 — F2 seed info overlay is deferred
 
@@ -151,9 +154,10 @@ the player — the box fills instantly and waits. Because `text_speed` is a GLOB
 value (not rando-only, not a bit), the per-frame character-draw cadence it changes is
 RAM/timing-observable, so the override MUST be suppressed under
 `ZeldaIsEmulatorAttached()` (on BOTH the vanilla and rando paths) to keep the
-side-by-side comparator clean. Fanfare
-(`kFeatures0_FastFanfare`) clamps the `ancilla_aux_timer` get-holds at
-`AncillaAdd_ItemReceipt` with the grant otherwise byte-identical.
+side-by-side comparator clean. Fanfare (`kFeatures0_FastFanfare`) clamps the
+`ancilla_aux_timer` get-holds at `AncillaAdd_ItemReceipt` with the grant otherwise
+byte-identical, and also shortens the pre-maiden pendant/crystal receipt and
+APU-fanfare wait. With the bit off, the original long prize fanfare remains intact.
 
 ### D5 — F4 cutscene FF compresses dwell, preserves every flag
 
@@ -174,6 +178,11 @@ flute-travel **animation** speed is included (D-context: finalize is orthogonal)
 overworld/dungeon **screen-scroll** timing is explicitly out of scope (muscle-memory
 footgun). Each cutscene is an independent task so partial landing is safe.
 
+Prize sequences deliberately split the two controls: `FastFanfare` shortens the
+pre-maiden receipt/fanfare delay, while `CutsceneFastForward` shortens the later
+prize-rise, reveal, and transition animation. Enabling either setting alone affects
+only its half of the sequence.
+
 ### D6 — F5 warp-to-spawn REUSES the existing S&Q spawn path; race-toggleable
 
 `Death_Func15()` is a flag-latched state machine (see Context) whose save-and-quit branch
@@ -182,7 +191,7 @@ already lands the player at `which_starting_point` via the `kStartingPoint_*[]` 
 it** — the CLAUDE.md Dark Chapel lesson is explicit that repositioning by re-derivation on
 a diverted branch (with its stale-flag hazards: `death_var4/5`, `savegame_is_darkworld`,
 `sram_progress_indicator`, Inverted DW forcing) is a days-costly bug class. So
-`Warp_ToSpawn()` drives the SAME save-then-load-start sequence (or invokes the existing
+`WarpToSpawn_Try()` drives the SAME save-then-load-start sequence (or invokes the existing
 start-point loader directly after a save), preserving every flag `Death_Func15` sets or
 clears. The `kKeys_WarpToSpawn` hotkey triggers the audited spawn-path routine;
 gated on `kFeatures0_WarpToSpawn` +

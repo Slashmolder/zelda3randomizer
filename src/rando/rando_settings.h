@@ -253,7 +253,7 @@ typedef enum {
 // forced enemy key drops. Dungeon also itemizes ordinary eligible dungeon enemies
 // as checks. Door shuffle composes with dungeon/all ordinary enemy checks through
 // generated bridge rows. All adds generated static overworld, reviewed
-// underworld, boss/miniboss, and finite scripted-spawn checks where runtime
+// underworld, GT-miniboss, and repeatable finite scripted-spawn checks where runtime
 // identity and logic are modeled; it remains a distinct tier above Dungeon.
 typedef enum {
   kEnemyDropChecks_Off = 0,

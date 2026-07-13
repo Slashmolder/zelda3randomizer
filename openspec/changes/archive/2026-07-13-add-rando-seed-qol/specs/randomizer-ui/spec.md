@@ -3,9 +3,9 @@
 ### Requirement: Pause-map dungeon check-info
 
 The randomizer UI SHALL render, on the pause dungeon map under an active slot, the
-per-dungeon remaining-check counts (F1) and, in a later phase, dots at the located
-remaining checks — reading the trackers' existing per-dungeon checked/total
-accessor rather than a separate placement scan. The pause-map surface SHALL draw
+per-dungeon remaining-check count (F1), reading the new cached active-placement and
+checked-state accessor. Located-check dots are outside this archived change. The
+pause-map surface SHALL draw
 only counts — never item names, locations, requirements, or full share strings —
 so it is race-safe, and SHALL be client-side only (no
 `placement_digest` / `settings_hash` effect). When no slot is active or the

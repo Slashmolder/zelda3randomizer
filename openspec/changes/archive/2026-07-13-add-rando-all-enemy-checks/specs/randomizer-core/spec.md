@@ -1,10 +1,12 @@
 ## MODIFIED Requirements
 
-### Requirement: Enemy-drop check setting has an honest all tier
+### Requirement: Enemy-drop-check canonical settings axis
 
 The `enemy_drop_checks` setting SHALL support values `Off` (0), `Keys` (1),
 `Dungeon` (2), and `All` (3). `All` SHALL be accepted by settings validation, CSV
 parsing, share strings, native UI, and file-select UI as a distinct requested value.
+The appended canonical enemy-drop byte SHALL encode those values as 0 through 3,
+and older shorter canonical blobs and share strings SHALL decode it as `Off`.
 Interactive selectors MAY hide or disable `All` for setting combinations where
 derived rules immediately lower it, but they SHALL NOT label the dungeon-only tier
 as "all". New settings parsing SHALL NOT alias text `all` to `Dungeon`; any legacy
@@ -19,7 +21,7 @@ such as Red Eyegores) plus static ordinary
 overworld enemies with stable `(stage, area, source slot, block)` identity, plus
 reviewed underworld cave/interior exceptions with stable room/source-slot identity
 and direct access predicates, reviewed GT-miniboss event checks, and reviewed
-finite scripted-spawn checks with stable parent/child identity. Unbounded/farmable
+repeatable finite scripted-spawn checks with stable parent/child identity. Unbounded/farmable
 spawns and sources without stable death-time identity remain explicit future
 scope. The normalized effective value, not an incompatible raw request, SHALL feed
 the settings hash, share strings, placement, logic, UI, spoiler, and runtime.
@@ -63,8 +65,37 @@ Derived rules SHALL apply this compatibility table:
 #### Scenario: Existing tiers remain distinct
 - **WHEN** a settings source requests `enemy_drop_checks=dungeon`
 - **THEN** only the dungeon-tier enemy checks are requested
-- **AND** static overworld, reviewed-underworld, boss, and scripted all-tier rows
+- **AND** static overworld, reviewed-underworld, GT-miniboss, and scripted all-tier rows
   remain inactive
+
+#### Scenario: Old settings decode as off
+- **WHEN** a pre-enemy-drop share string or shorter canonical settings blob is decoded
+- **THEN** `enemy_drop_checks` defaults to `Off` and all existing settings fields keep
+  their prior values
+
+#### Scenario: Selecting keys changes the settings hash only when effective
+- **WHEN** `enemy_drop_checks = Keys` and effective small keys are in a supported mode
+- **THEN** the appended canonical byte is non-zero and the settings hash changes
+  relative to `Off`
+
+#### Scenario: Vanilla key mode normalizes every enemy-check tier off
+- **WHEN** any non-off `enemy_drop_checks` tier is requested with effective vanilla keys
+- **THEN** derived settings serialize as `Off`, and placement/runtime behavior is
+  byte-identical to enemy-drop checks off
+
+#### Scenario: Dungeon key mode keeps key-tier checks active
+- **WHEN** `enemy_drop_checks = Keys` and effective small keys are Dungeon
+- **THEN** derived settings keep `enemy_drop_checks = Keys`
+
+#### Scenario: Door shuffle preserves supported enemy-check tiers
+- **WHEN** `enemy_drop_checks` is `Keys`, `Dungeon`, or `All` and door shuffle is active
+- **THEN** the requested tier remains effective through the generated bridge and its
+  digest/replay contract
+
+#### Scenario: Enemy shuffle keeps only forced-key checks
+- **WHEN** `enemy_drop_checks` is `Dungeon` or `All` and enemy shuffle is active
+- **THEN** derived settings serialize as `Keys`, or `Off` when forced-key checks are
+  unsupported
 
 #### Scenario: Vanilla key mode normalizes all off
 - **WHEN** `enemy_drop_checks=All` but effective small keys are vanilla
@@ -94,32 +125,3 @@ Derived rules SHALL apply this compatibility table:
 - **WHEN** requested `All` would otherwise be effective but generated all-tier data
   is missing, stale, duplicated, or over capacity
 - **THEN** generation rejects the seed with a specific diagnostic
-
-### Requirement: Settings canonical serialization order (normative)
-
-The canonical byte 28 `enemy_drop_checks` encoding SHALL be updated to
-`off=0`, `keys=1`, `dungeon=2`, and `all=3`, after derived rules. This replaces any
-older byte-28 text that used `all=2` for the dungeon-only tier. The settings
-serializer, v2 share-string encoder/decoder, CSV parser, fixed-settings selfchecks,
-corpus manifests, and range checks SHALL use this four-value mapping.
-
-Derived rules for byte 28 SHALL apply before canonical serialization and settings
-hash computation. `Dungeon` keeps the existing dungeon-tier behavior. `All` keeps
-`all=3` only when every compatible generated all-tier source is active for the
-selected settings and the generated all-tier registry is fresh and within capacity.
-Otherwise it normalizes according to the compatibility matrix in
-`Enemy-drop check setting has an honest all tier` or generation rejects.
-
-#### Scenario: Byte 28 distinguishes dungeon from all
-- **WHEN** equivalent settings are serialized with effective `Dungeon` and effective
-  `All`
-- **THEN** byte 28 is `2` for `Dungeon` and `3` for `All`
-
-#### Scenario: Legacy all alias cannot mean dungeon-only
-- **WHEN** new settings text uses `enemy_drop_checks=all`
-- **THEN** the requested value is `All` (`3`) before derived rules, not `Dungeon`
-  (`2`)
-
-#### Scenario: Out-of-range enemy-drop-check byte is rejected
-- **WHEN** a v2 share string carries byte 28 greater than `3`
-- **THEN** decoding rejects the settings instead of coercing to another tier

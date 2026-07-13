@@ -26,10 +26,10 @@ header-dep tracking → `make clean` after any `features.h`/`config.h` edit).
 
 ## 1. F1 — Dungeon check-info on the pause map — D2
 
-- [x] 1.1 Add `Rando_DungeonCheckCounts(dungeon_id, &checked, &total)` iterating the
-  location registry filtered by dungeon via `Rando_IsLocationChecked`; compute
-  on map-open / checked-bitmap change and cache in a static (NOT per-frame, NOT
-  `g_ram`).
+- [x] 1.1 Add `Rando_DungeonCheckCounts(dungeon_id, &remaining)` by scanning the
+  active placement, resolving active location metadata, filtering to the dungeon
+  bucket, and consulting the checked bitmap. Hyrule Castle proper folds into the
+  Escape/Sewers bucket.
 - [x] 1.2 Draw the per-dungeon remaining count on the Module 0x0E dungeon map,
   gated on `kFeatures0_RandoDungeonCheckCounts` + rando-active; counts only.
 - [x] 1.3 Defer located-check dots to a separate Phase 2 change. The validated
@@ -120,7 +120,7 @@ header-dep tracking → `make clean` after any `features.h`/`config.h` edit).
 
 ## 5. F5 — Quick reset / warp-to-spawn (race-toggleable) — D6
 
-- [x] 5.1 Add `Warp_ToSpawn()` that **REUSES the existing S&Q spawn path** — the
+- [x] 5.1 Add `WarpToSpawn_Try()` that **REUSES the existing S&Q spawn path** — the
   `Death_Func15` save-and-quit branch already lands at `which_starting_point` via the
   `kStartingPoint_*[]` loader (`src/dungeon.c` ~:8835-8864). Drive that SAME
   save-then-load-start sequence (or call the start-point loader after a save); do NOT
@@ -128,7 +128,7 @@ header-dep tracking → `make clean` after any `features.h`/`config.h` edit).
   `kFeatures0_WarpToSpawn` + rando-active + `Rando_HasActiveSettings()`. Off = vanilla S&Q.
 - [x] 5.1a **Flag audit (load-bearing):** enumerate every flag `Death_Func15` sets /
   clears / consumes (`death_var4/5`, `savegame_is_darkworld`, `sram_progress_indicator`,
-  Inverted DW forcing, `subsubmodule_index`) and confirm `Warp_ToSpawn` leaves each in the
+  Inverted DW forcing, `subsubmodule_index`) and confirm `WarpToSpawn_Try` leaves each in the
   exact post-S&Q state — this is the CLAUDE.md Dark Chapel bug class; a stale flag
   corrupts the NEXT spawn/transition.
 - [x] 5.2 Add the Game Settings toggle + keybind with the **race-legality note**.
@@ -178,5 +178,5 @@ header-dep tracking → `make clean` after any `features.h`/`config.h` edit).
   proof for the whole bundle).
 - [x] 8.2 Independent fresh-eyes review of the landed surface (per the project's
   review cadence) before declaring done — ask for NEW findings, cap the response.
-- [ ] 8.3 Reconcile these `specs/` deltas against as-built source, then archive on
+- [x] 8.3 Reconcile these `specs/` deltas against as-built source, then archive on
   the branch before the squash-merge.

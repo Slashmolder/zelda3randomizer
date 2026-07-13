@@ -660,39 +660,39 @@ The runtime SHALL show an in-world "check" cue on unchecked, active overworld te
 
 ### Requirement: Enemy-drop checks selector and tracker presentation
 
-The settings UI SHALL expose enemy-drop checks as a selector separate from
-`drop_shuffle`. It SHALL expose `Off`, `Enemy key drops`, and `Dungeon
-enemies`. The UI SHALL reflect effective behavior: supported Wild/Retro and Dungeon
-small-key modes can select `Keys`; vanilla-door Wild/Retro and Dungeon modes can
-select `Dungeon`; door shuffle's forced Dungeon mode can select `Keys` but
-downgrades a raw `Dungeon` request to `Keys`; vanilla keys show the effective
-setting as `Off` or disable the selector. `enemy_shuffle` SHALL NOT disable the
-selector.
+The settings UI SHALL expose enemy-drop checks separately from `drop_shuffle`, with
+distinct `Off`, `Enemy key drops`, `Dungeon enemies`, and `All enemies` choices.
+It SHALL present the effective tier consistently: vanilla keys normalize the selector
+to `Off`; door shuffle preserves supported `Keys`, `Dungeon`, and `All`; enemy shuffle
+lowers `Dungeon`/`All` to `Keys` (or `Off` when forced-key checks are unsupported);
+entrance shuffle lowers `All` to `Dungeon`; boss shuffle and pot shuffle preserve
+`All`. A selector MAY disable a choice that would immediately normalize lower, but
+it SHALL NOT label `Dungeon` as `All`.
 
 Spoilers, the native location tracker, reach panel, and auto-tracker output SHALL
-group active enemy-drop checks by dungeon and room. Inactive enemy-drop ids SHALL be
-hidden from tracker denominators and spoiler placement rows. The spoiler SHALL record
-the effective setting so a raw request normalized to `Off` does not imply phantom
-enemy-drop checks.
+include only active enemy checks and group them by a stable player-usable domain:
+dungeon/reviewed-underworld room, overworld area or screen, GT-miniboss arena, or
+scripted parent. The spoiler SHALL record the effective tier so a normalized raw
+request does not imply phantom checks.
 
 #### Scenario: Selector is separate from drop shuffle
-- **WHEN** the user opens the randomizer settings window
-- **THEN** `drop_shuffle` remains the prize-pack shuffle control, and enemy-drop
-  checks are controlled by a separate selector
+- **WHEN** the user opens randomizer settings
+- **THEN** `drop_shuffle` remains the prize-pack control and enemy-drop checks use a
+  separate four-tier selector
 
-#### Scenario: Dungeon tier is exposed
-- **WHEN** the user opens the randomizer settings window or file-select settings
-- **THEN** the enemy-drop-check selector offers the dungeon-enemy tier
+#### Scenario: Door shuffle preserves dungeon and all choices
+- **WHEN** door shuffle is active and its generated enemy-check bridge is valid
+- **THEN** the selector can expose effective `Dungeon` and `All` tiers
 
-#### Scenario: Trackers show only active enemy-drop checks
-- **WHEN** a seed has effective `enemy_drop_checks = Keys`
-- **THEN** tracker and spoiler surfaces show the generated enemy-drop locations
-  grouped by dungeon/room; when the effective setting is `Off`, those ids are hidden
+#### Scenario: Trackers show only active enemy checks
+- **WHEN** an enemy-drop tier is effective
+- **THEN** tracker and spoiler surfaces show exactly that tier's generated locations,
+  grouped by their stable source domain
 
-#### Scenario: Trackers include ordinary enemy checks for dungeon tier
-- **WHEN** a seed has effective `enemy_drop_checks = Dungeon`
-- **THEN** tracker and spoiler surfaces also show generated ordinary enemy locations
-  grouped by dungeon/room
+#### Scenario: All-tier tracker includes every reviewed domain
+- **WHEN** effective `enemy_drop_checks = All`
+- **THEN** tracker and spoiler surfaces include dungeon, overworld, reviewed
+  underworld, GT-miniboss, and reviewed repeatable scripted locations
 
 ### Requirement: Dungeon-enemy UI is exposed after runtime and tracker support
 
@@ -709,4 +709,77 @@ logic, persistence, and tracker grouping are implemented.
 - **WHEN** raw settings request `dungeon` but derived rules normalize it to `off` or
   `keys`
 - **THEN** user-facing effective labels reflect the lower active tier
+
+### Requirement: All enemy tier is exposed distinctly from dungeon
+
+The user-facing settings surfaces SHALL expose `enemy_drop_checks=all` as a
+distinct tier above `dungeon` when it can remain effective for the current setting
+combination. Labels, docs, spoilers, trackers, and native UI text SHALL NOT use
+"all" for the dungeon-only tier. Interactive selectors MAY hide or disable `all`
+when derived rules would immediately lower it to `dungeon`, `keys`, or `off`.
+
+When a requested `all` value is downgraded or rejected because a setting combination
+cannot honestly support all generated all-tier sources, the UI and generated spoiler
+SHALL show the effective value or the specific rejection reason.
+
+#### Scenario: Selector distinguishes dungeon from all
+- **WHEN** the enemy-drop-check selector shows the all-enemy tier
+- **THEN** `dungeon` and `all` are separate choices with separate effective behavior
+
+#### Scenario: Selector does not over-promise downgraded all
+- **WHEN** entrance shuffle, enemy shuffle, or vanilla small-key mode would
+  downgrade `all`
+- **THEN** the enemy-drop-check selector does not present a selectable `all` tier
+  that would immediately display as a lower effective tier
+
+#### Scenario: Effective downgrade is visible
+- **WHEN** a requested `all` setting downgrades to `dungeon`, `keys`, or `off`
+- **THEN** the UI and spoiler identify the effective tier instead of displaying the
+  raw request as if all enemies were active
+
+### Requirement: All-enemy output groups locations by source domain
+
+Spoilers, trackers, reachability panels, and autotracker output SHALL include every
+generated all-tier location and group it by a stable player-usable source domain:
+dungeon room, reviewed underworld room, overworld area/screen, GT-miniboss arena, or
+scripted parent. Flat machine-readable placement rows MAY carry this grouping as
+region/domain metadata rather than nested JSON. Location names SHALL distinguish
+duplicate enemy types in the same group by coordinates, source slot, or another
+stable disambiguator.
+
+#### Scenario: Duplicate enemy type in one area
+- **WHEN** two emitted all-enemy locations use the same enemy type in the same
+  overworld area
+- **THEN** spoiler and tracker names distinguish the two sources
+
+#### Scenario: Visual marker suppressed but tracker present
+- **WHEN** an all-enemy marker is hidden because of OAM or graphics pressure
+- **THEN** tracker, spoiler, reachability, and checked-state output still include the
+  location
+
+### Requirement: Pause-map dungeon check-info
+
+The randomizer UI SHALL render, on the pause dungeon map under an active slot, the
+per-dungeon remaining-check count (F1), reading the new cached active-placement and
+checked-state accessor. Located-check dots are outside this archived change. The
+pause-map surface SHALL draw
+only counts — never item names, locations, requirements, or full share strings —
+so it is race-safe, and SHALL be client-side only (no
+`placement_digest` / `settings_hash` effect). When no slot is active or the
+governing feature bit is off, the pause map renders exactly as vanilla.
+
+#### Scenario: Dungeon map shows remaining counts
+- **WHEN** an active slot's pause dungeon map is shown for a dungeon with remaining
+  checks
+- **THEN** that dungeon's remaining-check count is drawn on the map, updating as its
+  checks are collected
+
+#### Scenario: Count surface draws no spoiler content
+- **WHEN** the check-info surface is shown for a race-mode seed
+- **THEN** only counts are drawn and no item name, location, or seed requirement is
+  revealed
+
+#### Scenario: Vanilla render when inactive
+- **WHEN** no randomizer slot is active or the feature bit is off
+- **THEN** the pause map renders identically to vanilla with no overlay
 

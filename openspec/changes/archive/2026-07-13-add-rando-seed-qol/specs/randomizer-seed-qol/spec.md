@@ -4,15 +4,18 @@
 
 Every feature in this bundle SHALL be implemented as a runtime feature bit
 (`kFeatures0_*`, in the free bit-20..31 range), a local `zelda3.ini`
-keybind/value, or client-side rendering — and SHALL NOT change item placement,
+keybind/value, client-side rendering, or an observation-only export — and SHALL
+NOT change item placement,
 the settings hash, the canonical settings length, the on-disk save format, or
 `kGeneratorVersion`. Each new per-slot preference bit SHALL be added to
 `kFeatures0_RandoSeedQolMask` so a shared seed can recommend it via the existing
 `recommended_features0` slot field (format_version ≥ 3) without pinning it. Like
-the existing Seed QoL bits, each behavior SHALL be no-op or suppressed under
-side-by-side emulation (`ZeldaIsEmulatorAttached()`) so the per-frame RAM/SRAM/VRAM
-comparator stays clean, and rando-only behaviors SHALL additionally gate on
-`(enhanced_features1 & kFeatures1_RandomizerActive)`.
+the existing Seed QoL bits, each gameplay-, timing-, or rendering-mutating behavior
+SHALL be no-op or suppressed under side-by-side emulation
+(`ZeldaIsEmulatorAttached()`) so the per-frame RAM/SRAM/VRAM comparator stays clean,
+and rando-only behaviors SHALL additionally gate on
+`(enhanced_features1 & kFeatures1_RandomizerActive)`. Observation-only tracker
+exports MAY remain active because they do not mutate game state.
 
 #### Scenario: Corpus and generator version are unaffected
 - **WHEN** the full bundle is implemented and the regression corpus is regenerated
@@ -21,7 +24,7 @@ comparator stays clean, and rando-only behaviors SHALL additionally gate on
   `--rando-selftest` passes without a new subsystem check
 
 #### Scenario: Disabled features are byte-identical to vanilla behavior
-- **WHEN** every new Seed QoL bit is off (the default global state) and no new
+- **WHEN** every new Seed QoL bit is off and no new
   keybind is pressed
 - **THEN** the game behaves exactly as before this change on both the vanilla and
   randomizer paths, and a side-by-side run against the original ROM produces no new
@@ -36,21 +39,26 @@ comparator stays clean, and rando-only behaviors SHALL additionally gate on
 
 ### Requirement: Dungeon check-info on the pause map
 
-Under an active randomizer slot, the pause dungeon map SHALL display, per dungeon,
-how many of that dungeon's randomizer checks remain versus its total (a
-`remaining` or `checked/total` readout), computed by a new cached accessor that
-iterates the location registry filtered by dungeon over the existing
-`Rando_IsLocationChecked` state (the trackers derive reachability, not a per-dungeon
-remaining count) — not a separate placement read. This is rando-only, defaults on,
-and draws no item names (counts are not a spoiler). A second phase MAY additionally mark the located remaining checks with
-dots on the dungeon map. The render SHALL be client-side (HUD/OAM/PPU) and MUST
-NOT affect `placement_digest` or `settings_hash`.
+Under an active randomizer slot, the pause dungeon map SHALL display the number of
+that dungeon's randomizer checks remaining. A cached accessor SHALL scan the active
+placement rows, resolve their location metadata and dungeon grouping, filter to
+countable checks, and consult the existing `Rando_IsLocationChecked` bitmap; it
+SHALL NOT inspect placed item identity. This is rando-only, recommended on by the
+recommended-feature set, and draws no item names (counts are not a spoiler). Located
+check dots are deferred outside this archived change. The render SHALL be
+client-side (HUD/OAM/PPU) and MUST NOT affect `placement_digest` or `settings_hash`.
 
 #### Scenario: Counts reflect collected checks
 - **WHEN** a dungeon has 3 in-logic checks and the player has collected 2, and the
   pause dungeon map for that dungeon is shown
-- **THEN** the map shows that dungeon's remaining count as 1 (or `2/3`), updating as
+- **THEN** the map shows that dungeon's remaining count as 1, updating as
   further checks in that dungeon are collected
+
+#### Scenario: Hyrule Castle map uses the Escape and Sewers bucket
+- **WHEN** the live engine dungeon is Hyrule Castle proper and its pause dungeon map
+  is shown
+- **THEN** the displayed remaining count uses the shared Hyrule Castle Escape /
+  Sewers randomizer-dungeon bucket
 
 #### Scenario: Counts are not a spoiler and are safe under race mode
 - **WHEN** the active slot is a race-mode seed and the dungeon check-info is shown
@@ -65,7 +73,9 @@ NOT affect `placement_digest` or `settings_hash`.
 
 The game SHALL expose a configurable message text speed (at least
 `normal` / `fast` / `instant`) plus a fast-advance for the item-pickup fanfare and
-the recurring dungeon small-key / map / compass "get" holds. Text speed SHALL be a
+the recurring dungeon small-key / map / compass "get" holds. For a boss crystal or
+pendant, Fast Fanfare SHALL own the pre-cutscene receipt/fanfare delay; disabling it
+SHALL preserve the original long fanfare. Text speed SHALL be a
 speed *level*, never a plain on/off skip, and the fastest level SHALL remain
 **hint-safe**: hint / telepathy / sign text the player is expected to read MUST NOT
 auto-advance past the player, so an instant setting still requires an input to
@@ -110,10 +120,13 @@ comparison. The overworld/dungeon **screen-scroll** transition
 timing SHALL NOT be changed by this feature. Story-dialogue fast-forward SHALL be
 allowlisted to known Standard intro / Uncle / Zelda escort / Sanctuary / post-Agahnim
 messages and SHALL NOT auto-select choices or apply to randomizer hint-tile messages.
+For a boss crystal or pendant, Cutscene Fast-forward SHALL own the post-receipt
+rise/reveal/transition animation; Fast Fanfare separately owns the preceding
+receipt/fanfare delay.
 
 #### Scenario: Prize-get fast-path sets the prize identically
-- **WHEN** the prize-get fast-forward is on and the player earns a dungeon
-  crystal/pendant
+- **WHEN** Fast Fanfare and Cutscene Fast-forward are on and the player earns a
+  dungeon crystal/pendant
 - **THEN** the crystal/pendant is recorded in SRAM exactly as the full animation
   would record it, and any dependent progression (e.g. barrier/access state) is set
   identically — only the animation is shortened

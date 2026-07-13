@@ -26,15 +26,17 @@ coherent, incrementally-shippable set. Several ideas were **deliberately cut**:
   timing makes routing *feel* wrong. (Mirror/flute animation speed is kept; scroll
   is not.)
 
-**The unifying design property: none of these affect placement.** Every toggle is
+**The unifying design property: none of these affect placement.** Every gameplay,
+timing, or rendering toggle is
 a new `kFeatures0_*` feature bit (bits 20-31 are free) or a local `zelda3.ini`
 keybind/value, gated at point-of-use; the rendering features are client-side
 (HUD/OAM/PPU) and read data the runtime already has. So the whole bundle needs
 **no `kGeneratorVersion` bump, no `settings_hash` / `kSettingsCanonicalLen`
 change, and leaves the regression corpus byte-identical.** The per-slot subset
 joins `kFeatures0_RandoSeedQolMask`, so a shared seed can recommend them without
-pinning them. The off-path stays RAM-compare-clean because these bits — like the
-existing Seed QoL bits — are suppressed / no-op under side-by-side emulation.
+pinning them. The off-path stays RAM-compare-clean because gameplay, timing, and
+rendering mutations — like the existing Seed QoL bits — are suppressed / no-op
+under side-by-side emulation. F7 only observes transitions and emits tracker data.
 
 ## What Changes
 
@@ -42,12 +44,13 @@ Six shipping features plus the deferred seed overlay, ordered by the reconciled 
 `design.md`). Each is independently gated and shippable; `tasks.md` phases them so
 every feature ends at a buildable, playtestable checkpoint.
 
-- **F1 — Dungeon check-info on the pause map** (top priority). Show, per dungeon,
-  how many of its randomizer checks remain (a `checked/total` count), and — as a
-  second phase — dots on the dungeon map at the *located* remaining checks. The
-  count is a small new cached accessor over the existing checked-location state
-  (`Rando_IsLocationChecked`), so phase 1 is a lightweight HUD render. Rando-only,
-  default on, not a spoiler (it's counts, not item names). Client-side only.
+- **F1 — Dungeon check-info on the pause map** (top priority). Show how many
+  randomizer checks remain in the selected dungeon. The count is derived from the
+  active placement plus location metadata and checked-location state, so it tracks
+  the actual seed rather than a static registry total. Hyrule Castle proper uses the
+  combined Escape/Sewers bucket. Located-check dots need a separate location-to-map
+  model and are explicitly deferred. Rando-only, recommended on, not a spoiler
+  (it's a remaining count, not item names). Client-side only.
 - **F2 — Deferred.** The in-game seed info overlay is not shipping in this change:
   playtest showed the surface was ugly, easy to cover, and redundant with the native
   tracker/generate-copy UI. Bit 21 remains reserved so later features keep their
@@ -99,12 +102,13 @@ every feature ends at a buildable, playtestable checkpoint.
   Settings panels and the corresponding `zelda3.ini` keys, following the existing
   `kFeatures0_*` checkbox / keybind pattern. The stale branch-test F2 key is
   accepted but ignored.
-- `randomizer-native-window`: ADD F1/F3/F4/F5/F6 to the Seed QoL tab
-  (`kRecBits`/`kRecLabels`) so per-slot recommended values round-trip, and surface
-  the F7 auto-tracker connection state where the tracker panels live.
-- `randomizer-ui`: ADD the dungeon check-info counts + located dots to the pause
-  dungeon-map render (F1); specify these read the tracker's existing per-dungeon
-  checked/total accessor and draw no spoiler content.
+- `randomizer-native-window`: ADD F1/F3/F4/F6 to the Seed QoL recommendation rows
+  (`kRecRows`) so per-slot recommended values round-trip. F5 remains a local Game
+  Settings race-legality toggle. Surface F7 connection state where tracker controls
+  live.
+- `randomizer-ui`: ADD the remaining dungeon-check count to the pause dungeon-map
+  render (F1), backed by a new active-placement-aware accessor and containing no
+  spoiler content. Located-check dots are deferred.
 
 > No `randomizer-core` / `randomizer-placement` / `randomizer-save` delta: the
 > bundle changes no canonical settings, no placement, and no on-disk save format.
@@ -118,7 +122,7 @@ every feature ends at a buildable, playtestable checkpoint.
   `kFeatures0_RandoSeedQolMask` where it is a per-slot preference. Bit 21 remains
   reserved for deferred F2, and the 0x66d-0x66f RAM block remains unused.
 - **Runtime code**: `src/messaging.c` (F3 text speed + fanfare), `src/misc.c`
-  item-receipt path (F3 fanfare), `src/hud.c` / pause-map module (F1 counts + dots),
+  item-receipt path (F3 fanfare), `src/hud.c` / pause-map module (F1 count),
   the prize/cutscene sites and `MirrorWarp_*` / bird-travel and the
   game-over module (F4), `src/player.c` boots charge (F6), the Save-and-Quit /
   spawn path (F5), `src/config.c` (F5 keybinds, F3 speed value),

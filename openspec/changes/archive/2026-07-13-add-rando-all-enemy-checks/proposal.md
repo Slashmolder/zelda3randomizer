@@ -3,8 +3,8 @@
 `enemy_drop_checks=dungeon` is intentionally not "all enemies". It covers the
 forced enemy-key checks plus a conservative set of ordinary dungeon enemy checks
 whose identity, logic, and persistence have been reviewed. The shipped `all` tier
-extends that boundary across every finite authored source domain this change can
-model safely.
+  extends that boundary across the reviewed finite authored source domains this
+  change can model safely.
 
 The `all` tier means every finite, authored enemy source that can be
 killed and modeled safely. Non-killable actors such as thieves, NPC-like sprites,
@@ -15,9 +15,10 @@ reason why it cannot be modeled yet.
 ## What Changes
 
 - Add `enemy_drop_checks=all` as a distinct shipping tier above `dungeon`.
-- Generate a complete enemy-source audit across dungeon rooms, overworld areas,
-  bosses/minibosses, and finite scripted spawn groups.
-- Emit randomizer locations for every audited finite killable enemy source whose
+- Generate a classified enemy-source audit across static dungeon and overworld
+  sources, reviewed underworld exceptions, reviewed GT miniboss events, and finite
+  scripted spawn groups.
+- Emit randomizer locations for every in-scope audited finite killable enemy source whose
   reachability, kill route, death event, and duplicate-grant suppression can be
   proven.
 - Keep non-killable and non-finite actors out of the emitted registry, but record
@@ -37,6 +38,10 @@ reason why it cannot be modeled yet.
 - Do not include non-killable actors, interactables, theft/NPC sprites, hazards,
   projectiles, or infinite/farmable dynamic enemies as checks unless they are
   converted into a finite source with stable identity and one-shot persistence.
+- Do not add separate checks to dungeon bosses whose heart-container and dungeon-prize
+  sequence is already their randomized reward.
+- Do not include one-shot scripted children that can disappear without a repeatable
+  collection opportunity.
 - Do not use enemy type alone as location identity. Identity must be based on the
   authored source instance.
 - Do not ship an `all` selector that omits reachable finite killable enemies without

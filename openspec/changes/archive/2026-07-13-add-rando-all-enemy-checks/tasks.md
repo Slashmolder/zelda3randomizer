@@ -93,7 +93,7 @@
 - [x] 5.1 Add `enemy_drop_checks=all` to CSV and share/settings decode as a distinct
   value; native UI and file-select expose it only when it can remain effective.
 - [x] 5.2 Display effective downgrades or generation rejection reasons clearly.
-- [x] 5.3 Attach stable dungeon room, overworld area/screen, boss arena, or scripted
+- [x] 5.3 Attach stable dungeon room, overworld area/screen, GT-miniboss arena, or scripted
   parent region metadata to spoiler, tracker, reachability, and autotracker rows.
   JSON placements remain a flat list of rows carrying that grouping metadata.
 - [x] 5.4 Reuse enemy marker modes for dungeon rows and exact item markers for

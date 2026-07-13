@@ -13,9 +13,9 @@ logic, runtime, spoiler, and tracker iteration.
 
 If the generated all-tier registry is missing, stale, has duplicate identities, or
 exceeds location capacity, placement SHALL reject active `all` generation instead
-of silently using a partial registry. Boss/miniboss rows, finite scripted-spawn
-groups, and farmable dynamic spawns remain future domains until their identity,
-reward coexistence, and suppression contracts are generated.
+of silently using a partial registry. Reviewed GT-miniboss events and repeatable
+finite scripted children participate as generated checks. Dungeon bosses, one-shot
+missable scripted children, and farmable dynamic spawns remain excluded.
 
 Generated post-Agahnim static overworld enemy locations SHALL reject item classes
 that can be required to reach or clear Agahnim's Tower. Those rows remain active

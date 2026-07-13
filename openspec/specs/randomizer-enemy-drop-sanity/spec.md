@@ -6,37 +6,48 @@ TBD - created by archiving change add-rando-enemy-drop-sanity. Update Purpose af
 ### Requirement: Enemy-drop check tiered scope
 
 The randomizer SHALL provide an `enemy_drop_checks` axis with values `Off` (0),
-`Keys` (1), and `Dungeon` (2). The `Keys` tier SHALL cover vanilla dungeon enemy
-forced small-key drops plus the single Hyrule Castle one-shot forced big-key check
-when the effective small-key mode is Wild/Retro or Dungeon. Retro computes to Wild
-for this purpose; door shuffle forces effective Dungeon keys and SHALL compose
-through the generated door x enemy-drop bridge. The `Dungeon` tier is supplied by the
-follow-up dungeon-enemy change and includes ordinary generated dungeon enemy checks
-when its additional gates pass.
+`Keys` (1), `Dungeon` (2), and `All` (3). `Keys` covers vanilla dungeon enemy
+forced small-key drops plus the reviewed Hyrule Castle one-shot forced big-key check.
+`Dungeon` adds generated ordinary dungeon enemies. `All` adds the compatible static
+overworld rows, reviewed all-tier underworld exceptions, reviewed GT-miniboss events,
+and reviewed repeatable finite scripted children.
 
-The existing `drop_shuffle` axis SHALL retain its current meaning: a deterministic
-permutation of the 56-entry prize-pack table. Enemy-drop checks are a separate
-location-expansion axis, not a reinterpretation of prize-pack shuffle.
+The existing `drop_shuffle` axis SHALL remain a deterministic prize-pack permutation;
+enemy-drop checks remain a separate location-expansion axis. Derived settings SHALL
+apply consistently to placement, logic, runtime, spoiler, and trackers: vanilla keys
+normalize every enemy-check tier to `Off`; door shuffle preserves supported `Keys`,
+`Dungeon`, and `All` through generated bridge rows; enemy shuffle normalizes
+`Dungeon`/`All` to `Keys` (or `Off` when keys are unsupported); entrance shuffle
+normalizes `All` to `Dungeon`; boss shuffle and pot shuffle preserve `All`, with
+thrown-pot routes disabled while pot sanity is active.
 
 #### Scenario: Off preserves current enemy drops
 - **WHEN** `enemy_drop_checks = Off`
 - **THEN** no enemy-drop location is active, forced key drops remain vanilla/free
   drops, and `drop_shuffle` continues to affect only non-forced prize-pack drops
 
-#### Scenario: Keys tier requires a supported effective small-key mode
-- **WHEN** `enemy_drop_checks = Keys` but the effective small-key mode is vanilla
-- **THEN** the effective enemy-drop tier is `Off`, no enemy-drop location is placed,
-  and forced small-key drops remain vanilla free grants
+#### Scenario: Vanilla keys normalize enemy checks off
+- **WHEN** any non-off enemy-drop tier is requested with effective vanilla small keys
+- **THEN** the effective enemy-drop tier is `Off`
 
-#### Scenario: Door shuffle keeps key-tier enemy drops active
-- **WHEN** `enemy_drop_checks = Keys` and door shuffle is active
-- **THEN** the effective enemy-drop tier is `Keys` because door shuffle forces
-  effective Dungeon small keys and installs the door x enemy-drop bridge
+#### Scenario: Door shuffle preserves supported tiers
+- **WHEN** door shuffle is active with a requested `Keys`, `Dungeon`, or `All` tier
+- **THEN** the requested tier remains effective through the generated enemy-check
+  bridge and digest/replay contract
 
-#### Scenario: Dungeon tier downgrades under door shuffle
-- **WHEN** a settings source requests `Dungeon` while door shuffle is active
-- **THEN** effective settings downgrade the tier to `Keys`, so forced enemy-key
-  checks stay active and ordinary dungeon-enemy checks stay inactive
+#### Scenario: Enemy shuffle keeps only the forced-key tier
+- **WHEN** enemy shuffle is active with requested `Dungeon` or `All`
+- **THEN** the effective tier is `Keys`, or `Off` when forced-key checks are unsupported
+
+#### Scenario: Entrance shuffle excludes overworld all-tier rows
+- **WHEN** entrance shuffle is active with requested `All`
+- **THEN** the effective tier is `Dungeon` unless another rule lowers it further
+
+#### Scenario: All activates every compatible reviewed domain
+- **WHEN** `enemy_drop_checks = All` remains effective
+- **THEN** keys, dungeon enemies, static overworld enemies, reviewed underworld
+  exceptions, reviewed GT minibosses, and reviewed repeatable scripted children are
+  active
 
 ### Requirement: Generated forced-key enemy-drop registry
 
@@ -502,3 +513,217 @@ automated visual dump.
   placed items and `EnemyDropMarker=item`
 - **THEN** each allocated marker draws its own placed item icon or the neutral glint
 - **AND** no marker draws a stale icon loaded for another enemy check
+
+### Requirement: All tier covers every supported stable enemy source domain
+
+`enemy_drop_checks=all` SHALL include the `keys` and `dungeon` tiers plus every
+compatible generated static overworld ordinary enemy source in the shipped
+all-tier registry. It MAY also include audited underworld cave/interior ordinary
+enemy sources when their room access can be modeled directly without dungeon
+key-depth metadata. It SHALL include reviewed GT-miniboss event checks and
+repeatable finite authored scripted-spawn enemy checks when their runtime identity,
+reachability, death dispatch, persistence, and reward coexistence are modeled.
+The shipped registry scope is dungeon ordinary enemies, static authored overworld
+ordinary enemies, reviewed underworld exceptions, reviewed GT-miniboss events,
+and reviewed repeatable finite scripted-spawn enemies with stable source identity,
+reachability, death dispatch, and checked-state grant/marker suppression.
+Killable source classes that are banned from carrying dungeon keys or are flying
+MAY be excluded from the normal `dungeon` tier, but SHALL be emitted as
+all-tier-only checks when their static source identity and room/area reachability
+are modeled for `enemy_drop_checks=all`.
+
+The all-enemy audit SHALL classify every scanned source in the supported static
+dungeon/overworld domains, every reviewed underworld exception candidate, every
+reviewed GT-miniboss event, and every reviewed repeatable finite scripted-spawn candidate
+as included or excluded with a stable reason.
+Non-killable actors such as thieves and NPC-like sprites, non-enemy hazards,
+projectiles, decorative sprites, and unbounded farmable dynamic spawns SHALL NOT
+be emitted as checks unless a future change converts them into finite one-shot
+sources with stable identity and persistence.
+
+Unbounded/farmable spawns and shuffled enemy substitutions remain unsupported
+domains for this change. They SHALL NOT be silently counted as covered by the
+shipped `all` tier; affected setting combinations either normalize visibly to a
+lower supported tier or remain documented as future scope until source identity,
+death dispatch, persistence, and logic are modeled.
+
+#### Scenario: Killable overworld source is emitted
+- **WHEN** the all-enemy audit finds a finite overworld enemy source with stable
+  identity, reachability, kill logic, and duplicate-grant suppression
+- **THEN** it emits one `Enemy` location for that source under
+  `enemy_drop_checks=all`
+
+#### Scenario: Reviewed underworld exception is emitted
+- **WHEN** the all-enemy audit finds a finite underworld enemy source with stable
+  room/source-slot identity and a reviewed direct access predicate
+- **AND** its kill route is modeled through inventory or counted throwable objects
+- **THEN** it emits one `Enemy` location for that source under
+  `enemy_drop_checks=all`
+- **AND** the emitted row is marked all-tier-only so it does not activate under
+  `enemy_drop_checks=dungeon`
+
+#### Scenario: Killable key-banned dungeon source is all-only
+- **WHEN** the all-enemy audit finds a killable underworld source that is
+  excluded from the `dungeon` tier only because it cannot safely carry keys or is
+  a flying class
+- **AND** the room already has modeled reachability and kill logic
+- **THEN** it emits one all-tier-only `Enemy` location for that source under
+  `enemy_drop_checks=all`
+- **AND** the row remains inactive under `enemy_drop_checks=dungeon`
+
+#### Scenario: Shared-room throwable source is not on the reviewed enemy side
+- **WHEN** an audited underworld exception shares a physical room with pots or
+  other throwables from a different entrance side
+- **AND** the reviewed enemy access predicate does not reach those throwables
+- **THEN** the enemy's kill route SHALL NOT count those throwables as reachable
+- **AND** the emitted logic SHALL require an inventory kill route instead
+
+#### Scenario: Thief-like source is excluded
+- **WHEN** the audit finds a non-killable thief or NPC-like actor
+- **THEN** the audit records an excluded non-killable reason and emits no location
+  for that source
+
+#### Scenario: Unbounded spawn is excluded
+- **WHEN** the audit finds a farmable or unbounded dynamic enemy spawn with no finite
+  one-shot source identity
+- **THEN** the audit records an excluded unbounded reason and emits no location
+  for that spawn
+
+#### Scenario: Unclassified static source fails closed
+- **WHEN** a scanned static dungeon or overworld source is present in local assets
+  but the audit neither emits it nor records an exclusion reason
+- **THEN** codegen fails instead of producing an incomplete shipped all-tier
+  registry
+
+#### Scenario: Reviewed GT miniboss event is emitted
+- **WHEN** the all-enemy audit finds a reviewed Ganon's Tower miniboss event with
+  stable physical-room identity and modeled kill logic
+- **THEN** it emits one all-tier `Enemy` location for that event
+- **AND** the runtime grants it exactly once without suppressing existing scripted
+  progression behavior
+
+#### Scenario: Repeatable finite scripted-spawn source is emitted
+- **WHEN** the all-enemy audit finds a reviewed repeatable finite scripted-spawn child with
+  stable parent room/source-slot/type identity and child ordinal
+- **AND** its child kill route is modeled through inventory or counted throwable
+  objects
+- **THEN** it emits one all-tier `Enemy` location for that child
+- **AND** already-checked children still spawn without a marker or randomized grant,
+  while later child identities from the same authored parent remain stable
+
+#### Scenario: Unsupported source domain is not silently covered
+- **WHEN** a farmable, unbounded, projectile, or enemy-shuffle substituted source
+  exists but runtime identity or logic is not supported for its domain
+- **THEN** the shipped static all-tier registry does not claim that source as
+  covered, and affected settings visibly downgrade or remain future scope
+
+### Requirement: All-enemy source identity is stable across domains
+
+Every emitted all-enemy location SHALL be keyed by an authored source identity,
+not by enemy type alone. Dungeon rows and reviewed underworld exceptions MAY use
+the existing room/source-slot identity; underworld exceptions SHALL carry an
+all-tier activation bit in the runtime lookup. Overworld rows SHALL carry an
+equivalent stable source tuple. GT-miniboss rows SHALL carry stable event
+dungeon/room identity. Repeatable finite scripted-spawn rows SHALL carry stable parent
+room/source-slot/type identity plus child index and child type.
+
+Enemy shuffle SHALL NOT change the location identity. In the first all-enemy
+implementation, requested `all` SHALL normalize to the highest lower tier allowed by
+existing derived rules while enemy shuffle is active, normally `keys` but `off` when
+the keys tier is unsupported, because ordinary all-enemy logic does not yet consume
+substituted type, HP, damage, or killability. A later change MAY keep `all` active
+with enemy shuffle only after it makes those substituted per-source values part of
+placement, logic, digest, and corpus expectations.
+
+#### Scenario: Overworld source survives enemy type substitution
+- **WHEN** enemy shuffle substitutes the enemy type for an emitted overworld source
+- **THEN** the location identity remains the authored overworld source tuple
+- **AND** the all-enemy row is inactive unless a future enemy-shuffle-aware
+  all-enemy placement model is active
+
+#### Scenario: Duplicate source identity fails closed
+- **WHEN** two emitted all-enemy rows resolve to the same source identity
+- **THEN** codegen fails with a duplicate identity diagnostic
+
+### Requirement: All-enemy checks grant and persist at death time
+
+Ordinary all-enemy locations SHALL dispatch their placed item at enemy death time.
+The runtime SHALL resolve the source identity, guard already-checked locations, grant
+the placed item, mark the location checked, and suppress future duplicate grants for
+that source. A successfully granted ordinary enemy check SHALL replace that kill's
+normal prize-pack pickup. Special forced/carried drops and boss/event rewards SHALL
+remain independent.
+
+Checked sources SHALL stay checked across room/area reload, save/reload, snapshot
+restore, screen transition, mirror transition, and world transition. Checked state
+SHALL suppress only the randomized grant and marker. Ordinary actors SHALL keep their
+authored source identity and follow vanilla spawn, room-history, death, and prize-drop
+behavior after collection.
+
+Forced enemy-drop checks SHALL keep their existing pickup-time behavior from the
+`keys` tier: after collection the carrier may respawn normally, but its one-time
+forced-key behavior SHALL remain suppressed.
+
+#### Scenario: Overworld enemy dies
+- **WHEN** an active all-tier overworld enemy check dies
+- **THEN** the runtime dispatches the placed item, marks the location checked, and
+  prevents that source from granting again after reload or transition
+- **AND** the kill does not also produce a normal prize-pack pickup
+
+#### Scenario: Dungeon boss retains its existing reward sequence
+- **WHEN** a dungeon boss dies with all-enemy checks active
+- **THEN** no separate enemy-check item is dispatched
+- **AND** the existing heart-container and dungeon-prize sequence remains intact
+
+#### Scenario: GT miniboss grants an enemy check
+- **WHEN** an emitted Ganon's Tower miniboss enemy check dies
+- **THEN** the all-enemy check grants exactly once
+- **AND** existing scripted-progression behavior remains intact
+
+#### Scenario: GT miniboss runtime room differs from its logical room
+- **WHEN** a GT miniboss door region uses a logical room id that differs from the
+  live `dungeon_room_index`
+- **THEN** its generated event lookup uses the physical runtime room while retaining
+  the logical door region for reachability
+- **AND** generation fails if the reviewed runtime/logical room contract drifts
+
+#### Scenario: Save reload after checked enemy
+- **WHEN** the player checks an all-tier enemy source, saves, and reloads
+- **THEN** the checked source follows vanilla respawn behavior without a check marker
+  or another randomized grant
+- **AND** later sources keep stable identity
+
+### Requirement: All-enemy visuals use existing marker policy
+
+All-enemy checks SHALL use the existing enemy marker preference where domain
+metadata and OAM pressure make markers safe. Dungeon all-tier rows use the
+existing marker path. Static overworld all-tier rows MAY draw exact placed-item
+markers in item mode; overworld markers that cannot draw an exact item SHALL draw
+the neutral gold glint when a safe post-sprite overlay row and OAM slot are
+available. Marker code SHALL suppress cleanly rather than draw a stand-in item for
+a different placed item.
+
+For every emitted all-tier source that can have an in-world marker, generated marker
+data SHALL define domain-specific stable authored identity, screen-coordinate
+derivation, scroll/camera basis, sorted-OAM region, and checked-marker suppression
+behavior. A domain MAY suppress in-world markers only when marker metadata cannot be
+made safe; tracker, spoiler, reachability, and checked-state output SHALL still
+include every emitted location.
+
+#### Scenario: Dense all-enemy screen
+- **WHEN** many all-tier enemy checks are visible on one screen
+- **THEN** every marker that renders is either the correct placed item or a
+  domain-supported neutral glint
+- **AND** OAM pressure does not produce corrupt, stale, or partial item graphics
+
+#### Scenario: Tracker still lists suppressed visual markers
+- **WHEN** a marker is suppressed because the screen lacks OAM or graphics capacity
+- **THEN** the emitted location remains present in spoiler, tracker, reachability,
+  and checked-state data
+
+#### Scenario: Domain lacks marker metadata
+- **WHEN** an emitted all-tier source belongs to a domain whose in-world marker
+  coordinates or OAM region cannot be proven safe
+- **THEN** the in-world marker is suppressed for that source or domain
+- **AND** spoiler, tracker, reachability, and checked-state output still include the
+  location
