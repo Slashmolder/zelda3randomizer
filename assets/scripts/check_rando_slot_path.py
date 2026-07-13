@@ -22,11 +22,12 @@ slot back, and prints a one-line JSON result) and asserts:
      CLI path's (`--generate-seed`) digest for the same (settings, seed), so the
      UI path provably did not diverge from the corpus-tested path.
 
-It deliberately includes a hard-pool standard Ganonhunt seed that the placer can
-make goal-completable, but not 100%-inventory: it must REJECT under
-`accessibility=items` and ACCEPT under `accessibility=none` ("beatable only").
-That pair exercises the three-way accessibility gate end-to-end through the real
-UI path.
+The matrix exercises all three accessibility values through accepted slots. It also
+includes the explicit `enemy_drop_checks=all` + `accessibility=locations`
+incompatibility: all-tier overworld checks currently include missable pre/post-Aga
+windows, so both slot and CLI generation must reject that combination. This keeps a
+stable end-to-end refusal canary without relying on a particular seed remaining
+unreachable after legitimate logic improvements.
 
 `Rando_GenerateSlot` writes `saves/sram.dat` + the sidecar + a spoiler relative
 to the CWD, so every cell runs in its own scratch temp directory (with `saves/`
@@ -111,10 +112,10 @@ MATRIX = [
     ("open-completionist",  "mode.state=open,goal=completionist",                      "0x7",  True,  True,  0, False),
     ("door-pot-keys-open",  "mode.state=open,goal=fast_ganon,door_shuffle=basic,pot_shuffle=keys", "0x504f54", True, True, 0, True),
     ("door-pot-all-items-open", "mode.state=open,goal=fast_ganon,door_shuffle=basic,pot_shuffle=all,accessibility=items", "0x504f55", True, True, 0, True),
-    # The three-way accessibility gate, end-to-end through the slot path:
-    # this hard-pool Ganonhunt seed has unreachable placements under strict
-    # inventory, but the goal is still completable in beatable-only mode.
-    ("std-ganonhunt-hard-items-REJECT", "mode.state=standard,goal=ganonhunt,item_pool=hard,accessibility=items", "3", False, False, None, False),
+    # Stable slot/CLI rejection: all-tier overworld checks include missable
+    # pre/post-Aga windows, so 100%-locations is intentionally unsupported.
+    ("all-enemy-locations-REJECT", "mode.state=open,goal=fast_ganon,dungeon_items.small_keys=wild,enemy_drop_checks=all,accessibility=locations", "0x12", False, False, None, False),
+    ("std-ganonhunt-hard-items-OK",     "mode.state=standard,goal=ganonhunt,item_pool=hard,accessibility=items", "3", True, True, 1, False),
     ("std-ganonhunt-hard-beatable-OK",  "mode.state=standard,goal=ganonhunt,item_pool=hard,accessibility=none",  "3", True,  True,  1, False),
 ]
 

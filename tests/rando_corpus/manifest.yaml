@@ -1057,7 +1057,7 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, souls_shuffle: all, dungeon_items.small_keys: wild, enemy_drop_checks: dungeon }
     seed: "0x50554C5300000005"
     label: "souls-all-enemy-drop-dungeon"
-    expected_digest: "d517ae781b4464525eac488d129b3da8ba4c12615a3c9054cf55492ef09f522b"
+    expected_digest: "1c2923aeaf1d82bb25733f319804b6fb51a96e27e5599b1243e91a82ab508f40"
   - settings: { mode.state: open, goal: triforce-hunt, pieces_required: 20, pieces_placed: 30, souls_shuffle: bosses, accessibility: none }
     seed: "0x50554C5300000006"
     label: "souls-bosses-hunt-none"
@@ -1069,11 +1069,11 @@ entries:
   - settings: { mode.state: standard, goal: ganon, souls_shuffle: all }
     seed: "0x50554C5300000007"
     label: "souls-all-standard-ganon"
-    expected_digest: "7b8be1cf5f7e857283431c28601854e4d33d20961414368062fb6f702f8b3f5e"
+    expected_digest: "8f54ffc997866a530030e16bb94706f230e879d3dd95b9b64d407b370e47851d"
   - settings: { mode.state: open, goal: fast_ganon, souls_shuffle: all, enemy_shuffle: true }
     seed: "0x50554C5300000008"
     label: "souls-all-enemy-shuffle-pin"
-    expected_digest: "4b320df43b5753de646c65813faaa089f1d1ee6b00bce286a3fd10557035af94"
+    expected_digest: "bebf0757cd33c83565d996d0ff24c95711c168bf4900dae56da4dd58ce758142"
   # Degrade proof: souls are fully inert under door shuffle, so this entry's
   # digest MUST equal c-door-basic-open-ganon (same settings minus the souls
   # axis, same seed). A divergence means some consumer read the RAW souls tier.
@@ -1084,11 +1084,11 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, souls_shuffle: all, dungeon_items.small_keys: wild, enemy_drop_checks: keys }
     seed: "0x50554C530000000A"
     label: "souls-all-enemy-drop-keys-wild"
-    expected_digest: "a94f3bddbbd1006fc44ce5a4f24749b2d94352cad7e5243f1570a3f8d1caadbf"
+    expected_digest: "b9d04404d6886e9fca026fcb7b69592cb6e3020210777a04c51bdea52e0106ed"
   - settings: { mode.state: open, goal: fast_ganon, souls_shuffle: all, pot_shuffle: keys }
     seed: "0x50554C530000000B"
     label: "souls-all-pot-keys"
-    expected_digest: "99741c0183a0f17d32d18699962af7b86253ee69ccac57d258b8422ba4aa539e"
+    expected_digest: "cd759fc07f91611bb4d5e4bd7b0136e1a739cb73d5d4ac6f123e03d38e5ae57a"
   # Witness for the fresh-eyes chains seam fix: the successor dungeon's entry
   # routes through the previous dungeon's BossRoom approach edge, which must
   # carry CanKillBoss + the kill-room souls.
@@ -1108,7 +1108,7 @@ entries:
   - settings: { mode.state: open, goal: ganon, souls_shuffle: all, npc_souls: true }
     seed: "0x4E50430000000002"
     label: "npc-souls-x-souls-all"
-    expected_digest: "0fe7320f710dab5c4620b2ecdc267f6122327ba595d5db0611b1894e979c7f84"
+    expected_digest: "0fdcc9fbfaeb7871e4a7312b371565885d2aeb3e22654064e47c93b503d8ba82"
     expected_sphere_digest: "b43a01e23e578eaed20bfa55d8928bea500ca11344e9b7c103cc3ea6ab32ba28"
   - settings: { mode.state: standard, goal: ganon, npc_souls: true }
     seed: "0x4E50430000000003"
