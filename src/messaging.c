@@ -215,6 +215,12 @@ static uint16 Text_EffectiveWaitDuration(uint8 wait_index) {
 }
 
 static uint8 Text_EffectiveInputLatch(void) {
+  // The below-requirement Ganon warning appears automatically as combat starts.
+  // Instant text's one-frame latch makes ordinary attack-button mashing dismiss
+  // this essential rule explanation before it can be read. Keep instant drawing,
+  // but give this one message the vanilla half-second input debounce.
+  if (dialogue_message_index == 0x16f && !Rando_HasRequiredGanonCrystals())
+    return 28;
   if (Text_ShouldFastForwardStoryDialog() || Text_InstantModeEnabled())
     return 1;
   if (Text_FastModeEnabled())
