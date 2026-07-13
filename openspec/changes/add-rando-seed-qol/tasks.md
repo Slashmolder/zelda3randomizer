@@ -103,8 +103,9 @@ header-dep tracking → `make clean` after any `features.h`/`config.h` edit).
   exposed stale Light-World background graphics: the accelerator advanced multiple
   NMI-dependent mirror stages in one host frame, so later stages replaced the single
   queued DMA command. The scheduler now stops accelerated stepping as soon as any
-  NMI/core-update work is queued; build + subsystem self-tests pass, and the same
-  cross-world warp is pending owner retest. -->
+  NMI/core-update work is queued; build + subsystem self-tests pass. Owner retest
+  passed: the Open-seed Death-Mountain warp arrives with intact Dark-World graphics
+  and no residual return pad (Mirror / Save & Quit remain the intended return). -->
 
 ## 5. F5 — Quick reset / warp-to-spawn (race-toggleable) — D6
 
