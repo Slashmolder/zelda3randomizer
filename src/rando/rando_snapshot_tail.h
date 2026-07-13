@@ -74,12 +74,20 @@
 // add-enemy-souls — soul ownership bitfield for cold replay. Self-contained
 // (like DoorLayout/ChainLayout): absent → zero souls owned, the safe default.
 #define kRandoSnapshotTail_Type_Souls 8u
+// Accepted entrance-shuffle layout identity (axes + attempt + digest24). The
+// permutation is regenerated from (share_string seed, axes, attempt,
+// world_state) on replay and must match the digest before the door overlay is
+// installed — the DoorLayout pattern. A COLD replay of an entrance-shuffled
+// seed whose snapshot lacks this TLV fails CLOSED (older snapshots predate
+// it; silently replaying with vanilla entrances would desync the certified
+// placement). Warm same-slot replays keep the activation-installed layout.
+#define kRandoSnapshotTail_Type_EntranceLayout 9u
 
 // Upper bound on a single TLV payload's claimed length. The largest legal
 // payload is the RandoState body (52 + kRandoLocationCapacity*2 bytes); the
 // loader rejects any TLV claiming more than this before seeking, so an
 // untrusted/corrupt length can't drive a negative (LLP64) or wild fseek. The
-// 0x10000 ceiling stays generous headroom over the 2048-location maximum.
+// 0x10000 ceiling still clears the 8192-location capacity's 16436-byte body.
 #define kRandoSnapshotTail_MaxPayloadBytes 0x10000u
 
 // ---------------------------------------------------------------------------
@@ -115,6 +123,11 @@ void Rando_SetSnapshotDoorContext(uint8 door_attempt, uint32 door_digest24,
 // Optional dungeon-chain layout identity for snapshot replay.
 void Rando_SetSnapshotChainsContext(uint8 chains_attempt, uint32 chains_digest24,
                                     bool present);
+
+// Optional entrance-shuffle layout identity for snapshot replay.
+void Rando_SetSnapshotEntranceContext(uint8 entrance_axes,
+                                      uint8 entrance_attempt,
+                                      uint32 entrance_digest24, bool present);
 
 // Optional per-slot Seed QoL feature snapshot for snapshot replay.
 // `present=false` suppresses the type-4 TLV; `present=true` stores features0

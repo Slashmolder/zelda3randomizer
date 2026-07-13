@@ -16,7 +16,7 @@
 // kGeneratorVersion — bumped per tasks.md §13.6 whenever placement output
 // could change. The bump triggers regression-corpus regeneration.
 // ---------------------------------------------------------------------------
-#define kGeneratorVersion 140u  // fix GT miniboss physical runtime-room identities
+#define kGeneratorVersion 141u  // audit fixes: Inverted Link's House pot rebind; terrain gate fixes; outdoor trap flags; door collect-model key single-count; wild enemy-key caps
 // The share-string binary layout packs version into 1 byte
 // (rando_share.h: ShareString.version is uint8). Compile-time enforce
 // kGeneratorVersion ≤ 255 so silent truncation can't ship.
@@ -75,6 +75,17 @@ uint32 Rando_CurrentTerrainRegistryDigest(void);
 uint16 Rando_CurrentTerrainRegistryCount(void);
 bool Rando_SettingsNeedTerrainRegistry(const RandoSettings *settings);
 bool Rando_TerrainRegistryMatches(uint32 digest, uint16 count);
+
+// Enemy-check registry identity (activation guard, same shape as pot/terrain
+// above). Covers all four enemy_check_lookup.h domains (dungeon/overworld/
+// boss/scripted) — enemy-check location ids are table-derived from local
+// artifacts, so a dungeon/all-tier slot must prove the binary carries the
+// SAME registry; generator_version alone misses same-version drift. The Keys
+// tier's forced-drop registry stays under the version-drift refusal.
+uint32 Rando_CurrentEnemyCheckRegistryDigest(void);
+uint16 Rando_CurrentEnemyCheckRegistryCount(void);
+bool Rando_SettingsNeedEnemyCheckRegistry(const RandoSettings *settings);
+bool Rando_EnemyCheckRegistryMatches(uint32 digest, uint16 count);
 
 // Stamp EVERY local-registry identity a slot's activation guard checks (pot +
 // terrain + ...). ALL slot-writers MUST call this instead of setting the
@@ -1089,8 +1100,11 @@ void Rando_ClearDeferredPotConfirmation(void);
 // recovered canonical settings, the raw 32-byte share string (→ base seed) and
 // the accepted prize_attempt. GATED: a no-op when a slot is already validly
 // active (within-session replay); fires only on a genuine cold replay (fresh
-// launch, slot never loaded). Called by RandoSnapshotTail_Load.
-void Rando_SnapshotColdReplayRestore(const RandoSettings *s,
+// launch, slot never loaded). Called by RandoSnapshotTail_Load. Returns true
+// when the cold path actually superseded process state (the caller then arms
+// the fail-closed entrance-layout pending check); false on the warm same-slot
+// early-return.
+bool Rando_SnapshotColdReplayRestore(const RandoSettings *s,
                                      const uint8 *share_string_raw,
                                      uint8 prize_attempt);
 void Rando_ClearSnapshotDoorReplayRestore(void);
@@ -1103,6 +1117,20 @@ bool Rando_SnapshotChainsReplayRestore(const RandoSettings *s,
                                        const uint8 *share_string_raw,
                                        uint8 chains_attempt,
                                        uint32 chains_digest24);
+// True when `s` activates any entrance-shuffle mode (cave/dungeon/GT/cross,
+// coupled or decoupled) — the axes whose permutation Entrance_RuntimeInstall
+// installs. Used to arm the cold-replay fail-closed entrance check.
+bool Rando_SettingsHaveEntranceShuffle(const RandoSettings *s);
+// Entrance analogue of Rando_SnapshotDoorReplayRestore: regenerate the
+// entrance layout from (share seed, axes, attempt, world_state), verify it
+// against the persisted digest24 (fail-closed; digest 0 = legacy pre-digest
+// slot, install with warn-only version drift), then install the door overlay
+// + logic overrides. Returns false (and deactivates) on drift.
+bool Rando_SnapshotEntranceReplayRestore(const RandoSettings *s,
+                                         const uint8 *share_string_raw,
+                                         uint8 entrance_axes,
+                                         uint8 entrance_attempt,
+                                         uint32 entrance_digest24);
 
 // ---------------------------------------------------------------------------
 // Rando_DrawHashIcons (tasks.md §9.4b — 5-icon visual hash widget).

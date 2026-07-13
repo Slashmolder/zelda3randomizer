@@ -1077,15 +1077,23 @@ int Spoiler_ReadSuppressed(const char *path, RandoSuppressedSpoiler *out) {
   size_t got = fread(buf, 1, sizeof(buf), f);
   fclose(f);
   enum {
-    kLegacyZrsrSize138 = 138,
+    kLegacyZrsrSize138 = 138,   // 28-canonical era
     kLegacyZrsrSettingsLen28 = 28,
     kLegacyZrsrCrcOffset134 = 134,
+    kLegacyZrsrSize139 = 139,   // 29-canonical era (pre-terrain byte [29])
+    kLegacyZrsrSettingsLen29 = 29,
+    kLegacyZrsrCrcOffset135 = 135,
   };
   bool legacy138 = (got == kLegacyZrsrSize138);
-  if (got != sizeof(buf) && !legacy138) return -2;
+  bool legacy139 = (got == kLegacyZrsrSize139);
+  // Legacy sizes parse far enough that the caller classifies them by
+  // generator_version (kRandoReveal_VersionMismatch), not as malformed.
+  if (got != sizeof(buf) && !legacy138 && !legacy139) return -2;
   if (memcmp(buf, kRandoSuppressedSpoilerMagic, 4) != 0) return -2;
 
-  uint32 crc_offset = legacy138 ? kLegacyZrsrCrcOffset134 : kRandoSuppressedSpoilerCrcOffset;
+  uint32 crc_offset = legacy138 ? kLegacyZrsrCrcOffset134
+                    : legacy139 ? kLegacyZrsrCrcOffset135
+                                : kRandoSuppressedSpoilerCrcOffset;
   uint32 disk_crc = read_u32_le(buf + crc_offset);
   uint32 calc_crc = crc32_ieee(buf, crc_offset);
   if (disk_crc != calc_crc) return -3;
@@ -1096,10 +1104,12 @@ int Spoiler_ReadSuppressed(const char *path, RandoSuppressedSpoiler *out) {
   out->share_string_len = read_u32_le(buf + 38);
   if (out->share_string_len > kRandoSuppressedSpoilerShareStringMax) return -2;
   memcpy(out->share_string, buf + 42, kRandoSuppressedSpoilerShareStringMax);
-  if (legacy138) {
-    memcpy(out->settings_canonical, buf + 106, kLegacyZrsrSettingsLen28);
-    memset(out->settings_canonical + kLegacyZrsrSettingsLen28, 0,
-           kRandoSuppressedSpoilerSettingsLen - kLegacyZrsrSettingsLen28);
+  if (legacy138 || legacy139) {
+    uint32 legacy_len =
+        legacy138 ? kLegacyZrsrSettingsLen28 : kLegacyZrsrSettingsLen29;
+    memcpy(out->settings_canonical, buf + 106, legacy_len);
+    memset(out->settings_canonical + legacy_len, 0,
+           kRandoSuppressedSpoilerSettingsLen - legacy_len);
   } else {
     memcpy(out->settings_canonical, buf + 106, kRandoSuppressedSpoilerSettingsLen);
   }

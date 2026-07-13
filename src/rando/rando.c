@@ -36,6 +36,7 @@
 #include "chest_lookup.h"  // (room, ordinal) -> LOC_*; §6.3 codegen
 #include "pot_lookup.h"    // (room, pos4) -> LOC_*; add-rando-pot-sanity runtime
 #include "terrain_lookup.h"  // (screen, pos) -> LOC_*; add-rando-grass-rock-shuffle
+#include "enemy_check_lookup.h"  // kRandoEnemyCheckRegistryDigest/Count (activation guard)
 #include "direct_grant_icons.h"  // kDirectGrantIcons[] (Phase B Slice 9)
 #include "rando_hints.h"  // Rando_ClearHints (Phase B Slice 5)
 #include "rando_dialogue.h"  // randomized reward-aware NPC text
@@ -107,12 +108,34 @@ bool Rando_TerrainRegistryMatches(uint32 digest, uint16 count) {
          count == (uint16)kRandoTerrainRegistryCount;
 }
 
+// Enemy-check registry identity (same guard shape). Enemy-check location ids
+// bind to generated lookup rows (enemy_checks.gen.yaml), so generator_version
+// alone fail-opens on same-version registry drift — this digest closes that.
+uint32 Rando_CurrentEnemyCheckRegistryDigest(void) {
+  return kRandoEnemyCheckRegistryDigest;
+}
+
+uint16 Rando_CurrentEnemyCheckRegistryCount(void) {
+  return (uint16)kRandoEnemyCheckRegistryCount;
+}
+
+bool Rando_SettingsNeedEnemyCheckRegistry(const RandoSettings *settings) {
+  // The Dungeon/All tiers consult the enemy_check_lookup tables; the Keys
+  // tier reads only the forced-drop registry (version-drift-guarded).
+  return Settings_EnemyChecksDungeonActive(settings);
+}
+
+bool Rando_EnemyCheckRegistryMatches(uint32 digest, uint16 count) {
+  return digest == kRandoEnemyCheckRegistryDigest &&
+         count == (uint16)kRandoEnemyCheckRegistryCount;
+}
+
 // Stamp EVERY local-registry identity a slot's activation guard checks (pot,
-// terrain, ...). Single source so no slot-writer path can stamp one registry
-// and forget another — the fresh-eyes review found exactly that drift: the
-// player-facing Rando_GenerateSlot stamped pots but not terrain, so every
-// terrain slot self-refused while the corpus/selftest (which DID stamp both)
-// stayed green. Route all slot-writers through this.
+// terrain, enemy-check, ...). Single source so no slot-writer path can stamp
+// one registry and forget another — the fresh-eyes review found exactly that
+// drift: the player-facing Rando_GenerateSlot stamped pots but not terrain, so
+// every terrain slot self-refused while the corpus/selftest (which DID stamp
+// both) stayed green. Route all slot-writers through this.
 void Rando_StampSlotRegistries(RandoSlotHeader *h) {
   if (h == NULL) return;
   h->pot_registry_digest = Rando_CurrentPotRegistryDigest();
@@ -121,6 +144,9 @@ void Rando_StampSlotRegistries(RandoSlotHeader *h) {
   h->terrain_registry_digest = Rando_CurrentTerrainRegistryDigest();
   h->terrain_registry_count = Rando_CurrentTerrainRegistryCount();
   h->terrain_registry_present = 1;
+  h->enemy_check_registry_digest = Rando_CurrentEnemyCheckRegistryDigest();
+  h->enemy_check_registry_count = Rando_CurrentEnemyCheckRegistryCount();
+  h->enemy_check_registry_present = 1;
 }
 
 static bool rando_instant_flute_active(void);
@@ -1008,7 +1034,11 @@ static void rando_trap_effect_onset(uint8 effect) {
       for (uint8 m = 0; m < want; m++) {
         SpriteSpawnInfo info;
         int j = Sprite_SpawnDynamically(0, ok_types[m % n_ok], &info);
-        if (j < 0) break;  // sprite table full
+        // Sprite_SpawnDynamically also returns -1 for a soul-suppressed
+        // species (Souls_SpriteAllowed), not just a full sprite table — try
+        // the next ring candidate instead of fizzling the whole ring on the
+        // first un-owned soul. No owned/loadable species still spawns nothing.
+        if (j < 0) continue;
         sprite_floor[j] = link_is_on_lower_level;
         Sprite_SetX(j, (uint16)(link_x_coord + kRingDX[m & 3]));
         Sprite_SetY(j, (uint16)(link_y_coord + kRingDY[m & 3]));
@@ -2320,6 +2350,31 @@ static void rando_pot_quiet_receive_impl(uint8 lttp_code, uint16 item_id, bool s
       Palette_Load_LinkArmorAndGloves();
       break;
     default: break;
+  }
+  // Sword/shield gfx + palette side-loads, mirroring the vanilla receipt
+  // (AncillaAdd_ItemReceipt keys them on kReceiveItemGfx) — without these a
+  // sword/shield collected from a pot/bush/rock/enemy renders the OLD tier
+  // until the next full gear reload. Safe to call here: both Decompress*
+  // functions expand into the 0x9000 gear staging and the Palette_Load_*
+  // functions bump flag_update_cgram_in_nmi, the same mid-logic phase the
+  // vanilla receipt calls them from, and they read link_sword_type /
+  // link_shield_type AFTER the grant above. Code 0 (GiveSwordAndShield — a
+  // tier-0 ProgressiveSword lands here via progressive_to_lttp) writes BOTH
+  // gear bytes, so it takes both loads; the vanilla receipt's j != 0 sword
+  // exclusion relies on the Uncle sequence's own gear reload, which this
+  // quiet path has no equivalent of. (lttp_code < 76 is implied by the
+  // GrantInventory success above.)
+  {
+    uint8 gear_gfx = kReceiveItemGfx[lttp_code];
+    if (gear_gfx == 0x20 || gear_gfx == 0x2d || gear_gfx == 0x2e ||
+        lttp_code == 0) {
+      DecompressShieldGraphics();
+      Palette_Load_Shield();
+    }
+    if (gear_gfx == 6 || gear_gfx == 0x18) {
+      DecompressSwordGraphics();
+      Palette_Load_Sword();
+    }
   }
   rando_pot_restore_carry_state(&carry);  // undo receipt-side lift/carry mutations
   if (show_confirmation)
@@ -4038,10 +4093,10 @@ static void install_active_shuffles(const RandoSettings *s, uint64 base_seed,
 // fires under it.) The caller restores the 4 process-static ownership bytes
 // unconditionally — that is separate, time-varying snapshot state this function
 // does not touch.
-void Rando_SnapshotColdReplayRestore(const RandoSettings *s,
+bool Rando_SnapshotColdReplayRestore(const RandoSettings *s,
                                      const uint8 *share_string_raw,
                                      uint8 prize_attempt) {
-  if (s == NULL || share_string_raw == NULL) return;
+  if (s == NULL || share_string_raw == NULL) return false;
   bool preserve_active_header =
       g_rando_active_header_valid &&
       !g_rando_settings_from_cold_replay &&
@@ -4049,7 +4104,7 @@ void Rando_SnapshotColdReplayRestore(const RandoSettings *s,
   // Protect a GENUINE active slot only when the replayed snapshot belongs to
   // that same seed. A different snapshot seed must replace the process state.
   if (g_rando_active_settings_valid && preserve_active_header) {
-    return;
+    return false;
   }
   Rando_ClearDeferredPotConfirmation();
 
@@ -4057,6 +4112,13 @@ void Rando_SnapshotColdReplayRestore(const RandoSettings *s,
     g_rando_active_header_valid = false;
     g_rando_active_door_logic = false;
     rando_clear_chains_layout_runtime();
+    // The entrance-shuffle overlay is process state installed from the
+    // superseded header — tear it down so a cold replay never keeps a
+    // DIFFERENT seed's permutation. A type-9 EntranceLayout TLV reinstalls
+    // this snapshot's verified layout right after (older entrance-shuffled
+    // snapshots lack it and the loader then fails CLOSED via the pending
+    // check instead of playing with vanilla entrances).
+    Entrance_RuntimeTeardown();
   }
   g_rando_active_settings = *s;
   g_rando_active_world_state = s->world_state;
@@ -4077,6 +4139,7 @@ void Rando_SnapshotColdReplayRestore(const RandoSettings *s,
   // JP-glitch coupling (mirror activation D6): a glitch-logic seed forces the
   // JP-glitch runtime flag so the replayed frames reproduce the assumed glitches.
   Rando_ApplyActiveForcedFeatures0();
+  return true;
 }
 
 void Rando_ClearSnapshotDoorReplayRestore(void) {
@@ -4145,6 +4208,83 @@ bool Rando_SnapshotChainsReplayRestore(const RandoSettings *s,
   g_rando_active_header.chains_present = 1;
   g_rando_active_header.chains_attempt = chains_attempt;
   g_rando_active_header.chains_digest24 = chains_digest24 & 0xFFFFFFu;
+  g_rando_active_header_valid = true;
+  g_reachability_state_counter++;
+  return true;
+}
+
+bool Rando_SettingsHaveEntranceShuffle(const RandoSettings *s) {
+  if (s == NULL) return false;
+  // The same mode predicates Entrance_ComputeLayout evaluates: if any is
+  // active, Entrance_RuntimeInstall installs a permutation for this seed.
+  return Entrance_IsCrossActive(s) || Entrance_IsActive(s) ||
+         Entrance_IsDungeonActive(s) || Entrance_IsDecoupledActive(s) ||
+         Entrance_IsDungeonDecoupledActive(s) ||
+         Entrance_IsCrossDecoupledActive(s);
+}
+
+// Entrance analogue of Rando_SnapshotDoorReplayRestore. Rebuild the
+// slot-header fields Entrance_ComputeLayout reads (axes @71, attempt @72,
+// world_state, share seed) from the snapshot-carried identity, verify the
+// regenerated layout against the persisted digest24 (the same FIX #4 gate
+// Rando_ActivateSidecarSlot applies — a drifted permutation can make the
+// certified-beatable placement unbeatable), then install the door overlay +
+// logic overrides. digest24 == 0 is a legacy pre-digest slot: install with
+// Entrance_RuntimeInstall's warn-only version-drift path, matching
+// activation. Chains and door shuffle are settings-excluded from entrance
+// axes, so overwriting the replay header here can't drop their fields.
+bool Rando_SnapshotEntranceReplayRestore(const RandoSettings *s,
+                                         const uint8 *share_string_raw,
+                                         uint8 entrance_axes,
+                                         uint8 entrance_attempt,
+                                         uint32 entrance_digest24) {
+  if (s == NULL || share_string_raw == NULL) return false;
+  Rando_ClearDeferredPotConfirmation();
+  // Warm same-slot replay: the activation header (with its full registry
+  // stamps / goal / prize fields) is still live and already describes this
+  // exact entrance layout, and the overlay was never torn down — keep both
+  // instead of reinstalling and rebuilding the sparse replay-only header.
+  if (g_rando_active_header_valid &&
+      !memcmp(g_rando_active_header.share_string, share_string_raw, 32) &&
+      g_rando_active_header.entrance_axes == entrance_axes &&
+      g_rando_active_header.entrance_attempt == entrance_attempt &&
+      (g_rando_active_header.entrance_digest24 & 0xFFFFFFu) ==
+          (entrance_digest24 & 0xFFFFFFu)) {
+    return true;
+  }
+  RandoSlotHeader synth;
+  memset(&synth, 0, sizeof(synth));
+  memcpy(synth.share_string, share_string_raw, 32);
+  synth.generator_version = Rando_GetSnapshotGeneratorVersion();
+  synth.entrance_axes = entrance_axes;
+  synth.entrance_attempt = entrance_attempt;
+  synth.entrance_digest24 = entrance_digest24 & 0xFFFFFFu;
+  synth.settings_ext_present = 1;
+  synth.world_state = s->world_state;
+  if (synth.entrance_digest24 != 0) {
+    uint32 edigest = Rando_EntranceLayoutDigest24(&synth);
+    if (edigest != synth.entrance_digest24) {
+      fprintf(stderr,
+              "Rando: entrance-shuffle layout drift on snapshot replay "
+              "(regen digest %06x != snapshot %06x) — deactivating "
+              "randomizer state\n",
+              (unsigned)edigest, (unsigned)synth.entrance_digest24);
+      Rando_DeactivateSlot();
+      return false;
+    }
+  }
+  Entrance_RuntimeInstall(&synth);
+  memset(&g_rando_active_header, 0, sizeof(g_rando_active_header));
+  memcpy(g_rando_active_header.share_string, share_string_raw, 32);
+  g_rando_active_header.generator_version = synth.generator_version;
+  g_rando_active_header.entrance_axes = entrance_axes;
+  g_rando_active_header.entrance_attempt = entrance_attempt;
+  g_rando_active_header.entrance_digest24 = synth.entrance_digest24;
+  // world_state rides the header so Rando_ReinstallActiveSlotLogicOverlays
+  // recomputes the SAME layout (Entrance_ComputeLayout keys Inverted/Retro
+  // guards off it).
+  g_rando_active_header.settings_ext_present = 1;
+  g_rando_active_header.world_state = synth.world_state;
   g_rando_active_header_valid = true;
   g_reachability_state_counter++;
   return true;
@@ -4268,6 +4408,33 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
       return;
     }
   }
+  // Enemy-check registry guard, same shape as pot/terrain above: enemy-check
+  // location ids are table-derived from local artifacts, so a dungeon/all-tier
+  // slot must prove this binary carries the SAME registry — the version-drift
+  // refusal earlier misses same-generator-version drift. present == 0 (a
+  // pre-v9 sidecar) fails CLOSED: enemy-check slots predate the identity
+  // field, and silently activating one against a drifted registry is exactly
+  // the fail-open this closes (regenerate the seed on this build). An EMPTY
+  // build registry (count 0) can never honor such a slot either.
+  if (slot_settings_valid &&
+      Rando_SettingsNeedEnemyCheckRegistry(&slot_settings)) {
+    if (!src->header.enemy_check_registry_present ||
+        Rando_CurrentEnemyCheckRegistryCount() == 0 ||
+        !Rando_EnemyCheckRegistryMatches(
+            src->header.enemy_check_registry_digest,
+            src->header.enemy_check_registry_count)) {
+      fprintf(stderr,
+              "Rando: enemy-check registry drift or missing registry identity "
+              "(slot count=%u digest=%08x, build count=%u digest=%08x) "
+              "— refusing to activate this slot on this build\n",
+              (unsigned)src->header.enemy_check_registry_count,
+              (unsigned)src->header.enemy_check_registry_digest,
+              (unsigned)Rando_CurrentEnemyCheckRegistryCount(),
+              (unsigned)Rando_CurrentEnemyCheckRegistryDigest());
+      Rando_DeactivateSlot();
+      return;
+    }
+  }
   // add-rando-door-shuffle — regenerate the door layout BEFORE installing any
   // slot state. The layout is not serialized; it regenerates from
   // (seed, settings, door_attempt @76). Drift HARD-FAILS: a regenerated
@@ -4382,6 +4549,14 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   Rando_SetSnapshotChainsContext(src->header.chains_attempt,
                                  src->header.chains_digest24,
                                  chains_active);
+  // Entrance-shuffle layout identity for the type-9 TLV, so a cold replay can
+  // regenerate + digest-verify + reinstall the permutation the way door/chain
+  // snapshots do. entrance_digest24 may be 0 on a legacy pre-digest slot —
+  // still emitted; replay then takes the warn-only install path.
+  Rando_SetSnapshotEntranceContext(src->header.entrance_axes,
+                                   src->header.entrance_attempt,
+                                   src->header.entrance_digest24,
+                                   src->header.entrance_axes != 0);
   Rando_SetSnapshotRecommendedFeaturesContext(
       src->header.recommended_features0,
       src->header.recommended_features0_present != 0);
@@ -8101,6 +8276,7 @@ static void Rando_SelfCheckCapacityABI(void) {
     { "auto_tracker.c",       RandoCapacityProbe_auto_tracker },
     { "rando_generate.c",     RandoCapacityProbe_rando_generate },
     { "rando_hints.c",        RandoCapacityProbe_rando_hints },
+    { "rando_logic.c",        RandoCapacityProbe_rando_logic },
     { "rando_placement.c",    RandoCapacityProbe_rando_placement },
     { "rando_save.c",         RandoCapacityProbe_rando_save },
     { "rando_snapshot_tail.c", RandoCapacityProbe_rando_snapshot_tail },

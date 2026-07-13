@@ -26,7 +26,7 @@
 //   6+len   8             seed_u64 (little-endian)
 //   14+len  2             checksum (CRC-16-CCITT-FALSE over all prior bytes, LE)
 //   = 16+settings_len bytes -> ceil((16+settings_len)*8/5) base32 chars
-//   (45 bytes -> exactly 72 chars at the current kSettingsCanonicalLen 29).
+//   (46 bytes -> exactly 74 chars at the current kSettingsCanonicalLen 30).
 //   settings_hash is NOT embedded — decoders that need it recompute it from
 //   the canonical bytes (Settings_CanonicalDeserialize + Settings_HashShort).
 //   A v2 string restores settings AND seed.

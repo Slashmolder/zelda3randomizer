@@ -54,6 +54,19 @@
 //     origin_exit_room[2] LE  optional
 //     terminal_dungeon[1]     optional
 //
+// Entrance-shuffle snapshots append a layout-identity TLV (DoorLayout's
+// pattern; the permutation regenerates from seed/axes/attempt/world_state and
+// must match the digest before install — a cold replay without this TLV
+// fails closed rather than playing with vanilla entrances):
+//
+//   type[4]   LE             = 9 (TAIL_ENTRANCE_LAYOUT)
+//   length[4] LE             = 6
+//   payload:
+//     format_version[1]      = 1
+//     entrance_axes[1]         (packed kEntranceAxis_* byte, slot header @71)
+//     entrance_attempt[1]      (accepted goal-retry attempt, slot header @72)
+//     entrance_digest24[3] LE  (Rando_EntranceLayoutDigest24; 0 = legacy)
+//
 // Another optional TLV carries per-slot Seed QoL features for snapshot replay:
 //
 //   type[4]   LE             = 4 (TAIL_RECOMMENDED_FEATURES)
@@ -68,9 +81,12 @@
 // placement table. A v1/no-blob slot emits no type-2 TLV (settings absent), so
 // the cold replay degrades to placement-only.
 //
-// Pot-shuffle snapshots append a registry-identity TLV before settings:
-//   type=6, length=7, payload format[1]=1 + digest[4] LE + count[2] LE.
-// Cold replay validates this before applying settings-derived pot state.
+// Settings-bearing snapshots append a registry-identity TLV before settings:
+//   type=6, payload format[1] + pot digest[4] LE + pot count[2] LE
+//   (v2 appends terrain digest[4] + count[2] = 13 bytes; v3 appends
+//   enemy-check digest[4] + count[2] = 19 bytes).
+// Cold replay validates the identities a snapshot's settings make
+// load-bearing before applying settings-derived state.
 //
 // Multi-byte fields are emitted/consumed via explicit LE byte helpers (no
 // host-endianness reliance) — per the same discipline as rando_save.c.
@@ -144,6 +160,10 @@ static bool g_has_door_ctx = false;
 static uint8 g_ctx_chains_attempt = 0;
 static uint32 g_ctx_chains_digest24 = 0;
 static bool g_has_chains_ctx = false;
+static uint8 g_ctx_entrance_axes = 0;
+static uint8 g_ctx_entrance_attempt = 0;
+static uint32 g_ctx_entrance_digest24 = 0;
+static bool g_has_entrance_ctx = false;
 static uint32 g_ctx_recommended_features0 = 0;
 static bool g_has_recommended_features_ctx = false;
 
@@ -157,6 +177,10 @@ static void Rando_ClearSnapshotOptionalContexts(void) {
   g_ctx_chains_attempt = 0;
   g_ctx_chains_digest24 = 0;
   g_has_chains_ctx = false;
+  g_ctx_entrance_axes = 0;
+  g_ctx_entrance_attempt = 0;
+  g_ctx_entrance_digest24 = 0;
+  g_has_entrance_ctx = false;
   g_ctx_recommended_features0 = 0;
   g_has_recommended_features_ctx = false;
 }
@@ -212,6 +236,22 @@ void Rando_SetSnapshotChainsContext(uint8 chains_attempt, uint32 chains_digest24
   g_ctx_chains_attempt = chains_attempt;
   g_ctx_chains_digest24 = chains_digest24 & 0xFFFFFFu;
   g_has_chains_ctx = true;
+}
+
+void Rando_SetSnapshotEntranceContext(uint8 entrance_axes,
+                                      uint8 entrance_attempt,
+                                      uint32 entrance_digest24, bool present) {
+  if (!present) {
+    g_ctx_entrance_axes = 0;
+    g_ctx_entrance_attempt = 0;
+    g_ctx_entrance_digest24 = 0;
+    g_has_entrance_ctx = false;
+    return;
+  }
+  g_ctx_entrance_axes = entrance_axes;
+  g_ctx_entrance_attempt = entrance_attempt;
+  g_ctx_entrance_digest24 = entrance_digest24 & 0xFFFFFFu;
+  g_has_entrance_ctx = true;
 }
 
 void Rando_SetSnapshotRecommendedFeaturesContext(uint32 features0, bool present) {
@@ -357,16 +397,19 @@ bool RandoSnapshotTail_Save(FILE *f) {
   }
 
   if (g_has_settings_ctx) {
-    // PotRegistry TLV, payload format_version 2: pot identity (v1) followed by
-    // the terrain registry identity (add-rando-grass-rock-shuffle). Extending
-    // this TLV instead of adding a new type keeps the snapshot's TLV COUNT
-    // unchanged, so the round-trip selfchecks' recognized-count asserts stand.
-    uint8 pp[13];
-    pp[0] = 2u;  // format_version 2 = pot + terrain
+    // PotRegistry TLV, payload format_version 3: pot identity (v1) followed by
+    // the terrain registry identity (v2, add-rando-grass-rock-shuffle) and the
+    // enemy-check registry identity (v3). Extending this TLV instead of adding
+    // a new type keeps the snapshot's TLV COUNT unchanged, so the round-trip
+    // selfchecks' recognized-count asserts stand.
+    uint8 pp[19];
+    pp[0] = 3u;  // format_version 3 = pot + terrain + enemy-check
     put_u32le_bytes(pp + 1, Rando_CurrentPotRegistryDigest());
     put_u16le_bytes(pp + 5, Rando_CurrentPotRegistryCount());
     put_u32le_bytes(pp + 7, Rando_CurrentTerrainRegistryDigest());
     put_u16le_bytes(pp + 11, Rando_CurrentTerrainRegistryCount());
+    put_u32le_bytes(pp + 13, Rando_CurrentEnemyCheckRegistryDigest());
+    put_u16le_bytes(pp + 17, Rando_CurrentEnemyCheckRegistryCount());
     uint8 phdr[16];
     memcpy(phdr, kRandoSnapshotTail_Magic, kRandoSnapshotTail_MagicLen);
     put_u32le_bytes(phdr + 8, kRandoSnapshotTail_Type_PotRegistry);
@@ -434,6 +477,21 @@ bool RandoSnapshotTail_Save(FILE *f) {
     if (fwrite(chdr, 1, sizeof(chdr), f) != sizeof(chdr)) return false;
     if (fwrite(cp, 1, sizeof(cp), f) != sizeof(cp)) return false;
   }
+  if (g_has_entrance_ctx) {
+    uint8 ep[6];
+    ep[0] = 1u;  // format_version
+    ep[1] = g_ctx_entrance_axes;
+    ep[2] = g_ctx_entrance_attempt;
+    ep[3] = (uint8)(g_ctx_entrance_digest24 & 0xff);
+    ep[4] = (uint8)((g_ctx_entrance_digest24 >> 8) & 0xff);
+    ep[5] = (uint8)((g_ctx_entrance_digest24 >> 16) & 0xff);
+    uint8 ehdr[16];
+    memcpy(ehdr, kRandoSnapshotTail_Magic, kRandoSnapshotTail_MagicLen);
+    put_u32le_bytes(ehdr + 8, kRandoSnapshotTail_Type_EntranceLayout);
+    put_u32le_bytes(ehdr + 12, (uint32)sizeof(ep));
+    if (fwrite(ehdr, 1, sizeof(ehdr), f) != sizeof(ehdr)) return false;
+    if (fwrite(ep, 1, sizeof(ep), f) != sizeof(ep)) return false;
+  }
   if (g_has_recommended_features_ctx) {
     uint8 fp[5];
     fp[0] = 1u;  // format_version
@@ -487,15 +545,28 @@ int RandoSnapshotTail_Load(FILE *f) {
   int recognized = 0;
   bool pending_door_layout = false;
   bool pending_chain_layout = false;
+  // Armed only when the type-2 restore actually took the COLD path on an
+  // entrance-shuffled seed: the cold restore tore down any stale entrance
+  // overlay, so a valid type-9 EntranceLayout TLV must reinstall it — or the
+  // load fails CLOSED (older entrance snapshots lack the TLV; silently
+  // replaying with vanilla entrances desyncs the certified placement). Warm
+  // same-slot replays keep the activation-installed layout and never arm this.
+  bool pending_entrance_layout = false;
   bool has_pot_registry_ctx = false;
   uint32 pot_registry_digest = 0;
   uint16 pot_registry_count = 0;
   // add-rando-grass-rock-shuffle — terrain registry identity rides the same
-  // PotRegistry TLV (payload format_version 2 appends it), so cold replay
-  // guards a terrain-active snapshot the way the sidecar activation guard does.
+  // PotRegistry TLV (payload format_version >= 2), so cold replay guards a
+  // terrain-active snapshot the way the sidecar activation guard does.
   bool has_terrain_registry_ctx = false;
   uint32 terrain_registry_digest = 0;
   uint16 terrain_registry_count = 0;
+  // Enemy-check registry identity rides the same TLV (payload format_version 3
+  // appends it); pre-v3 snapshots leave it absent and an enemy-check-active
+  // cold replay fails CLOSED below (same posture as the sidecar guard).
+  bool has_enemy_registry_ctx = false;
+  uint32 enemy_registry_digest = 0;
+  uint16 enemy_registry_count = 0;
   bool pending_settings_header_clear = false;
   bool accepted_rando_state = false;
 
@@ -517,6 +588,14 @@ int RandoSnapshotTail_Load(FILE *f) {
               "ChainLayout TLV - deactivating randomizer state\n"); \
       Rando_DeactivateSlot(); \
       pending_chain_layout = false; \
+    } \
+    if (pending_entrance_layout) { \
+      fprintf(stderr, \
+              "RandoSnapshotTail: entrance-shuffle snapshot missing a valid " \
+              "EntranceLayout TLV - refusing the cold replay (re-save the " \
+              "snapshot on a current build) - deactivating randomizer state\n"); \
+      Rando_DeactivateSlot(); \
+      pending_entrance_layout = false; \
     } \
     return recognized; \
   } while (0)
@@ -648,8 +727,12 @@ int RandoSnapshotTail_Load(FILE *f) {
       has_terrain_registry_ctx = false;
       terrain_registry_digest = 0;
       terrain_registry_count = 0;
+      has_enemy_registry_ctx = false;
+      enemy_registry_digest = 0;
+      enemy_registry_count = 0;
       pending_settings_header_clear = true;
       pending_chain_layout = false;
+      pending_entrance_layout = false;
 
       // Reinstall context so future re-saves of this snapshot carry the
       // same metadata.
@@ -673,14 +756,15 @@ int RandoSnapshotTail_Load(FILE *f) {
     if (type == kRandoSnapshotTail_Type_PotRegistry) {
       // Payload v1: format_version[1] + pot_digest[4] + pot_count[2] (7 bytes).
       // Payload v2 (add-rando-grass-rock-shuffle): + terrain_digest[4] +
-      // terrain_count[2] (13 bytes). Read up to 13; v1 snapshots leave the
-      // terrain context absent (so a terrain-active v1 snapshot is refused
-      // below — correct, terrain didn't exist when v1 was written).
+      // terrain_count[2] (13 bytes). Payload v3: + enemy_check_digest[4] +
+      // enemy_check_count[2] (19 bytes). Read up to 19; older snapshots leave
+      // the newer contexts absent (so an axis-active older snapshot is refused
+      // below — fail-closed, same posture as the sidecar activation guard).
       if (length < 7u) {
         if (fseek(f, (long)length, SEEK_CUR) != 0) FINISH_LOAD();
         continue;
       }
-      uint8 pp[13];
+      uint8 pp[19];
       size_t take = length < sizeof(pp) ? (size_t)length : sizeof(pp);
       if (fread(pp, 1, take, f) != take) FINISH_LOAD();
       if (length > take && fseek(f, (long)(length - take), SEEK_CUR) != 0)
@@ -694,6 +778,11 @@ int RandoSnapshotTail_Load(FILE *f) {
         terrain_registry_digest = get_u32le_bytes(pp + 7);
         terrain_registry_count = get_u16le_bytes(pp + 11);
         has_terrain_registry_ctx = true;
+      }
+      if (pp[0] >= 3u && take >= 19u) {
+        enemy_registry_digest = get_u32le_bytes(pp + 13);
+        enemy_registry_count = get_u16le_bytes(pp + 17);
+        has_enemy_registry_ctx = true;
       }
       recognized++;
       continue;
@@ -722,18 +811,32 @@ int RandoSnapshotTail_Load(FILE *f) {
         if (remaining > 0 && fseek(f, remaining, SEEK_CUR) != 0) FINISH_LOAD();
         continue;
       }
-      // Read the canonical settings blob. Forward-compat: a NEWER snapshot may
-      // carry more axes (settings_len > this binary's kSettingsCanonicalLen) —
-      // read what fits (zero-extended), skip the rest (mirrors Share_DecodeV2).
+      // A LONGER blob comes from a newer binary carrying axes this build
+      // doesn't know. Refuse it (mirrors Share_Decode's
+      // kShareDecodeNewerSettings): honoring a prefix would silently drop
+      // the unknown axes and restore the seed under wrong settings. SHORTER
+      // (older) blobs still zero-extend below — zero is the append-only
+      // default for later-added axes.
+      if (settings_len > kSettingsCanonicalLen) {
+        if (fseek(f, (long)settings_len, SEEK_CUR) != 0) FINISH_LOAD();
+        if (accepted_rando_state && g_has_ctx) {
+          fprintf(stderr,
+                  "RandoSnapshotTail: snapshot settings blob carries %u bytes "
+                  "but this build understands %u (snapshot from a newer "
+                  "binary?) - deactivating randomizer state\n",
+                  (unsigned)settings_len, (unsigned)kSettingsCanonicalLen);
+          Rando_DeactivateSlot();
+          pending_door_layout = false;
+          pending_chain_layout = false;
+        }
+        recognized++;
+        continue;
+      }
+      // Read the canonical settings blob (zero-extending an older/shorter one).
       uint8 blob[kSettingsCanonicalLen];
       memset(blob, 0, sizeof(blob));
-      uint32 copy = (settings_len <= kSettingsCanonicalLen) ? settings_len
-                                                            : (uint32)kSettingsCanonicalLen;
+      uint32 copy = settings_len;
       if (copy > 0 && fread(blob, 1, copy, f) != copy) FINISH_LOAD();
-      if (settings_len > copy &&
-          fseek(f, (long)(settings_len - copy), SEEK_CUR) != 0) {
-        FINISH_LOAD();
-      }
       // Everything below is interpreted per format_version 1. An UNKNOWN fmt is a
       // newer writer's payload layout we can't parse — the bytes were already
       // consumed above, so just count the TLV recognized and move on WITHOUT
@@ -793,6 +896,26 @@ int RandoSnapshotTail_Load(FILE *f) {
             recognized++;
             FINISH_LOAD();
           }
+          // Enemy-check registry guard, same shape: an enemy-check-active
+          // snapshot replayed against an absent (pre-v3 TLV / empty build
+          // registry) or drifted enemy-check registry would reinstall stale
+          // enemy-check placement ids unguarded — the sidecar activation
+          // guard's cold-replay equivalent. Fails CLOSED for older snapshots
+          // that predate the identity.
+          if (Rando_SettingsNeedEnemyCheckRegistry(&s) &&
+              (!has_enemy_registry_ctx ||
+               Rando_CurrentEnemyCheckRegistryCount() == 0 ||
+               !Rando_EnemyCheckRegistryMatches(enemy_registry_digest,
+                                                enemy_registry_count))) {
+            fprintf(stderr,
+                    "RandoSnapshotTail: enemy-check registry drift or missing "
+                    "registry identity — deactivating randomizer state\n");
+            Rando_DeactivateSlot();
+            pending_door_layout = false;
+            pending_chain_layout = false;
+            recognized++;
+            FINISH_LOAD();
+          }
           // Restore the 4 process-static ownership bytes — the snapshot-instant
           // runtime grant state (which tier of bow / boomerang / flute-shovel /
           // mushroom the player owns), NOT in g_ram, so neither LoadSnesState nor
@@ -809,9 +932,16 @@ int RandoSnapshotTail_Load(FILE *f) {
           // world_state/Inverted/shuffle reconstruction on its next cold replay.
           // `blob` is already zero-extended to kSettingsCanonicalLen.
           Rando_SetSnapshotSettingsContext(blob, prize_attempt);
-          Rando_SnapshotColdReplayRestore(&s, g_ctx.share_string, prize_attempt);
+          bool cold_restored =
+              Rando_SnapshotColdReplayRestore(&s, g_ctx.share_string, prize_attempt);
           pending_settings_header_clear = false;
           pending_chain_layout = Settings_EffectiveDungeonChains(&s);
+          // Cold restore tore down any stale entrance overlay; an
+          // entrance-shuffled seed must now get its verified layout back from
+          // the type-9 TLV or fail closed. Warm same-slot replays keep the
+          // activation-installed layout (cold_restored == false).
+          pending_entrance_layout =
+              cold_restored && Rando_SettingsHaveEntranceShuffle(&s);
         }
       }
       recognized++;
@@ -839,6 +969,42 @@ int RandoSnapshotTail_Load(FILE *f) {
             if (Rando_SnapshotDoorReplayRestore(&s, g_ctx.share_string,
                                                 door_attempt, door_digest24)) {
               pending_door_layout = false;
+            }
+          }
+        }
+      }
+      recognized++;
+      continue;
+    }
+
+    if (type == kRandoSnapshotTail_Type_EntranceLayout) {
+      // Payload: format_version[1] + entrance_axes[1] + entrance_attempt[1] +
+      // entrance_digest24[3]. Mirrors the DoorLayout flow: regenerate,
+      // digest-verify, install; a successful install clears the fail-closed
+      // pending flag armed by the type-2 cold restore.
+      if (length < 6u) {
+        if (fseek(f, (long)length, SEEK_CUR) != 0) FINISH_LOAD();
+        continue;
+      }
+      uint8 ep[6];
+      if (fread(ep, 1, sizeof(ep), f) != sizeof(ep)) FINISH_LOAD();
+      if (length > sizeof(ep) && fseek(f, (long)(length - sizeof(ep)), SEEK_CUR) != 0)
+        FINISH_LOAD();
+      if (ep[0] == 1u && accepted_rando_state) {
+        uint8 entrance_axes = ep[1];
+        uint8 entrance_attempt = ep[2];
+        uint32 entrance_digest24 =
+            (uint32)ep[3] | ((uint32)ep[4] << 8) | ((uint32)ep[5] << 16);
+        Rando_SetSnapshotEntranceContext(entrance_axes, entrance_attempt,
+                                         entrance_digest24, true);
+        if (g_has_ctx && g_has_settings_ctx && entrance_axes != 0) {
+          RandoSettings s;
+          if (Settings_CanonicalDeserialize(g_ctx_settings_canonical, &s) == 0) {
+            if (Rando_SnapshotEntranceReplayRestore(&s, g_ctx.share_string,
+                                                    entrance_axes,
+                                                    entrance_attempt,
+                                                    entrance_digest24)) {
+              pending_entrance_layout = false;
             }
           }
         }
@@ -1533,8 +1699,10 @@ void RandoSnapshotTail_SelfCheck(void) {
       g_rando_slot_active = 1;
       fseek(fcur, 0, SEEK_SET);
       int ncur = RandoSnapshotTail_Load(fcur);
-      if (ncur != 5)
-        selfcheck_die("type-2 active entrance should parse state + bitmap + pot registry + settings + souls");
+      // 6 TLVs: activation installed the entrance context, so the save also
+      // carries the type-9 EntranceLayout TLV (cold-replay layout identity).
+      if (ncur != 6)
+        selfcheck_die("type-2 active entrance should parse state + bitmap + pot registry + settings + entrance layout + souls");
       if (!Rando_HasActiveSettings())
         selfcheck_die("type-2 active entrance should restore settings");
       Rando_ClearEntranceRegionOverrides();

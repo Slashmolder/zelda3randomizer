@@ -62,7 +62,12 @@
 //       (canonical byte [29] = terrain axes; older blobs zero-extend to Off)
 //       and extends the ext block with the terrain registry identity
 //       (@37-43, mirroring the v4 pot guard). New writes are always v8.
-#define kRandoSidecar_FileFormatVersion 8
+//   9 — extends the ext block with the enemy-check registry identity
+//       (@44-50, same guard shape as pot/terrain). Pre-v9 files zero-extend
+//       to present=0, and activation fails CLOSED for dungeon/all-tier
+//       enemy-check slots (generator_version alone misses same-version
+//       registry drift). New writes are always v9.
+#define kRandoSidecar_FileFormatVersion 9
 #define kRandoSidecar_SlotCount         3       // mirrors sram.dat's 3-slot layout
 #define kRandoSidecar_FileHeaderSize    16
 #define kRandoSidecar_SlotHeaderSize    80
@@ -99,7 +104,13 @@
 //   @41-42  terrain_registry_count (u16 LE)
 //   @43     terrain_registry_present (u8; 1 = refuse terrain-enabled drift)
 #define kRandoSidecar_SlotExtV8Size     44
-#define kRandoSidecar_SlotExtCurrentSize kRandoSidecar_SlotExtV8Size
+// format_version >= 9: enemy-check registry identity (activation guard, same
+// shape as the v4 pot / v8 terrain fields).
+//   @44-47  enemy_check_registry_digest (u32 LE)
+//   @48-49  enemy_check_registry_count (u16 LE)
+//   @50     enemy_check_registry_present (u8; 1 = refuse enemy-check drift)
+#define kRandoSidecar_SlotExtV9Size     51
+#define kRandoSidecar_SlotExtCurrentSize kRandoSidecar_SlotExtV9Size
 
 // Per randomizer-save spec § Slot header: 3-value discriminator.
 // Empty=0 is the all-zeroes default, distinguishable from an explicit
@@ -318,6 +329,15 @@ typedef struct RandoSlotHeader {
   uint32 terrain_registry_digest;  // v8 ext block @37-40
   uint16 terrain_registry_count;   // v8 ext block @41-42
   uint8 terrain_registry_present;  // v8 ext block @43
+  // Enemy-check registry identity (same guard shape). Enemy-check location
+  // ids bind to generated lookup rows (enemy_checks.gen.yaml); the
+  // generator_version drift refusal misses SAME-version registry drift, so a
+  // dungeon/all-tier slot proves the registry identity here. On disk in the
+  // format_version-9 extension block; pre-v9 files read present=0 and
+  // activation fails CLOSED for enemy-check-active slots.
+  uint32 enemy_check_registry_digest;  // v9 ext block @44-47
+  uint16 enemy_check_registry_count;   // v9 ext block @48-49
+  uint8 enemy_check_registry_present;  // v9 ext block @50
 } RandoSlotHeader;
 
 // Bitmap covers placement_table_size / 2 locations.

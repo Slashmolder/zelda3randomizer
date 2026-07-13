@@ -115,6 +115,7 @@ static uint32 settings_blob_len_versioned(uint16 format_version) {
 }
 
 static uint32 slot_ext_len_versioned(uint16 format_version) {
+  if (format_version >= 9) return kRandoSidecar_SlotExtV9Size;
   if (format_version >= 8) return kRandoSidecar_SlotExtV8Size;
   if (format_version >= 7) return kRandoSidecar_SlotExtV7Size;
   if (format_version >= 6) return kRandoSidecar_SlotExtV6Size;
@@ -426,6 +427,12 @@ uint32 RandoSave_SerializeSlot(const RandoSidecarSlot *slot, uint8 *buf, uint32 
     put_u16le(p + 41, slot->header.terrain_registry_count);
     p[43] = 1;
   }
+  // format_version 9: enemy-check registry identity @44-50 (same guard shape).
+  if (slot->header.enemy_check_registry_present) {
+    put_u32le(p + 44, slot->header.enemy_check_registry_digest);
+    put_u16le(p + 48, slot->header.enemy_check_registry_count);
+    p[50] = 1;
+  }
   return size;
 }
 
@@ -552,6 +559,19 @@ static uint32 deserialize_slot_versioned_ext(const uint8 *buf, uint32 buf_size,
       out->header.terrain_registry_count = 0;
       out->header.terrain_registry_present = 0;
     }
+    if (format_version >= 9 && ext_len >= kRandoSidecar_SlotExtV9Size) {
+      // enemy-check registry identity @44-50.
+      out->header.enemy_check_registry_digest = get_u32le(p + 44);
+      out->header.enemy_check_registry_count = get_u16le(p + 48);
+      out->header.enemy_check_registry_present = p[50] != 0;
+    } else {
+      // Pre-v9 file: no enemy-check identity. present=0 makes activation
+      // fail CLOSED for dungeon/all-tier enemy-check slots (unlike terrain,
+      // such slots DO exist pre-v9 — regenerate the seed on this build).
+      out->header.enemy_check_registry_digest = 0;
+      out->header.enemy_check_registry_count = 0;
+      out->header.enemy_check_registry_present = 0;
+    }
   } else {
     // v1/v2 files physically lack the block — digest 0 = "absent", which keeps
     // the legacy warn-only entrance version-drift behavior for old slots.
@@ -569,6 +589,9 @@ static uint32 deserialize_slot_versioned_ext(const uint8 *buf, uint32 buf_size,
     out->header.terrain_registry_digest = 0;
     out->header.terrain_registry_count = 0;
     out->header.terrain_registry_present = 0;
+    out->header.enemy_check_registry_digest = 0;
+    out->header.enemy_check_registry_count = 0;
+    out->header.enemy_check_registry_present = 0;
   }
   return total;
 }
