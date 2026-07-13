@@ -946,6 +946,10 @@ bool Rando_IsActive(void);
 bool Rando_HasActiveSettings(void);
 const RandoSettings *Rando_GetActiveSettings(void);
 const char *Rando_GetActiveShareString(void);
+// Runtime crystal gate. Unknown/v1 settings fail closed to vanilla's seven-
+// crystal requirement. The load hook pre-opens GT for a zero-crystal setting.
+bool Rando_HasRequiredTowerCrystals(void);
+void Rando_ApplyLoadedSaveRuntimeSettings(void);
 void Rando_DungeonCheckCounts(uint8 rando_dungeon, uint16 *checked, uint16 *total);
 
 // Active seed runtime feature overrides. These are NOT global user preferences:

@@ -4854,6 +4854,34 @@ const RandoSettings *Rando_GetActiveSettings(void) {
   return g_rando_active_settings_valid ? &g_rando_active_settings : NULL;
 }
 
+static uint8 rando_count_crystals(void) {
+  uint8 bits = link_has_crystals & 0x7f;
+  uint8 count = 0;
+  while (bits != 0) {
+    count += bits & 1;
+    bits >>= 1;
+  }
+  return count;
+}
+
+bool Rando_HasRequiredTowerCrystals(void) {
+  // Preserve vanilla and old/v1 randomizer slots when the canonical settings
+  // blob is unavailable. Current slots use their independent tower threshold.
+  uint8 required = 7;
+  if (g_rando_slot_active && g_rando_active_settings_valid)
+    required = g_rando_active_settings.crystals_tower;
+  return rando_count_crystals() >= required;
+}
+
+void Rando_ApplyLoadedSaveRuntimeSettings(void) {
+  if (!g_rando_slot_active || !g_rando_active_settings_valid)
+    return;
+  // ALTTPR preOpenGanonsTower: zero-crystal GT starts open rather than playing
+  // a zero-maiden seal-breaking cutscene on first contact.
+  if (g_rando_active_settings.crystals_tower == 0)
+    save_ow_event_info[0x43] |= 0x20;
+}
+
 const char *Rando_GetActiveShareString(void) {
   return g_rando_slot_active ? g_rando_active_share_string : "";
 }
@@ -7981,6 +8009,59 @@ static void Rando_ReinstallOverlaysSelfCheck(void) {
   fprintf(stderr, "[Rando_ReinstallOverlaysSelfCheck] OK\n");
 }
 
+static void Rando_CrystalGateSelfCheck(void) {
+  uint8 saved_slot_active = g_rando_slot_active;
+  bool saved_settings_valid = g_rando_active_settings_valid;
+  RandoSettings saved_settings = g_rando_active_settings;
+  uint8 saved_crystals = link_has_crystals;
+  uint8 saved_event43 = save_ow_event_info[0x43];
+
+  g_rando_slot_active = 0;
+  g_rando_active_settings_valid = false;
+  link_has_crystals = 0;
+  if (Rando_HasRequiredTowerCrystals())
+    tsc_die("CrystalGate: vanilla zero crystals passed");
+  link_has_crystals = 0x7f;
+  if (!Rando_HasRequiredTowerCrystals())
+    tsc_die("CrystalGate: vanilla seven crystals failed");
+
+  g_rando_slot_active = 1;
+  g_rando_active_settings_valid = true;
+  Settings_SetDefaults(&g_rando_active_settings);
+  g_rando_active_settings.crystals_tower = 0;
+  link_has_crystals = 0;
+  if (!Rando_HasRequiredTowerCrystals())
+    tsc_die("CrystalGate: zero-crystal tower requirement failed");
+  save_ow_event_info[0x43] = 0;
+  Rando_ApplyLoadedSaveRuntimeSettings();
+  if (!(save_ow_event_info[0x43] & 0x20))
+    tsc_die("CrystalGate: zero-crystal tower was not pre-opened");
+
+  g_rando_active_settings.crystals_tower = 3;
+  link_has_crystals = 0x03;
+  if (Rando_HasRequiredTowerCrystals())
+    tsc_die("CrystalGate: two crystals passed a three-crystal gate");
+  link_has_crystals = 0x07;
+  if (!Rando_HasRequiredTowerCrystals())
+    tsc_die("CrystalGate: three crystals failed a three-crystal gate");
+  save_ow_event_info[0x43] = 0;
+  Rando_ApplyLoadedSaveRuntimeSettings();
+  if (save_ow_event_info[0x43] & 0x20)
+    tsc_die("CrystalGate: nonzero tower requirement was pre-opened");
+
+  g_rando_active_settings_valid = false;
+  link_has_crystals = 0x07;
+  if (Rando_HasRequiredTowerCrystals())
+    tsc_die("CrystalGate: unknown settings did not fail closed to seven");
+
+  g_rando_slot_active = saved_slot_active;
+  g_rando_active_settings_valid = saved_settings_valid;
+  g_rando_active_settings = saved_settings;
+  link_has_crystals = saved_crystals;
+  save_ow_event_info[0x43] = saved_event43;
+  fprintf(stderr, "[Rando_CrystalGateSelfCheck] OK\n");
+}
+
 // Cross-TU capacity ABI selfcheck (add-rando-grass-rock-shuffle D5; the
 // enemy-drop review lesson made concrete): the Makefile has no header
 // dependency tracking, so a kRandoLocationCapacity bump + incremental `make`
@@ -8023,6 +8104,7 @@ static void Rando_SelfCheckCapacityABI(void) {
 
 void Rando_RunAllSelfChecks(void) {
   Rando_SelfCheckCapacityABI();
+  Rando_CrystalGateSelfCheck();
   Rando_SelfCheck();
   ItemReceipt_FastFanfareSelfCheck();
   if (RandoPot_OverlayOamSelfCheck()) {

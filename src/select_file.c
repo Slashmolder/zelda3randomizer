@@ -687,6 +687,7 @@ void FileSelect_Main() {  // 8ccebd
         srm_var1 = selectfile_R16 * 2 + 2;
         WORD(g_ram[0]) = selectfile_R16 * 0x500;
         CopySaveToWRAM();
+        Rando_ApplyLoadedSaveRuntimeSettings();
       }
     } else if (selectfile_arr1[0] | selectfile_arr1[1] | selectfile_arr1[2]) {
       main_module_index = (selectfile_R16 == 3) ? 2 : 3;
@@ -1485,6 +1486,7 @@ void SelectFile_LoadRandoSlot(int slot_index) {
   srm_var1 = slot_index * 2 + 2;
   WORD(g_ram[0]) = slot_index * 0x500;
   CopySaveToWRAM();
+  Rando_ApplyLoadedSaveRuntimeSettings();
 }
 #endif  // Z3R_NATIVE_SETTINGS_WINDOW
 

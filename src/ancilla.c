@@ -6950,7 +6950,7 @@ void AncillaAdd_WaterfallSplash() {  // 899b68
 
 void AncillaAdd_GTCutscene() {  // 899b83
   if (link_state_bits & 0x80 | link_auxiliary_state ||
-     (link_has_crystals & 0x7f) != 0x7f ||
+     !Rando_HasRequiredTowerCrystals() ||
       save_ow_event_info[0x43] & 0x20)
     return;
 
