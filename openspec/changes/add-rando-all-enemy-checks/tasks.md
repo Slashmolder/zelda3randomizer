@@ -114,7 +114,7 @@
 - [x] 6.2 Run source-audit/codegen freshness checks.
 - [x] 6.3 Run Release build and `--rando-selftest`.
 - [x] 6.4 Run corpus rows for `all` and every supported/degraded interaction.
-- [ ] 6.5 Runtime-test shipped dungeon, reviewed underworld, static overworld,
+- [x] 6.5 Runtime-test shipped dungeon, reviewed underworld, static overworld,
   GT-miniboss, and finite scripted-spawn checks through death, reload, save/load,
   snapshot, and transition cases.
   <!-- owner playtest 2026-07-11: Eastern room 0x0D8 Red Eyegore source slot 8
@@ -171,6 +171,12 @@
   now rejects future runtime/logical alias drift for all three events. The final
   Ice Armos F12 confirmed the full pattern: Arrow1 unchanged at 20, filler zero,
   location 1788 unchecked, and live physical room 0x01C. -->
+  <!-- owner closeout confirmation 2026-07-12: post-fix Red Eyegores randomized
+  correctly; ordinary enemies granted their check once without a duplicate prize and
+  later respawned without a marker or second randomized reward; repeatable scripted
+  Red Stalfos did the same; dungeon bosses retained only their normal prize sequence;
+  and GT Ice Armos, Lanmolas 2, and Moldorm each granted exactly once from their
+  corrected physical runtime room. Lanmolas remained checked across death/refight. -->
 - [x] 6.6 Test thrown-pot kill logic with insufficient and sufficient pot counts
   while pot shuffle is off, plus the pot-sanity guard that disables those branches
   and requires the inventory-combat route while any effective pot tier is active.
