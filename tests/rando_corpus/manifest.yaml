@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 140  # bump_rando_corpus.py --apply - fix GT miniboss runtime rooms
+generator_version: 141  # bump_rando_corpus.py --apply
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -421,8 +421,8 @@ entries:
   - settings: { mode.state: inverted, shuffle_cave_entrances: true, pot_shuffle: all }
     seed: "0x00000000C0FFEE0D"
     label: "c-entrance-caves-inverted-pot-inert-cave"
-    expected_digest: "ba4e391bc6f34fa9b7eadcdb51c45d140d635788d2b0c40747ad11e55c2acf37"
-    expected_sphere_digest: "9aeb9fe4146bc8d2413c4eda57233592316bfd212dc964bced18f570d2c0b566"
+    expected_digest: "09056846b2bbd4b8e73914ef5bf421e5ca146290712c9cf0bcc89692249009da"
+    expected_sphere_digest: "305cbe3044d59e9a4dab39ea165459abad43dd0283f75a20c93bac142794e8eb"
   - settings: { mode.state: retro, shuffle_cave_entrances: true, pot_shuffle: all }
     seed: "0x00000000C0FFEE0E"
     label: "c-entrance-caves-retro-pot-inert-cave"
@@ -851,18 +851,18 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: all, dungeon_items.small_keys: dungeon }
     seed: "0x504F540000000004"
     label: "pot-all-dungeon-keys-open"
-    expected_digest: "67ec886bfeaef41451e9ce4e001a9435a2a1222a375dfd7b1b1bf4874baf43e2"
-    expected_sphere_digest: "074466dc0a4e7810f0636410049411d04dda094a037b488cd573e59cf8bec644"
+    expected_digest: "50e846fc6be63aeb0532774eb775b065c11666538ed3b144d9ab3c751e2d37de"
+    expected_sphere_digest: "30d02c63327d964557e4987d91adbc6c9c7e1715839a38d82ecd156f7dd74dfa"
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: keys, door_shuffle: basic }
     seed: "0x504F540000000005"
     label: "pot-keys-door-basic-open"
-    expected_digest: "e158b64a272e66f0bdf78c56f85ae1526c70128145dffabf042f74f081b83377"
-    expected_sphere_digest: "0625999cf75d5faf9db2d58e515d8206644ddb738299e8df04f5234bb2d12557"
+    expected_digest: "b830eafa5dbfddfbcc115562cdca3b3b1c71ea4a2ea407f0e6430029e96bad71"
+    expected_sphere_digest: "3c302142fa4e81c23f923975cd7feb4c0d8931c2d3cd51c0c9e4e78075e72d79"
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: all, door_shuffle: basic }
     seed: "0x504F54000000000A"
     label: "pot-all-door-basic-open"
-    expected_digest: "66ed1ab11b8c5970ce2cb58ff4a397cfdcf52138a556e6aa3f3698768a0b3286"
-    expected_sphere_digest: "e843006014ae455b770096128c48ee9e550ae19331e4444105e1c1a0efb5931b"
+    expected_digest: "156a9ecffb20eff7d3c03380a8f2892ebf40cb34277ef6d84e90a9260df75e90"
+    expected_sphere_digest: "00decf485936bfbcd4241bdaf1a775df8c6403fdf6dad102754aae56a4420b83"
   - settings: { mode.state: retro, goal: ganon, pot_shuffle: all }
     seed: "0x504F540000000006"
     label: "pot-all-retro-ganon"
@@ -892,8 +892,8 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, pot_shuffle: all, dungeon_items.small_keys: dungeon, accessibility: items }
     seed: "0x504F540000000009"
     label: "pot-all-dungeon-items"
-    expected_digest: "ecee0a8c1aa5594e7c4eda7c5858f2cccc142a303c0a7b16428477c51fb4fb47"
-    expected_sphere_digest: "7e2b630555119dfa03f8b9429b6d0bc1825ba389c31dc9bcd422ea18fa84d7f8"
+    expected_digest: "0aa84bfea5d6abbe4797843bd9942840d79b01e98e08108e57f6ce192d492596"
+    expected_sphere_digest: "a9e61f936d68adbbbd2d579a04a9e63e91f5262deaa40e17961a4a43bc6fb8d0"
 
   # add-rando-enemy-drop-sanity — active Wild/Retro/Dungeon forced enemy-drop
   # checks plus door-shuffle and pot-shuffle bridge coverage. Door shuffle
@@ -912,13 +912,13 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: dungeon, enemy_drop_checks: keys, accessibility: items }
     seed: "0x4544524F50000003"
     label: "enemy-drop-keys-dungeon-items"
-    expected_digest: "28b6c7941ae6988f58c06fb54bd2ebc4b899eecdb21d0b0e9297f7d6199c228f"
-    expected_sphere_digest: "9b89e777ceadd4b6d23130b0c517bb75b873268d52e1a9b14f87545e4319af21"
+    expected_digest: "1c166cc1e152260ad3c804a4948e69ebd723d161d9d8f4167b47f995f8aa7cea"
+    expected_sphere_digest: "77b5f6bc77f3390539487863b6d7dfde23f61336c981f99dc47a7aec30e5e3c1"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, door_shuffle: basic, enemy_drop_checks: keys }
     seed: "0x4544524F50000004"
     label: "enemy-drop-keys-door-basic-active"
-    expected_digest: "29648f23598487188ca9b99aeb126f9be2d68d15a6efcb75dcacfa22fd6ddd6f"
-    expected_sphere_digest: "08a58352e038e8b53c5a7115ba6c8763a53fbe3c58bba2264da6e9a6e295d28d"
+    expected_digest: "df94d480e5fd324dbfbcb914619477282996d98bd8c90bd8b92f5760cda9f440"
+    expected_sphere_digest: "5c2b02de8c1e1a3e2cba8be6b6d00f15e80084e8978b58d61fbfe355ca4cc0d6"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, enemy_shuffle: true, enemy_drop_checks: keys }
     seed: "0x4544524F50000005"
     label: "enemy-drop-keys-enemy-shuffle-active"
@@ -946,18 +946,18 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, enemy_drop_checks: dungeon, accessibility: items }
     seed: "0x45414C4C00000001"
     label: "enemy-drop-dungeon-wild-items"
-    expected_digest: "948a002ad75f589d0cd6657cb874af521657cf5665da04000369c2a425f5e929"
-    expected_sphere_digest: "d1d6ffec465c304e52920f189560948c522dd04e6ff2a7eb56e160e670757087"
+    expected_digest: "d6ece56bd4151d97898efe857e96b2e1a95e712f35010f750fc8223a84e38500"
+    expected_sphere_digest: "c7f3f90f195e89500c6287bfc74f1db42615a3999690312e1ea6d71c4fb5f216"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: dungeon, enemy_drop_checks: dungeon, accessibility: items }
     seed: "0x45414C4C00000002"
     label: "enemy-drop-dungeon-dungeon-items"
-    expected_digest: "f7db0f67456731afce9f6bc3bd03438ecba6a33bb7fb422545a5d3aa1afa62df"
-    expected_sphere_digest: "87c08c5ce9396bc1473de8a67d4b8b76f72657f740ca6a2b2734d2a3583db343"
+    expected_digest: "2fb3a7384c0a390bb6ddc9698e9c2cbe33b3ef7f7a5db90c94abcef9173a473d"
+    expected_sphere_digest: "a894f9eb27c382a41fbab8768747323ca7c82661a1ede56371f7553ddd5ac277"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, door_shuffle: basic, enemy_drop_checks: dungeon }
     seed: "0x45414C4C00000003"
     label: "enemy-drop-dungeon-door-basic-active"
-    expected_digest: "637c0ea34cb07782c054672c5cd1046292cca2a9f0ea99c29b67490b3600fd94"
-    expected_sphere_digest: "9d522c63df836f20e9f57e4289a4800cb5047676a3fee00bb1ac6f74f95dfff6"
+    expected_digest: "d7220e3fab66d12aeb806a0c043a4f4ab6126df279ede2d84c3c03ff42d783a7"
+    expected_sphere_digest: "b43b5be6b3cb1206a077475ccfca0ae3a2ff909d065d0f31f18286e22f6337bd"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, enemy_shuffle: true, enemy_drop_checks: dungeon }
     seed: "0x45414C4C00000004"
     label: "enemy-drop-dungeon-enemy-shuffle-degrades-to-keys"
@@ -973,13 +973,13 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, enemy_drop_checks: all, accessibility: items }
     seed: "0x45414C4C00000005"
     label: "enemy-drop-all-wild-items"
-    expected_digest: "7103d0645bd3ff336f40449f90f9455d350de25173322fa4a0544820b54d43ce"
-    expected_sphere_digest: "223167b2dd8426644198c833549dff19663e3dc1cca46659956e75842c04fa73"
+    expected_digest: "e366be27ee88260dfd5ab922ddef08214e7a3ff8bfdbff87387dd494647c15c7"
+    expected_sphere_digest: "a11fb4bfd674c8e7bf09d0ed11e705fe4f9ec514f780b30cdac54df81513d4b8"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: dungeon, enemy_drop_checks: all, accessibility: items }
     seed: "0x45414C4C00000012"
     label: "enemy-drop-all-dungeon-items"
-    expected_digest: "b3159b932536bac8ecf6ae37308832653c49e426bd205bbb3f79d79bcc72c93a"
-    expected_sphere_digest: "bbab445ce4b7891ff1f927aaff0815d02de85ebf37d8c171cf8401ca5a9b0452"
+    expected_digest: "f31d05422d3e62b56e1cd7d79e8ae4686b13831a87750476dcc90ec61928900a"
+    expected_sphere_digest: "9659dd512f6b030424a3d2dd5c078c5b1e6bf16582aaa3e9afac62159866eb94"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, pot_shuffle: keys, enemy_drop_checks: all, accessibility: items }
     seed: "0x45414C4C00000007"
     label: "enemy-drop-all-pot-keys-wild-items"
@@ -988,8 +988,8 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, door_shuffle: basic, enemy_drop_checks: all }
     seed: "0x45414C4C00000008"
     label: "enemy-drop-all-door-basic-active"
-    expected_digest: "0e70f41701987d9b1faa6ea54195ccdaa41153ceb9ab26531f259244258d3947"
-    expected_sphere_digest: "a57031f7b04c68abae41b3da9f6072e25c20ade8479f81982eaf11bc9c56d4a6"
+    expected_digest: "b0f25f4ca3dc2ecf18ac09709b3c3391496de3307c99a58fe3918e2c2b4c0590"
+    expected_sphere_digest: "ba3b028c03a5fc4d6878c5f557c6e2775ba95d7f6f23cda0bc5983a9e1810abe"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, enemy_shuffle: true, enemy_drop_checks: all }
     seed: "0x45414C4C00000009"
     label: "enemy-drop-all-enemy-shuffle-degrades-to-keys"
@@ -998,13 +998,13 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, boss_shuffle: true, enemy_drop_checks: all }
     seed: "0x45414C4C0000000A"
     label: "enemy-drop-all-boss-shuffle-active"
-    expected_digest: "da537634d9e1b436ff8ee1f56176a78b81dd3805ecb842d408072608983c3303"
-    expected_sphere_digest: "c9a3290852b5c1a1001b004fa55a0393a70c48f1b972d36b8745cfb7f5df247e"
+    expected_digest: "fa147f14859a3a28e4997995b83e7577fb339555b69c7d771bcc496a01a1ebe2"
+    expected_sphere_digest: "35c99bb2381bd5a942a2fbc87e0973d3841ed0c316ae6d84473981e703cb9201"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, shuffle_cave_entrances: true, enemy_drop_checks: all }
     seed: "0x45414C4C0000000B"
     label: "enemy-drop-all-cave-entrance-degrades-to-dungeon"
-    expected_digest: "9e08a2689af14cfa1aac26d96519ef40b97f30cb180aa6cab39dfa9bf0919d17"
-    expected_sphere_digest: "0f8ad390251ef7d4e31c1958ba15157e3f85835ff75e65f92bb0efd2e70de180"
+    expected_digest: "5cc9bbc2dc02cb4258eadd465f185d3400761815b6a233987440909646b82efd"
+    expected_sphere_digest: "a16e79b76bf430300bca64e4901e3103a4a907e1cebb2e61f1cbee202c2a3935"
 
   # dungeon-chains MVP corpus (kGeneratorVersion 113): five seed shapes covering
   # Open/Standard activation, prize shuffle composition, forced dungeon-key
@@ -1057,7 +1057,7 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, souls_shuffle: all, dungeon_items.small_keys: wild, enemy_drop_checks: dungeon }
     seed: "0x50554C5300000005"
     label: "souls-all-enemy-drop-dungeon"
-    expected_digest: "1c2923aeaf1d82bb25733f319804b6fb51a96e27e5599b1243e91a82ab508f40"
+    expected_digest: "6c23ad4a8d43ce0fe6078842b7f6f2cfe40c0b570e3cfe0b8ae3b6f7b7a2d4cf"
   - settings: { mode.state: open, goal: triforce-hunt, pieces_required: 20, pieces_placed: 30, souls_shuffle: bosses, accessibility: none }
     seed: "0x50554C5300000006"
     label: "souls-bosses-hunt-none"
@@ -1167,8 +1167,8 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, grass_shuffle: all, rock_shuffle: all, accessibility: items }
     seed: "0x4752524F434B0003"
     label: "terrain-grass-rock-all"
-    expected_digest: "c535c5854fbd91ee613f366250946ce70a67b2bc78647512a4c996696252e5c6"
-    expected_sphere_digest: "9526617f54db78c5f8534520c06df0b1cbaa83b21813de1b3bef812380e8d6d7"
+    expected_digest: "b4ecb283c9fdece55794d76f29f308cef2b491ffbb0e65793b7f697d6b09507e"
+    expected_sphere_digest: "fe45ddb0691c505137098b611bcaca87fee4c493a1659f684a46abc1abbfded0"
   - settings: { mode.state: retro, goal: ganon, grass_shuffle: all, rock_shuffle: all }
     seed: "0x4752524F434B0004"
     label: "terrain-retro"
@@ -1177,8 +1177,8 @@ entries:
   - settings: { mode.state: inverted, goal: fast_ganon, grass_shuffle: all, rock_shuffle: all, accessibility: items }
     seed: "0x4752524F434B0005"
     label: "terrain-inverted"
-    expected_digest: "6bad6064a5d6d16f28b93a1a92f5c77ba94a662fb45277524f75a776eaa30db2"
-    expected_sphere_digest: "3a379b329bf1d2d486190c2c57070b1f85ab8ca3293c6deb435e2b0c61782296"
+    expected_digest: "6248d2496cda240b1a53bb50cf4480d023f77767e50de7a4f06d6caa8dab5939"
+    expected_sphere_digest: "33ec59c1906b80a00dd900a5875239eb7862c1ba49e6e5b4e0cc68a8ba0ec407"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, door_shuffle: basic, grass_shuffle: all, rock_shuffle: all }
     seed: "0x4752524F434B0006"
     label: "terrain-door-basic-composes"
@@ -1192,8 +1192,8 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, enemy_drop_checks: keys, grass_shuffle: all, rock_shuffle: all }
     seed: "0x4752524F434B0008"
     label: "terrain-enemy-drop"
-    expected_digest: "6e9469b84a6892bd01b8d1f2adedb52eb83c21a13e7e3a0fd3f1334ee544c1b2"
-    expected_sphere_digest: "25080813d254165d9b5b56e165db0f5c80f025f11fc441364f3e95ddb1040726"
+    expected_digest: "1845a750c1ceab1df901a933bc5b89c155efe7fe553087d3924ed9d9999074bd"
+    expected_sphere_digest: "287d291c3222ba2d5381f0785e531a564e170f30d6aa4eb2077ad1d018082c13"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, pot_shuffle: all, grass_shuffle: all, rock_shuffle: all }
     seed: "0x4752524F434B0009"
     label: "terrain-pot-shuffle"
@@ -1212,6 +1212,55 @@ entries:
     # hunt seed — reselect on a future re-roll (see the hunt-goal note above).
     expected_digest: "108e2cc2dcccbdab44d8d6be80f316e3506b7f36814252aa2aa727b329ff87cd"
     expected_sphere_digest: "6fd33f5c84bc3d7fd8c0bb37a1cd7eb180c8a7f2e19cf55324c4e4a56ab66655"
+
+  # All-features-audit coverage rows (2026-07): the pairings the audit found
+  # uncovered, plus two regression rows that only generate at all because of
+  # the audit fixes (renewable bomb access under insanity traps; Inverted
+  # rebind of the Link's House pots).
+  - settings: { mode.state: open, goal: ganon, traps: insanity, trap_categories: all, accessibility: locations }
+    seed: "0x0000000000000201"
+    label: "traps-insanity-locations"
+    expected_digest: "152d2858d761a827af4c0afb8ef90929f0ee82f28729e6d8e1503d0c511db793"
+    expected_sphere_digest: "07578a681b68159ef27805daacd3f2b51a4d2872c2b3aaa5d4d3d8e3001aebdd"
+  - settings: { mode.state: inverted, pot_shuffle: all, accessibility: locations }
+    seed: "0x0000000000000202"
+    label: "inverted-pots-locations"
+    expected_digest: "ca09860d6608db7b26ab252d455c22539ea6188c5992b851a1ad98ce39e47175"
+    expected_sphere_digest: "2fde09a96674ef2ea987f6cbc8fccacd25df2f47a98a707f3e3823c8a9f05d52"
+  - settings: { mode.state: open, goal: ganon, dungeon_chains: true, pot_shuffle: all, souls_shuffle: all, npc_souls: true, accessibility: none }
+    seed: "0x0000000000000203"
+    label: "chains-pots-souls-compose"
+    expected_digest: "32b0c19862c49057afc1c3175433a7d82ce5c1caab01d304946287338a6ebcc7"
+    expected_sphere_digest: "60beb8c425dfb22f353faf846d008f103bb6236f34db4b3d92b4b8069fc4477e"
+  - settings: { mode.state: inverted, souls_shuffle: all, npc_souls: true, accessibility: none }
+    seed: "0x0000000000000204"
+    label: "inverted-souls-all"
+    expected_digest: "427bf6c51f3b47e0465ed1a08719f0dec62bc15297eed5fde57dab8901cfa054"
+    expected_sphere_digest: "af4cfc3380da8e4ad88c5683183e7fe49ee29354f7021b1ea9ce577795f38a28"
+  - settings: { mode.state: inverted, enemy_drop_checks: all, dungeon_items.small_keys: wild, accessibility: none }
+    seed: "0x0000000000000205"
+    label: "inverted-enemy-checks-all"
+    expected_digest: "c89b91c62d5769f3b33df08ffdc1ea18eb400b05ae963c2422f5a3b738be8cf2"
+    expected_sphere_digest: "192f359a2aae86551b76d49a0cbb3ed65f51d4eb29c63427f15b8d7f0a398a4a"
+  - settings: { mode.state: open, goal: "triforce-hunt", pieces_required: 20, pieces_placed: 30, souls_shuffle: all, npc_souls: true, accessibility: none }
+    seed: "0x0000000000000206"
+    label: "souls-all-hunt-none"
+    expected_digest: "10cd2f47e9770ede2075d23c2fca0d9bd4458ecc30d0c0925a612076389636e3"
+    expected_sphere_digest: "17df44a8f41fe004384ced4f2970f3ef98bd265294c9f04ca2146b6198a29729"
+  - settings: { mode.state: open, grass_shuffle: all, rock_shuffle: all, shuffle_dungeon_entrances: true, accessibility: none }
+    seed: "0x0000000000000207"
+    label: "terrain-dungeon-entrance-composes"
+    expected_digest: "2efceb10100c1e36d80fe40bea9af0e052fdb54ffa3b5f3583ec4201e908e4af"
+    expected_sphere_digest: "d720d86a6418acc710ea447b6a13d86bbfaf8e8132d464dc0fd958d905f078e3"
+  # Exercises the door-oracle collect-model key subtraction (door x npc_souls
+  # with credited key-source rows active). pot=keys (not all) keeps the row
+  # inside the per-row runtime budget while still exercising the same path:
+  # npc_souls forces the collect model; key pots are credited source rows.
+  - settings: { mode.state: open, door_shuffle: basic, npc_souls: true, pot_shuffle: keys, accessibility: none }
+    seed: "0x0000000000000208"
+    label: "door-npc-souls-pot-keys"
+    expected_digest: "f06f6f708c8ad0afc811da6c5351d3bc638d62a8c7f7b2b735aa4e1292b891e7"
+    expected_sphere_digest: "cd3f943f8233c767c0ff9e5949d19f5ac8adcbbfc68b658d56225d0c91d1dddd"
 
 # Celebrity-seed candidates (task 12.2) — these are the named seeds we plan
 # to capture once the generator stabilizes. Listed here as comments so the
