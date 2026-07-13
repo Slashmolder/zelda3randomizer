@@ -3603,6 +3603,8 @@ endif_1:
     bool fast_crystal = ItemReceipt_IsFastBossPrize(
         0x20, ancilla_step[k], player_is_indoors != 0,
         FastFanfareEnabled());
+    ancilla_aux_timer[k] = ItemReceipt_TickCrystalFanfare(
+        ancilla_aux_timer[k], fast_crystal);
     if (ItemReceipt_ShouldAdvanceCrystalFanfare(
             zelda_read_apui00(), ancilla_aux_timer[k], fast_crystal)) {
       music_control = 0x1a;

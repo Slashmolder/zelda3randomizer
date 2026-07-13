@@ -1027,6 +1027,14 @@ bool ItemReceipt_ShouldWaitForPendantFanfare(uint8 item, uint8 apu_busy,
   return is_pendant && apu_busy != 0 && !fast_boss_prize;
 }
 
+uint8 ItemReceipt_TickCrystalFanfare(uint8 timer, bool fast_boss_prize) {
+  // Crystal receipts set flag_is_link_immobilized=2, which deliberately skips
+  // Ancilla22_ItemReceipt's normal aux-timer decrement while vanilla waits for
+  // the APU fanfare to finish. Give the fast boss-prize path its own countdown
+  // so its shortened 0x18-frame hold can actually reach the handoff threshold.
+  return fast_boss_prize && timer > 1 ? timer - 1 : timer;
+}
+
 bool ItemReceipt_ShouldAdvanceCrystalFanfare(uint8 apu_busy, uint8 timer,
                                              bool fast_boss_prize) {
   return apu_busy == 0 || (fast_boss_prize && timer <= 1);
@@ -1105,6 +1113,9 @@ void ItemReceipt_FastFanfareSelfCheck(void) {
   ancilla_aux_timer[0] = 0x68;
   ItemReceipt_ApplyFastFanfare(0, 0x20, false);
   if (ancilla_aux_timer[0] != 0x18 ||
+      ItemReceipt_TickCrystalFanfare(0x18, true) != 0x17 ||
+      ItemReceipt_TickCrystalFanfare(1, true) != 1 ||
+      ItemReceipt_TickCrystalFanfare(0x18, false) != 0x18 ||
       ItemReceipt_ShouldAdvanceCrystalFanfare(1, 2, true) ||
       !ItemReceipt_ShouldAdvanceCrystalFanfare(1, 1, true) ||
       ItemReceipt_ShouldAdvanceCrystalFanfare(1, 1, false) ||
