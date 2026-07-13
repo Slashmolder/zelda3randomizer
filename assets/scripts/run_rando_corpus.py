@@ -319,16 +319,16 @@ def _run_one_entry(binary: Path, idx: int, entry: dict,
         # regenerated placement. The original file is left intact.
         buf = out_json.read_bytes()
         if buf[:4] == b"ZRSR":
-            if len(buf) != 140:
+            if len(buf) != 141:
                 result.lines.append(
-                    f"  FAIL [{idx}] {label}: ZRSR file size {len(buf)} != 140"
+                    f"  FAIL [{idx}] {label}: ZRSR file size {len(buf)} != 141"
                 )
                 result.failed = True
                 return result
-            # Validate CRC32 (LE u32 at offset 136 over bytes 0..135).
+            # Validate CRC32 (LE u32 at offset 137 over bytes 0..136).
             # Keep this in lockstep with rando_spoiler.h constants.
-            disk_crc = int.from_bytes(buf[136:140], "little")
-            calc_crc = zlib.crc32(buf[:136]) & 0xffffffff
+            disk_crc = int.from_bytes(buf[137:141], "little")
+            calc_crc = zlib.crc32(buf[:137]) & 0xffffffff
             if disk_crc != calc_crc:
                 result.lines.append(
                     f"  FAIL [{idx}] {label}: ZRSR CRC mismatch "

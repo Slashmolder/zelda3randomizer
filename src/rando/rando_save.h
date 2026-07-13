@@ -66,8 +66,12 @@
 //       (@44-50, same guard shape as pot/terrain). Pre-v9 files zero-extend
 //       to present=0, and activation fails CLOSED for dungeon/all-tier
 //       enemy-check slots (generator_version alone misses same-version
-//       registry drift). New writes are always v9.
-#define kRandoSidecar_FileFormatVersion 9
+//       registry drift).
+//   10 — add-rando-key-rings-skeleton-key: widens the settings blob 30->31
+//        bytes (canonical byte [30]); the extension remains the v9 51-byte
+//        block. Older blobs zero-extend the new axes to Off. New writes are
+//        always v10.
+#define kRandoSidecar_FileFormatVersion 10
 #define kRandoSidecar_SlotCount         3       // mirrors sram.dat's 3-slot layout
 #define kRandoSidecar_FileHeaderSize    16
 #define kRandoSidecar_SlotHeaderSize    80

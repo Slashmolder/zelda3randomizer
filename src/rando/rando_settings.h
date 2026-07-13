@@ -49,6 +49,15 @@ typedef enum {
   kDungeonItemMode_Wild = 2,
 } DungeonItemMode;
 
+// add-rando-key-rings-skeleton-key — requested key-ring policy. The requested
+// value is serialized even when current small-key semantics make rings
+// ineffective; Settings_EffectiveKeyRings() is the generation/UI authority.
+typedef enum {
+  kKeyRings_Off = 0,
+  kKeyRings_Random = 1,
+  kKeyRings_All = 2,
+} KeyRingsMode;
+
 typedef enum {
   kModeWeapons_Randomized = 0,
   kModeWeapons_Assured = 1,
@@ -218,6 +227,13 @@ typedef struct RandoSettings {
   // shuffles (terrain is overworld-surface-bound; see the change's D12).
   uint8 grass_shuffle;
   uint8 rock_shuffle;
+  // add-rando-key-rings-skeleton-key — append-only canonical byte [30].
+  // key_rings is the REQUESTED Off/Random/All policy and is deliberately not
+  // normalized away under Vanilla or Retro/Generic Keys. skeleton_key is a
+  // bonus-only item toggle; logic never requires it and it never opens big-key
+  // doors.
+  uint8 key_rings;    // KeyRingsMode
+  uint8 skeleton_key; // bool
 } RandoSettings;
 
 // add-rando-grass-rock-shuffle — shared tier values for both terrain axes.
@@ -233,6 +249,13 @@ enum {
   kGrassShuffleAxis_Mask  = 3u << 0,
   kRockShuffleAxis_Shift  = 2,        // canonical [29] bits 2-3
   kRockShuffleAxis_Mask   = 3u << 2,  // bits 4-7 refused-undefined
+};
+
+enum {
+  kKeyRingsAxis_Shift = 0,          // canonical [30] bits 0-1
+  kKeyRingsAxis_Mask = 3u << 0,
+  kSkeletonKeyAxis_Enabled = 1u << 2,
+  kKeyRingsAxis_DefinedMask = kKeyRingsAxis_Mask | kSkeletonKeyAxis_Enabled,
 };
 
 // add-rando-pot-sanity — pot_shuffle tiers. Values are part of the determinism
@@ -360,8 +383,8 @@ enum {
 // exactly this many bytes. Adding a field requires bumping this constant
 // AND kGeneratorVersion (tasks.md §13.6).
 // ===========================================================================
-// Canonical serialization is 29 bytes: 28 historical bytes plus append-only
-// byte [28] for enemy_drop_checks.
+// Canonical serialization is 31 bytes: 28 historical bytes plus append-only
+// bytes [28] enemy/soul axes, [29] terrain axes, and [30] key-item axes.
 // Layout per spec — see Settings_CanonicalSerialize.
 // Phase B Slice 7+8 §66: bumped from 24→28 to absorb `hints`, `boss_shuffle`,
 // `drop_shuffle` at offsets [22..24]. kGeneratorVersion bumped 13→14 in lockstep.
@@ -382,8 +405,11 @@ enum {
 // bits 0-1 + rock_shuffle bits 2-3 (kGrassShuffleAxis_*/kRockShuffleAxis_*);
 // [29] bits 4-7 are refused-undefined. The length change alters every
 // settings_hash (SHA input length) — covered by that change's
-// kGeneratorVersion bump; sidecar format_version 8 widens the stored blob.
-#define kSettingsCanonicalLen 30
+// kGeneratorVersion bump; sidecar format_version 8 widened the stored blob.
+// add-rando-key-rings-skeleton-key grows 30 -> 31 with append-only byte [30]:
+// key_rings bits 0-1, skeleton_key bit 2, bits 3-7 refused-undefined; sidecar
+// format_version 9 carries the widened blob.
+#define kSettingsCanonicalLen 31
 
 // Populate the struct with Phase A defaults (Open / Fast Ganon / Normal
 // pool / 7 crystals each / dungeon items Vanilla / prize+medallion shuffle
@@ -405,6 +431,12 @@ void Settings_SetDefaults(RandoSettings *s);
 // LOGIC predicates onto the shared GenericKey count. The two are complementary:
 // wildKeys lets keys spawn anywhere; genericKeys makes them fungible.
 uint8 Settings_EffectiveSmallKeysMode(const RandoSettings *s);
+
+// Effective key-ring policy. Rings are unavailable when small keys are
+// Vanilla/free or Retro's Generic Keys are active. This helper never mutates or
+// canonicalizes the requested key_rings field, so a temporarily disabled UI
+// choice survives share/config round-trips.
+uint8 Settings_EffectiveKeyRings(const RandoSettings *s);
 
 // Topology-changing dungeon axes force in-dungeon big keys at every placer read
 // so generated reachability cannot rely on a vanilla-mode pregrant that the

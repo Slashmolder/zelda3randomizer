@@ -22,6 +22,7 @@
 
 #include "rando_save.h"
 #include "rando.h"
+#include "item_ids.h"
 #include "../types.h"
 
 #include <stdio.h>
@@ -104,13 +105,15 @@ static uint32 slot_on_disk_size_base(uint16 placement_table_size) {
 
 enum { kRandoSidecar_LegacySettingsCanonicalLen28 = 28 };
 enum { kRandoSidecar_LegacySettingsCanonicalLen29 = 29 };  // v4..v7 blob width
+enum { kRandoSidecar_LegacySettingsCanonicalLen30 = 30 };  // v8 blob width
 
 static uint32 settings_blob_len_versioned(uint16 format_version) {
   if (format_version < 2) return 0;
   if (format_version < 4) return kRandoSidecar_LegacySettingsCanonicalLen28;
-  // v4..v7 carried the 29-byte blob; v8 (add-rando-grass-rock-shuffle) widened
-  // it to the current kSettingsCanonicalLen (30) for the terrain byte [29].
+  // v4..v7 carried 29 bytes; v8/v9 carried 30 bytes for terrain byte [29];
+  // v10 widens to the current 31-byte layout for key rings/Skeleton Key [30].
   if (format_version < 8) return kRandoSidecar_LegacySettingsCanonicalLen29;
+  if (format_version < 10) return kRandoSidecar_LegacySettingsCanonicalLen30;
   return kSettingsCanonicalLen;
 }
 
@@ -755,6 +758,11 @@ static bool deserialize_file_buffer(const uint8 *buf, uint32 fsize,
   RandoSidecarFileHeader fh;
   uint32 hdr_used = RandoSave_DeserializeFileHeader(buf, fsize, &fh);
   if (hdr_used == 0 || fh.slot_count != kRandoSidecar_SlotCount) return false;
+  // Sequential slot bodies have no per-slot length tag. Refuse a newer file
+  // version explicitly rather than guessing its settings/extension widths.
+  if (fh.format_version == 0 ||
+      fh.format_version > kRandoSidecar_FileFormatVersion)
+    return false;
 
   // FIX #13 — verify file_crc when present. 0 = legacy file (every writer
   // before the CRC landed wrote 0) → accept without verification. The CRC
@@ -804,7 +812,9 @@ static bool deserialize_file_buffer(const uint8 *buf, uint32 fsize,
       if (used == 0) { ok = false; break; }
       off += used;
     }
-    if (ok) {
+    // Refuse trailing bytes: without this, an older reader can accidentally
+    // accept a widened future slot body after walking only its known prefix.
+    if (ok && off == fsize) {
       memcpy(out_slots, tmp, sizeof(tmp));
       return true;
     }
@@ -1033,11 +1043,18 @@ void RandoSave_SelfCheck(void) {
   // add-enemy-souls soul-ownership round-trip coverage (v6 extension block).
   src.header.souls_present = 1;
   for (int i = 0; i < 12; i++) src.header.soul_flags[i] = (uint8)(0x81 + i);
-  src.placements[0].location_id = 5;  src.placements[0].item_id = 50;
-  src.placements[1].location_id = 10; src.placements[1].item_id = 75;
-  src.placements[2].location_id = 20; src.placements[2].item_id = 99;
-  src.placement_count = 3;
-  src.checked_bitmap[0] = 0x05;  // bits 0 and 2 set
+  // Key Ring/Skeleton ownership is derived from these ordinary persisted rows
+  // plus the checked bitmap, so keep both new item identities in the generic
+  // sidecar round-trip fixture rather than inventing separate save fields.
+  src.placements[0].location_id = 0;
+  src.placements[0].item_id = ITEM_KeyRing_HyruleCastleEscape;
+  src.placements[1].location_id = 2;
+  src.placements[1].item_id = ITEM_SkeletonKey;
+  src.placements[2].location_id = 5;  src.placements[2].item_id = 50;
+  src.placements[3].location_id = 10; src.placements[3].item_id = 75;
+  src.placements[4].location_id = 20; src.placements[4].item_id = 99;
+  src.placement_count = 5;
+  src.checked_bitmap[0] = 0x05;  // checked Key Ring (loc 0) + Skeleton Key (loc 2)
 
   uint8 buf[256];
   uint32 wrote = RandoSave_SerializeSlot(&src, buf, sizeof(buf));
@@ -1105,8 +1122,14 @@ void RandoSave_SelfCheck(void) {
     selfcheck_die("flat table: loc 10 item slot wrong");
   if (get_u16le(buf + kRandoSidecar_SlotHeaderSize + 20 * 2) != 99)
     selfcheck_die("flat table: loc 20 item slot wrong");
-  if (get_u16le(buf + kRandoSidecar_SlotHeaderSize + 0 * 2) != kRandoSidecar_NoPlacementSentinel)
-    selfcheck_die("flat table: loc 0 should be sentinel");
+  if (get_u16le(buf + kRandoSidecar_SlotHeaderSize + 0 * 2) !=
+          ITEM_KeyRing_HyruleCastleEscape)
+    selfcheck_die("flat table: checked Key Ring slot wrong");
+  if (get_u16le(buf + kRandoSidecar_SlotHeaderSize + 2 * 2) != ITEM_SkeletonKey)
+    selfcheck_die("flat table: checked Skeleton Key slot wrong");
+  if (get_u16le(buf + kRandoSidecar_SlotHeaderSize + 1 * 2) !=
+          kRandoSidecar_NoPlacementSentinel)
+    selfcheck_die("flat table: loc 1 should be sentinel");
 
   uint32 used = RandoSave_DeserializeSlot(buf, wrote, &dst);
   if (used != wrote) selfcheck_die("deserialize used != serialize wrote");
@@ -1147,9 +1170,15 @@ void RandoSave_SelfCheck(void) {
   if (dst.placement_count != src.placement_count) selfcheck_die("placement_count round-trip");
   // After deserialization the sparse list is sorted by location_id (because
   // we scatter+gather over the dense array).
-  if (dst.placements[0].location_id != 5  || dst.placements[0].item_id != 50) selfcheck_die("placements[0] round-trip");
-  if (dst.placements[1].location_id != 10 || dst.placements[1].item_id != 75) selfcheck_die("placements[1] round-trip");
-  if (dst.placements[2].location_id != 20 || dst.placements[2].item_id != 99) selfcheck_die("placements[2] round-trip");
+  if (dst.placements[0].location_id != 0 ||
+      dst.placements[0].item_id != ITEM_KeyRing_HyruleCastleEscape)
+    selfcheck_die("checked Key Ring placement round-trip");
+  if (dst.placements[1].location_id != 2 ||
+      dst.placements[1].item_id != ITEM_SkeletonKey)
+    selfcheck_die("checked Skeleton Key placement round-trip");
+  if (dst.placements[2].location_id != 5  || dst.placements[2].item_id != 50) selfcheck_die("placements[2] round-trip");
+  if (dst.placements[3].location_id != 10 || dst.placements[3].item_id != 75) selfcheck_die("placements[3] round-trip");
+  if (dst.placements[4].location_id != 20 || dst.placements[4].item_id != 99) selfcheck_die("placements[4] round-trip");
   if (dst.checked_bitmap[0] != src.checked_bitmap[0]) selfcheck_die("checked_bitmap round-trip");
 
   // Bad-magic case → deserialize returns 0.
@@ -1223,6 +1252,34 @@ void RandoSave_SelfCheck(void) {
     }
     if (off != total) { free(bigbuf); selfcheck_die("round-trip size mismatch"); }
 
+    RandoSidecarSlot file_back[kRandoSidecar_SlotCount];
+    if (!deserialize_file_buffer(bigbuf, total, file_back)) {
+      free(bigbuf); selfcheck_die("current full-file buffer must deserialize");
+    }
+    // A sequential-body reader must reject both newer versions and any
+    // otherwise-valid file with an unconsumed tail.
+    uint8 *with_tail = (uint8 *)malloc(total + 1);
+    if (with_tail == NULL) { free(bigbuf); selfcheck_die("malloc for trailing-byte test"); }
+    memcpy(with_tail, bigbuf, total);
+    with_tail[total] = 0;
+    // Give the enlarged buffer a valid nonzero CRC so only the exact
+    // full-consumption check can reject it (not the earlier CRC gate).
+    put_u32le(with_tail + 8,
+              rs_crc32(with_tail + kRandoSidecar_FileHeaderSize,
+                       total + 1 - kRandoSidecar_FileHeaderSize));
+    if (deserialize_file_buffer(with_tail, total + 1, file_back)) {
+      free(with_tail); free(bigbuf);
+      selfcheck_die("sidecar with trailing bytes must be refused");
+    }
+    free(with_tail);
+    uint8 saved_vlo = bigbuf[4], saved_vhi = bigbuf[5];
+    put_u16le(bigbuf + 4, (uint16)(kRandoSidecar_FileFormatVersion + 1));
+    if (deserialize_file_buffer(bigbuf, total, file_back)) {
+      free(bigbuf); selfcheck_die("future sidecar version must be refused");
+    }
+    bigbuf[4] = saved_vlo;
+    bigbuf[5] = saved_vhi;
+
     // Read back via the same path the deserializer uses.
     RandoSidecarFileHeader hdr2;
     uint32 used = RandoSave_DeserializeFileHeader(bigbuf, total, &hdr2);
@@ -1265,6 +1322,40 @@ void RandoSave_SelfCheck(void) {
                kSettingsCanonicalLen) != 0) {
       selfcheck_die("full-file round-trip settings blob mismatch");
     }
+  }
+
+  // format_version 9 compatibility: the audit-era slot has a 30-byte
+  // canonical settings blob followed by the 51-byte enemy-registry extension.
+  // The appended key-rings byte must zero-extend to Off while every v9
+  // extension field remains intact.
+  {
+    uint8 current[256], v9buf[256];
+    uint32 current_used = RandoSave_SerializeSlot(&src, current, sizeof(current));
+    if (current_used == 0) selfcheck_die("v9 compat: serialize current slot");
+    uint32 base = slot_on_disk_size_base(src.header.placement_table_size);
+    uint32 v9_total = base + kRandoSidecar_LegacySettingsCanonicalLen30 +
+                      kRandoSidecar_SlotExtV9Size;
+    memcpy(v9buf, current, base + kRandoSidecar_LegacySettingsCanonicalLen30);
+    memcpy(v9buf + base + kRandoSidecar_LegacySettingsCanonicalLen30,
+           current + base + kSettingsCanonicalLen,
+           kRandoSidecar_SlotExtV9Size);
+    RandoSidecarSlot v9dst;
+    uint32 v9_used = deserialize_slot_versioned(v9buf, v9_total, &v9dst, 9);
+    if (v9_used != v9_total) selfcheck_die("v9 compat: used != v9 total");
+    if (memcmp(v9dst.settings_canonical, src.settings_canonical,
+               kRandoSidecar_LegacySettingsCanonicalLen30) != 0 ||
+        v9dst.settings_canonical[30] != 0)
+      selfcheck_die("v9 compat: settings must zero-extend key-rings byte");
+    if (v9dst.header.terrain_registry_present != src.header.terrain_registry_present ||
+        v9dst.header.terrain_registry_digest != src.header.terrain_registry_digest ||
+        v9dst.header.terrain_registry_count != src.header.terrain_registry_count ||
+        v9dst.header.enemy_check_registry_present !=
+            src.header.enemy_check_registry_present ||
+        v9dst.header.enemy_check_registry_digest !=
+            src.header.enemy_check_registry_digest ||
+        v9dst.header.enemy_check_registry_count !=
+            src.header.enemy_check_registry_count)
+      selfcheck_die("v9 compat: registry extension round-trip");
   }
 
   // -------------------------------------------------------------------------

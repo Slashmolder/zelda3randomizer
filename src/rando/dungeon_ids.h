@@ -152,11 +152,79 @@ static inline uint8 Rando_PrizeRandoDungeonFromGameDungeon(uint8 game_dungeon) {
 
 #ifndef __cplusplus
 
+// Key Rings are append-only and deliberately mirror the 13 contiguous
+// SmallKey_* families. Keep all conversions at this boundary so placement,
+// logic, runtime grants, spoilers, and trackers cannot drift into hand-written
+// range arithmetic.
+static inline bool Rando_IsSmallKeyItem(uint16 item_id) {
+  return item_id >= ITEM_SmallKey_HyruleCastleEscape &&
+         item_id <= ITEM_SmallKey_GanonsTower;
+}
+
+static inline bool Rando_IsKeyRingItem(uint16 item_id) {
+  return item_id >= ITEM_KeyRing_HyruleCastleEscape &&
+         item_id <= ITEM_KeyRing_GanonsTower;
+}
+
+static inline uint16 Rando_SmallKeyItemForRandoDungeon(uint8 rando_dungeon) {
+  return rando_dungeon < kRandoDungeon_Count
+             ? (uint16)(ITEM_SmallKey_HyruleCastleEscape + rando_dungeon)
+             : 0xFFFFu;
+}
+
+static inline uint16 Rando_KeyRingItemForRandoDungeon(uint8 rando_dungeon) {
+  return rando_dungeon < kRandoDungeon_Count
+             ? (uint16)(ITEM_KeyRing_HyruleCastleEscape + rando_dungeon)
+             : 0xFFFFu;
+}
+
+// Complete authored small-key stock: base shuffled chest/placed copies plus all
+// authored drop sources (pot/enemy/free). The two component rows mirror the
+// authoritative placement and generated door-drop metadata; placement
+// selfchecks cross-check them so future source changes cannot silently leave a
+// stale ring grant. All totals stay below the engine's 0xff sentinel.
+static const uint8 kRandoBaseSmallKeyCount[kRandoDungeon_Count] = {
+  1, 0, 1, 1, 2, 6, 1, 3, 1, 2, 3, 4, 4,
+};
+static const uint8 kRandoDropSmallKeyCount[kRandoDungeon_Count] = {
+  3, 2, 3, 0, 2, 0, 5, 2, 2, 4, 3, 2, 4,
+};
+
+static inline uint8 Rando_BaseSmallKeyCount(uint8 rando_dungeon) {
+  return rando_dungeon < kRandoDungeon_Count
+             ? kRandoBaseSmallKeyCount[rando_dungeon]
+             : 0;
+}
+
+static inline uint8 Rando_DropSmallKeyCount(uint8 rando_dungeon) {
+  return rando_dungeon < kRandoDungeon_Count
+             ? kRandoDropSmallKeyCount[rando_dungeon]
+             : 0;
+}
+
+static inline uint8 Rando_KeyRingGrantCount(uint8 rando_dungeon) {
+  return rando_dungeon < kRandoDungeon_Count
+             ? (uint8)(kRandoBaseSmallKeyCount[rando_dungeon] +
+                       kRandoDropSmallKeyCount[rando_dungeon])
+             : 0;
+}
+
+_Static_assert(ITEM_KeyRing_GanonsTower - ITEM_KeyRing_HyruleCastleEscape + 1 ==
+                   kRandoDungeon_Count,
+               "Key Ring item range must cover all randomizer dungeons");
+_Static_assert(ITEM_KeyRing_HyruleCastleEscape - ITEM_SmallKey_HyruleCastleEscape ==
+                   ITEM_KeyRing_GanonsTower - ITEM_SmallKey_GanonsTower,
+               "Small-key and Key Ring ranges must be parallel");
+_Static_assert(ITEM_SkeletonKey == ITEM_KeyRing_GanonsTower + 1,
+               "Skeleton Key must remain directly after the Key Ring block");
+
 static inline uint8 Rando_RandoDungeonFromDungeonItem(uint16 item_id) {
   // SmallKey ids 53..65 are contiguous in ALTTPR dungeon order.
-  if (item_id >= ITEM_SmallKey_HyruleCastleEscape &&
-      item_id <= ITEM_SmallKey_GanonsTower)
+  if (Rando_IsSmallKeyItem(item_id))
     return (uint8)(item_id - ITEM_SmallKey_HyruleCastleEscape);
+  // KeyRing ids 220..232 use the exact same family order.
+  if (Rando_IsKeyRingItem(item_id))
+    return (uint8)(item_id - ITEM_KeyRing_HyruleCastleEscape);
   // BigKey ids 66..76 skip HCE and HCT; their order is EP, DP, TH, PoD, SP,
   // SW, TT, IP, MM, TR, GT.
   static const uint8 kBigMapCompassRandoDungeon[11] = {
@@ -192,9 +260,7 @@ static inline uint8 Rando_DungeonItemGameDungeon(uint16 item_id) {
 
 static inline uint16 Rando_SmallKeyItemForGameDungeon(uint8 game_dungeon) {
   uint8 rando_dungeon = Rando_RandoDungeonFromGameDungeon(game_dungeon);
-  return rando_dungeon == kRandoDungeon_None
-             ? 0xFFFFu
-             : (uint16)(ITEM_SmallKey_HyruleCastleEscape + rando_dungeon);
+  return Rando_SmallKeyItemForRandoDungeon(rando_dungeon);
 }
 
 static inline uint16 Rando_BigKeyItemForGameDungeon(uint8 game_dungeon) {

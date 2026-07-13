@@ -16,7 +16,7 @@
 // kGeneratorVersion — bumped per tasks.md §13.6 whenever placement output
 // could change. The bump triggers regression-corpus regeneration.
 // ---------------------------------------------------------------------------
-#define kGeneratorVersion 141u  // audit fixes: Inverted Link's House pot rebind; terrain gate fixes; outdoor trap flags; door collect-model key single-count; wild enemy-key caps
+#define kGeneratorVersion 142u  // audit fixes + dungeon Key Rings + logic-neutral Skeleton Key
 // The share-string binary layout packs version into 1 byte
 // (rando_share.h: ShareString.version is uint8). Compile-time enforce
 // kGeneratorVersion ≤ 255 so silent truncation can't ship.
@@ -482,7 +482,11 @@ enum {
   // (Rupoor/Cucco above are special-cased, not blob-backed) so the loader's
   // (gfx & 0x7f) cell mapping stays in lockstep with these ids.
   kRandoCustomGfx_Soul = 0x85,
-  kRandoCustomGfx_BlobEntries = 6,  // kRandoCustomItemGfx cell count (idx 0..5)
+  // Key Rings share one icon; Skeleton Key has a distinct icon. Both are
+  // blob-backed custom art appended after the Soul cell.
+  kRandoCustomGfx_KeyRing = 0x86,
+  kRandoCustomGfx_SkeletonKey = 0x87,
+  kRandoCustomGfx_BlobEntries = 8,  // kRandoCustomItemGfx cell count (idx 0..7)
 };
 
 // (Re)load the custom item's 8-colour palette into SP3's upper half if it is
@@ -1065,12 +1069,29 @@ typedef struct RandoItemView {
   // GRANT, dispatches to index 0 = the sewers/escape sub-area — a separate
   // index from the HC dungeon proper; do not conflate the two.)
   uint8 dungeon_small_keys[16];
+  // Key Ring state is indexed by RandoDungeonId (13 low bits). Selection is
+  // separate from ownership so tracker surfaces can hide unselected families
+  // instead of presenting them as missing progression.
+  uint16 key_ring_selected_mask;
+  uint16 key_ring_owned_mask;
+  bool skeleton_key_enabled;
+  bool skeleton_key_owned;
   uint16 bigkey_bits;
   uint16 map_bits;
   uint16 compass_bits;
 } RandoItemView;
 
 void Rando_FillItemView(RandoItemView *out);
+
+// Key Rings / Skeleton Key are not authoritative SRAM fields. Ownership is
+// reconstructed from the installed placement table plus checked-location
+// bitmap after sidecar/snapshot restore and cached for hot door/tracker reads.
+// The selected mask uses RandoDungeonId bits; numeric remaining key counters
+// remain independently visible through RandoItemView::dungeon_small_keys.
+void Rando_RebuildKeyItemOwnership(void);
+uint16 Rando_GetSelectedKeyRingMask(void);
+uint16 Rando_GetOwnedKeyRingMask(void);
+bool Rando_HasSkeletonKey(void);
 
 // ---------------------------------------------------------------------------
 // Rando_ActivateSidecarSlot / Rando_DeactivateSlot — bridge between the

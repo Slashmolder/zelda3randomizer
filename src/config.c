@@ -769,13 +769,14 @@ static bool HandleIniConfig(int section, const char *key, char *value) {
         return true;
       }
       // Compatibility with EVERY prior canonical layout: the appended axis
-      // bytes ([28] enemy-drop/souls, [29] terrain) are all append-only with
+      // bytes ([28] enemy-drop/souls, [29] terrain, [30] key rings/Skeleton)
+      // are all append-only with
       // zero == Off, so a shorter rando_window.ini blob promotes cleanly by
       // zero-extending the tail. Accept each legacy length in turn (the list
-      // grows by one entry per canonical append). Without the 29-byte entry a
+      // grows by one entry per canonical append). Without the 30-byte entry a
       // native-window save from the immediately-previous build would be
       // rejected and the user's last settings silently reset (review LOW-3).
-      static const int kLegacyCanonicalLens[] = { 29, 28 };
+      static const int kLegacyCanonicalLens[] = { 30, 29, 28 };
       for (size_t li = 0; li < sizeof(kLegacyCanonicalLens) / sizeof(kLegacyCanonicalLens[0]); ++li) {
         int legacy = kLegacyCanonicalLens[li];
         if (legacy < kSettingsCanonicalLen && HexDecode(value, buf, legacy)) {

@@ -597,6 +597,10 @@ int RandoSnapshotTail_Load(FILE *f) {
       Rando_DeactivateSlot(); \
       pending_entrance_layout = false; \
     } \
+    /* Ownership depends on both the type-1 placement and the later type-3 */ \
+    /* checked bitmap. Rebuild only after the complete TLV chain has run. */ \
+    if (accepted_rando_state && Rando_IsActive()) \
+      Rando_RebuildKeyItemOwnership(); \
     return recognized; \
   } while (0)
 

@@ -5,9 +5,11 @@ Key to the native randomizer.
 
 ## Status
 
-**Specification ready for implementation.** Authored 2026-07-12 from the
-as-built item pool, predicate VM, dungeon-key RAM, door-shuffle oracle, sidecar,
-snapshot, spoiler, tracker, and native-window paths.
+**Implementation complete; ready for owner playtest (48/55).** The remaining
+six gameplay checks and archive/merge closeout are intentionally owner-gated.
+The implementation was reconciled against the item pool, predicate VM,
+dungeon-key RAM, door-shuffle oracle, sidecar, snapshot, spoiler, tracker, and
+native-window paths.
 
 ## Read these in order
 
@@ -37,4 +39,5 @@ snapshot, spoiler, tracker, and native-window paths.
 - The canonical settings blob grows from 30 to 31 bytes, requiring the normal
   generator/share/sidecar/corpus version cascade.
 
-The implementation checklist currently contains 55 tasks.
+The implementation checklist contains 55 tasks: 48 implementation/automated
+validation tasks complete, with six owner playtests and archive closeout pending.

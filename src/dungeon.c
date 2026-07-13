@@ -5387,6 +5387,12 @@ void Dungeon_ProcessTorchesAndDoors() {  // 81ce70
         // pair (Rando_DoorKeyOpenMirror set our bit live, but the f0 lock
         // attr is only rebuilt on room load) — open without consuming.
         goto has_key_for_door;
+      } else if (door_type >= kDoorType_SmallKeyDoor && door_type < 0x2c &&
+                 door_type != 0x2a && Rando_HasSkeletonKey()) {
+        // Bonus-only Skeleton Key: take the normal persistent small-key-door
+        // success path without spending either a dungeon key or Retro's shared
+        // GenericKey counter. The big-key branch above remains independent.
+        goto has_key_for_door;
       } else if (door_type >= kDoorType_SmallKeyDoor && door_type < 0x2c && door_type != 0x2a && link_num_keys != 0) {
         // rando-exempt: consumption — small key spent on locked door. (audit.md §0.2.4)
         link_num_keys -= 1;

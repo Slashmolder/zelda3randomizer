@@ -383,8 +383,10 @@ static void at_append_items(AtStr *s, const RandoItemView *v) {
                 at_b(v->flippers), at_b(v->moon_pearl), at_b(v->bombos), at_b(v->ether));
   at_str_printf(s, "\"quake\":%s,\"mushroom\":%s,\"powder\":%s,\"flute\":%s,",
                 at_b(v->quake), at_b(v->mushroom), at_b(v->powder), at_b(v->flute));
-  at_str_printf(s, "\"shovel\":%s,\"agahnim\":%s",
+  at_str_printf(s, "\"shovel\":%s,\"agahnim\":%s,",
                 at_b(v->shovel), at_b(v->agahnim));
+  at_str_printf(s, "\"skeleton_key_enabled\":%s,\"skeleton_key_owned\":%s",
+                at_b(v->skeleton_key_enabled), at_b(v->skeleton_key_owned));
   at_str_puts(s, "}");
 }
 
@@ -399,8 +401,13 @@ static void at_append_dungeons(AtStr *s, const RandoItemView *v) {
     if (i) at_str_puts(s, ",");
     at_str_puts(s, "{\"name\":");
     at_json_str(s, row->name);
-    at_str_printf(s, ",\"small_keys\":%u,\"big_key\":%s,\"map\":%s,\"compass\":%s}",
-                  (unsigned)v->dungeon_small_keys[row->key_slot],
+    uint16 ring_bit = (uint16)(1u << row->rando_dungeon);
+    uint8 key_slot = Rando_IsGenericKeysActive() ? 15 : row->key_slot;
+    at_str_printf(s, ",\"small_keys\":%u,\"key_ring_selected\":%s,"
+                     "\"key_ring_owned\":%s,\"big_key\":%s,\"map\":%s,\"compass\":%s}",
+                  (unsigned)v->dungeon_small_keys[key_slot],
+                  at_b((v->key_ring_selected_mask & ring_bit) != 0),
+                  at_b((v->key_ring_owned_mask & ring_bit) != 0),
                   at_b((v->bigkey_bits & bigkey_bit) != 0),
                   at_b((v->map_bits & map_bit) != 0),
                   at_b((v->compass_bits & compass_bit) != 0));

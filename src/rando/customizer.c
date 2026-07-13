@@ -157,6 +157,14 @@ bool Customizer_IsNonGrantableItem(uint16 item_id) {
          item_id == ITEM_HyruleCastleBigKey;
 }
 
+static bool customizer_is_key_cardinality_item(uint16 item_id) {
+  return (item_id >= ITEM_SmallKey_HyruleCastleEscape &&
+          item_id <= ITEM_SmallKey_GanonsTower) ||
+         (item_id >= ITEM_KeyRing_HyruleCastleEscape &&
+          item_id <= ITEM_KeyRing_GanonsTower) ||
+         item_id == ITEM_SkeletonKey;
+}
+
 // Parse a pool_overrides list value: "[A, B, C]" or a bare "A". Resolves each
 // item name and appends its id to out[*count] (capped at cap). Rejects unknown
 // items; when reject_non_grantable is set, also rejects prize/event/virtual
@@ -191,6 +199,13 @@ static int parse_pool_list(const char *value, int line, const char *which,
     }
     if (reject_non_grantable && Customizer_IsNonGrantableItem(id)) {
       snprintf(err, errlen, "line %d: item '%s' is not grantable and cannot be added to the pool",
+               line, t);
+      return 1;
+    }
+    if (customizer_is_key_cardinality_item(id)) {
+      snprintf(err, errlen,
+               "line %d: item '%s' cannot appear in pool_overrides; "
+               "small keys, Key Rings, and Skeleton Key have fixed cardinality",
                line, t);
       return 1;
     }
@@ -481,6 +496,19 @@ void Customizer_SelfCheck(void) {
     if (Customizer_Parse(bad_pool_text, strlen(bad_pool_text), &m, err, sizeof err) == 0)
       customizer_selfcheck_die("a virtual non-grantable pool add must be rejected");
   }
+  {
+    const char *bad_key_pool_text =
+        "placements:\n"
+        "  Eastern_Palace_Boss: Hookshot\n"
+        "pool_overrides:\n"
+        "  remove: [SmallKey_PalaceOfDarkness]\n";
+    CustomizerManifest m;
+    char err[160];
+    if (Customizer_Parse(bad_key_pool_text, strlen(bad_key_pool_text),
+                         &m, err, sizeof err) == 0 ||
+        strstr(err, "fixed cardinality") == NULL)
+      customizer_selfcheck_die("key items in pool_overrides must be rejected");
+  }
 
   fprintf(stderr, "[Customizer_SelfCheck] OK\n");
 }
@@ -500,6 +528,10 @@ void Customizer_PlacementSelfCheck(void) {
     {"Eastern Palace - Big Chest", "Hookshot"},
     {"Link's Uncle", "ProgressiveSword"},
     {"Desert Palace - Big Chest", "ProgressiveBow"},
+    // L1Sword is grantable but absent from the default progressive-sword pool.
+    // This creates the surplus-junk edge case that must not discard an enabled
+    // logic-neutral Skeleton Key.
+    {"Kakariko Well - Top", "L1Sword"},
   };
   for (unsigned i = 0; i < sizeof kPins / sizeof kPins[0]; i++) {
     uint16 lid = Customizer_ResolveLocation(kPins[i].loc);
@@ -514,6 +546,7 @@ void Customizer_PlacementSelfCheck(void) {
   RandoSettings s;
   Settings_SetDefaults(&s);  // Open / Fast Ganon — these pins are reachable
   s.customizer_active = 1;
+  s.skeleton_key = 1;
 
   RandoPlacement *e1 = (RandoPlacement *)calloc(kRandoLocationsCount, sizeof(RandoPlacement));
   RandoPlacement *e2 = (RandoPlacement *)calloc(kRandoLocationsCount, sizeof(RandoPlacement));
@@ -545,6 +578,22 @@ void Customizer_PlacementSelfCheck(void) {
       free(e1); free(e2);
       exit(2);
     }
+  }
+
+  // The out-of-pool pin above consumes a location without consuming a pool
+  // copy. Skeleton Key must still survive exactly once rather than becoming
+  // the surplus junk item silently omitted by fill.
+  uint16 skeleton_count_1 = 0, skeleton_count_2 = 0;
+  for (uint16 k = 0; k < t1.count; k++) {
+    if (t1.entries[k].item_id == ITEM_SkeletonKey) skeleton_count_1++;
+  }
+  for (uint16 k = 0; k < t2.count; k++) {
+    if (t2.entries[k].item_id == ITEM_SkeletonKey) skeleton_count_2++;
+  }
+  if (skeleton_count_1 != 1 || skeleton_count_2 != 1) {
+    free(e1); free(e2);
+    customizer_selfcheck_die(
+        "placement selfcheck: enabled Skeleton Key cardinality drifted under out-of-pool pin");
   }
 
   // (b) determinism: identical digest across two runs.

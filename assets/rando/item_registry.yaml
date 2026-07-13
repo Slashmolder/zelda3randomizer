@@ -1227,3 +1227,22 @@ items:
     name: Soul_Npc_Uncle
     category: soul
     dispatch: direct_soul
+
+  # ===========================================================================
+  # Dungeon Key Rings + universal Skeleton Key (IDs 220..233)
+  # ===========================================================================
+  # Ring order mirrors SmallKey_HyruleCastleEscape..SmallKey_GanonsTower.
+  - { id: 220, name: KeyRing_HyruleCastleEscape, display_name: "Hyrule Castle Key Ring", category: dungeon_item, dispatch: direct_key_ring }
+  - { id: 221, name: KeyRing_EasternPalace, display_name: "Eastern Palace Key Ring", category: dungeon_item, dispatch: direct_key_ring }
+  - { id: 222, name: KeyRing_DesertPalace, display_name: "Desert Palace Key Ring", category: dungeon_item, dispatch: direct_key_ring }
+  - { id: 223, name: KeyRing_TowerOfHera, display_name: "Tower of Hera Key Ring", category: dungeon_item, dispatch: direct_key_ring }
+  - { id: 224, name: KeyRing_HyruleCastleTower, display_name: "Castle Tower Key Ring", category: dungeon_item, dispatch: direct_key_ring }
+  - { id: 225, name: KeyRing_PalaceOfDarkness, display_name: "Palace of Darkness Key Ring", category: dungeon_item, dispatch: direct_key_ring }
+  - { id: 226, name: KeyRing_SwampPalace, display_name: "Swamp Palace Key Ring", category: dungeon_item, dispatch: direct_key_ring }
+  - { id: 227, name: KeyRing_SkullWoods, display_name: "Skull Woods Key Ring", category: dungeon_item, dispatch: direct_key_ring }
+  - { id: 228, name: KeyRing_ThievesTown, display_name: "Thieves' Town Key Ring", category: dungeon_item, dispatch: direct_key_ring }
+  - { id: 229, name: KeyRing_IcePalace, display_name: "Ice Palace Key Ring", category: dungeon_item, dispatch: direct_key_ring }
+  - { id: 230, name: KeyRing_MiseryMire, display_name: "Misery Mire Key Ring", category: dungeon_item, dispatch: direct_key_ring }
+  - { id: 231, name: KeyRing_TurtleRock, display_name: "Turtle Rock Key Ring", category: dungeon_item, dispatch: direct_key_ring }
+  - { id: 232, name: KeyRing_GanonsTower, display_name: "Ganon's Tower Key Ring", category: dungeon_item, dispatch: direct_key_ring }
+  - { id: 233, name: SkeletonKey, display_name: "Skeleton Key", category: absolute, dispatch: direct_skeleton_key }

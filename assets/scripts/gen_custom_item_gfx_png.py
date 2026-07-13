@@ -12,6 +12,8 @@ custom-item-gfx entry N. Keep the order in lockstep with the
   entry 3: reserved (gfx 0x83 Rupoor is a recolored vanilla tile, no blob cell)
   entry 4: reserved (gfx 0x84 Cucco loads from vanilla sheet 80, no blob cell)
   entry 5: Soul (shared icon for all Soul_* items, add-enemy-souls)
+  entry 6: Key Ring (shared icon for all dungeon Key Rings)
+  entry 7: Skeleton Key
 
 Pixel values are the asset data: each pixel's palette index is the SNES 4bpp
 pixel value. The embedded RGB palette is authored for preview only and is
@@ -126,6 +128,45 @@ ENTRIES = [
         "....xlwlwlx.....",
         ".....xlxlx......",
         "......x.x.......",
+        "................",
+    ]),
+    # Entry 6: one shared gold ring for every dungeon-specific Key Ring.
+    ("KeyRing", [
+        "................",
+        "......xxxx......",
+        "....xxyyyyxx....",
+        "...xyyyyyyyyx...",
+        "..xyyyxxxxyyyx..",
+        "..xyyx....xyyx..",
+        ".xyyx......xyyx.",
+        ".xyyx......xyyx.",
+        ".xyyx......xyyx.",
+        "..xyyx....xyyx..",
+        "..xyyyxxxxyyyx..",
+        "...xyyyyyyyyx...",
+        "....xxyyyyxx....",
+        "......xxxx......",
+        ".......xyx......",
+        "........x.......",
+    ]),
+    # Entry 7: pale ancient key with a skull-like bow, visually distinct from
+    # the gold ring and the vanilla small/big-key bundles.
+    ("SkeletonKey", [
+        "......xxxx......",
+        "....xxwwwwxx....",
+        "...xwwxwwxwwx...",
+        "...xwwwwwwwwx...",
+        "....xwwwwwwx....",
+        ".....xwxxwx.....",
+        "......xwwx......",
+        "......xwwx......",
+        "......xwwx......",
+        "......xwwxxx....",
+        "......xwwx......",
+        "......xwwxxx....",
+        "......xwwx......",
+        "......xwwx......",
+        ".......xx.......",
         "................",
     ]),
 ]

@@ -2494,6 +2494,8 @@ enum {
   kRow_CrystalsTower,
   kRow_ItemPoolDifficulty,
   kRow_DungeonSmallKeys,
+  kRow_KeyRings,
+  kRow_SkeletonKey,
   kRow_DungeonBigKeys,
   kRow_DungeonMaps,
   kRow_DungeonCompasses,
@@ -2705,6 +2707,8 @@ static const char *RowLabel(int row) {
     case kRow_CrystalsTower:             return "TOWER";
     case kRow_ItemPoolDifficulty:        return "POOL";
     case kRow_DungeonSmallKeys:          return "SMKEYS";
+    case kRow_KeyRings:                  return "KEYRINGS";
+    case kRow_SkeletonKey:               return "SKEL KEY";
     case kRow_DungeonBigKeys:            return "BGKEYS";
     case kRow_DungeonMaps:               return "MAPS";
     case kRow_DungeonCompasses:          return "COMPS";
@@ -2767,6 +2771,18 @@ static const char *RowValueText(int row, char *scratch, int scratch_len) {
         default:                       return "ERR";
       }
     }
+    case kRow_KeyRings:
+      if (s->key_rings != kKeyRings_Off &&
+          Settings_EffectiveKeyRings(s) == kKeyRings_Off)
+        return "OFF*";  // requested mode preserved but currently ineffective
+      switch (s->key_rings) {
+        case kKeyRings_Off:    return "OFF";
+        case kKeyRings_Random: return "RAND";
+        case kKeyRings_All:    return "ALL";
+        default:               return "ERR";
+      }
+    case kRow_SkeletonKey:
+      return s->skeleton_key ? "ON" : "OFF";
     case kRow_PiecesRequired:
       // Show "-" sentinel when the goal doesn't use pieces, signalling
       // to the user that the field is inert.
@@ -2961,6 +2977,22 @@ static void CycleRow(int row, int delta) {
       *mode = (uint8)n;
       break;
     }
+    case kRow_KeyRings: {
+      if (Settings_GenericKeysActive(s) ||
+          Settings_EffectiveSmallKeysMode(s) == kDungeonItemMode_Vanilla) {
+        mutated = false;
+        sound_effect_1 = 0x3c;
+        break;
+      }
+      int n = (int)s->key_rings + delta;
+      if (n < kKeyRings_Off) n = kKeyRings_All;
+      if (n > kKeyRings_All) n = kKeyRings_Off;
+      s->key_rings = (uint8)n;
+      break;
+    }
+    case kRow_SkeletonKey:
+      s->skeleton_key ^= 1;
+      break;
     case kRow_PiecesRequired: {
       // Pieces fields are only meaningful for Triforce Hunt / Ganon Hunt
       // goals; refuse cycle otherwise so the user doesn't accidentally
@@ -3465,6 +3497,7 @@ static bool SelectFile_Settings_Update(void) {
       case kRow_Goal:
       case kRow_ItemPoolDifficulty:
       case kRow_DungeonSmallKeys:
+      case kRow_KeyRings:
       case kRow_DungeonBigKeys:
       case kRow_DungeonMaps:
       case kRow_DungeonCompasses:
@@ -3482,6 +3515,7 @@ static bool SelectFile_Settings_Update(void) {
       case kRow_MedallionShuffle:
       case kRow_RaceMode:
       case kRow_Hints:
+      case kRow_SkeletonKey:
         CycleRow(row, +1);  // bool toggle
         break;
       case kRow_EntranceShuffle_Disabled:

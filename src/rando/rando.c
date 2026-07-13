@@ -66,6 +66,26 @@
 // ---------------------------------------------------------------------------
 uint8 g_assets_hash[32];
 
+// Key-item ownership is derived from the installed placement table plus the
+// checked-location bitmap. These caches are hot-path conveniences only; they
+// are rebuilt on every slot/snapshot restore and never serialized separately.
+static uint16 g_rando_key_ring_selected_mask;
+static uint16 g_rando_key_ring_owned_mask;
+static bool g_rando_skeleton_key_present;
+static bool g_rando_skeleton_key_owned;
+
+uint16 Rando_GetSelectedKeyRingMask(void) {
+  return g_rando_slot_active ? g_rando_key_ring_selected_mask : 0;
+}
+
+uint16 Rando_GetOwnedKeyRingMask(void) {
+  return g_rando_slot_active ? g_rando_key_ring_owned_mask : 0;
+}
+
+bool Rando_HasSkeletonKey(void) {
+  return g_rando_slot_active && g_rando_skeleton_key_owned;
+}
+
 uint32 Rando_CurrentPotRegistryDigest(void) {
   return kRandoPotRegistryDigest;
 }
@@ -385,6 +405,48 @@ static int dungeon_item_direct_grant(uint16 registry_id) {
     return 1;
   }
   return 0;
+}
+
+// Key Ring direct grant. Unlike an ordinary small-key pickup, a ring max-writes
+// the complete authored stock for its family. The live counter is authoritative
+// while Link is in that family (the parked slot can be stale after door spends),
+// so take the max of live, parked and grant values before synchronizing both.
+static int key_ring_direct_grant(uint16 registry_id) {
+  if (!Rando_IsKeyRingItem(registry_id)) return 0;
+  uint8 rando_dungeon = Rando_RandoDungeonFromDungeonItem(registry_id);
+  if (rando_dungeon >= kRandoDungeon_Count) return 0;
+  uint8 game_dungeon = Rando_GameDungeonFromRandoDungeon(rando_dungeon);
+  uint8 key_slot = Rando_KeySlotFromGameDungeon(game_dungeon);
+  uint8 grant = Rando_KeyRingGrantCount(rando_dungeon);
+  if (key_slot == kGameDungeon_None || key_slot >= 16 || grant == 0 || grant == 0xff)
+    return 0;
+
+  uint8 cur_raw = (uint8)cur_palace_index_x2;
+  uint8 cur_slot = Rando_KeySlotFromRawPalace(cur_raw);
+  if (cur_raw != 0xff && cur_slot == key_slot) {
+    uint8 value = grant;
+    if (link_num_keys != 0xff && link_num_keys > value) value = link_num_keys;
+    if (link_keys_earned_per_dungeon[key_slot] > value)
+      value = link_keys_earned_per_dungeon[key_slot];
+    link_num_keys = value;
+    link_keys_earned_per_dungeon[key_slot] = value;
+  } else if (link_keys_earned_per_dungeon[key_slot] < grant) {
+    link_keys_earned_per_dungeon[key_slot] = grant;
+  }
+
+  uint16 bit = (uint16)(1u << rando_dungeon);
+  g_rando_key_ring_selected_mask |= bit;
+  g_rando_key_ring_owned_mask |= bit;
+  g_reachability_state_counter++;
+  return 1;
+}
+
+static int skeleton_key_direct_grant(uint16 registry_id) {
+  if (registry_id != ITEM_SkeletonKey) return 0;
+  g_rando_skeleton_key_present = true;
+  g_rando_skeleton_key_owned = true;
+  g_reachability_state_counter++;
+  return 1;
 }
 
 // Retro genericKeys grant — a GenericKey (id 125, ROM 0xAF) pickup feeds the
@@ -1317,6 +1379,14 @@ uint8 Rando_DispatchVanillaGrant(uint16 location_id,
   // AncillaAdd_FallingPrize ORs the current dungeon's bit into link_has_crystals;
   // for rando placements at non-boss slots we set the prize's bit directly.
   if (prize_item_direct_grant(placed)) {
+    return kRandoLttpSkip;
+  }
+
+  // Key Rings and Skeleton Key have no vanilla receive-item dispatch. Rings
+  // max-write their target dungeon's key stock; Skeleton Key records derived
+  // ownership for the small-key-door bypass. Both use normal direct-grant
+  // confirmation at the caller.
+  if (key_ring_direct_grant(placed) || skeleton_key_direct_grant(placed)) {
     return kRandoLttpSkip;
   }
 
@@ -3716,6 +3786,62 @@ static bool g_rando_settings_from_cold_replay = false;
 static bool g_rando_seed_qol_features0_saved = false;
 static uint32 g_rando_seed_qol_config_features0 = 0;
 
+void Rando_RebuildKeyItemOwnership(void) {
+  uint16 placement_selected = 0;
+  uint16 owned = 0;
+  bool skeleton_present = false;
+  bool skeleton_owned = false;
+  const RandoPlacementTable *table = Placement_GetActive();
+
+  if (g_rando_slot_active && table != NULL && table->entries != NULL) {
+    for (uint16 i = 0; i < table->count; i++) {
+      uint16 item = table->entries[i].item_id;
+      if (Rando_IsKeyRingItem(item)) {
+        uint8 d = Rando_RandoDungeonFromDungeonItem(item);
+        if (d < kRandoDungeon_Count) {
+          uint16 bit = (uint16)(1u << d);
+          placement_selected |= bit;
+          if (Rando_IsLocationChecked(table->entries[i].location_id))
+            owned |= bit;
+        }
+      } else if (item == ITEM_SkeletonKey) {
+        skeleton_present = true;
+        if (Rando_IsLocationChecked(table->entries[i].location_id))
+          skeleton_owned = true;
+      }
+    }
+  }
+
+  // The installed placement table is authoritative for derived runtime state.
+  // Current slots/snapshots also carry enough state to reproduce the selector;
+  // use that only as a consistency check, never as a replacement for the rows
+  // actually installed (and never erase valid rows when a legacy share cannot
+  // be decoded).
+  uint16 selected = placement_selected;
+  if (g_rando_slot_active && g_rando_active_settings_valid) {
+    uint16 recomputed_selected = 0;
+    ShareString ss;
+    if (g_rando_active_share_string[0] != '\0' &&
+        Share_Decode(g_rando_active_share_string, &ss) == kShareDecodeOk &&
+        KeyRings_Select(&g_rando_active_settings, ss.seed_u64,
+                        &recomputed_selected) &&
+        recomputed_selected != placement_selected) {
+      // A mismatch means the persisted selector inputs no longer describe the
+      // installed table. Surface it while continuing to display/use the table.
+      fprintf(stderr,
+              "Rando WARNING: selected Key Ring mask %04x differs from placement mask %04x\n",
+              (unsigned)recomputed_selected, (unsigned)placement_selected);
+    }
+    skeleton_present = skeleton_present || g_rando_active_settings.skeleton_key != 0;
+  }
+
+  g_rando_key_ring_selected_mask = selected;
+  g_rando_key_ring_owned_mask = owned;
+  g_rando_skeleton_key_present = skeleton_present;
+  g_rando_skeleton_key_owned = skeleton_owned;
+  g_reachability_state_counter++;
+}
+
 // add-rando-grass-rock-shuffle — capped nearest-N terrain glint collector.
 // The 128-sprite OAM budget (up to ~159 in-scope objects on the densest
 // screens) forbids glinting every object, so surface only the closest few
@@ -4694,6 +4820,12 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
     EnemyShuffle_Deactivate();
   }
 
+  // Placement + checked bitmap are now installed, and canonical settings/seed
+  // recovery (when present) is complete. Rebuild derived Key Ring/Skeleton Key
+  // state only here; doing it immediately after Placement_Install would run
+  // before the checked bitmap copy above.
+  Rando_RebuildKeyItemOwnership();
+
   // Seed QoL gameplay features are per-slot play preferences, not canonical
   // randomizer settings. format_version-3 slots written by builds that know this
   // field carry the snapshot the user generated with; older slots leave the
@@ -4961,6 +5093,10 @@ void Rando_DeactivateSlot(void) {
   g_rando_flute_shovel_owned = 0;
   g_rando_boomerang_owned = 0;
   g_rando_bow_owned = 0;
+  g_rando_key_ring_selected_mask = 0;
+  g_rando_key_ring_owned_mask = 0;
+  g_rando_skeleton_key_present = false;
+  g_rando_skeleton_key_owned = false;
   // Transient Retro take-any redirect target. Reset with the other per-slot
   // transients so a stale door id from a prior slot can't mis-key a host-room
   // shop after a slot switch. (Within a slot it is set/cleared by
@@ -5310,6 +5446,18 @@ void Rando_BuildRuntimeCounts(RandoCounts *out) {
     if (Settings_GenericKeysActive(st))
       out->by_item_id[ITEM_GenericKey] = link_generic_keys;
 
+    // Numeric key counters alone cannot prove ring ownership: a player may
+    // have collected ordinary/free keys, or spent keys granted by a ring.
+    // Materialize the derived ownership bits as the actual ring item IDs so
+    // the shared effective-key-count helper can recognize them.
+    uint16 owned_rings = Rando_GetOwnedKeyRingMask();
+    for (uint8 d = 0; d < kRandoDungeon_Count; d++) {
+      if (owned_rings & (uint16)(1u << d)) {
+        uint16 ring = Rando_KeyRingItemForRandoDungeon(d);
+        if (ring < ITEM__COUNT) out->by_item_id[ring] = 1;
+      }
+    }
+
     // Hyrule Castle Ball-n-chain grants a vanilla big-key bit even though HCE
     // has no shuffled BigKey_* item. Enemy-drop sanity models that one-shot as
     // an EnemyDrop check plus this virtual logic item.
@@ -5453,6 +5601,21 @@ void Rando_FillItemView(RandoItemView *out) {
   // (shuffled dungeon items write these vanilla cells on receipt; vanilla-mode
   // dungeons fill them in-place).
   for (int i = 0; i < 16; i++) out->dungeon_small_keys[i] = link_keys_earned_per_dungeon[i];
+  // SaveDungeonKeys parks the current dungeon's counter only on transition, so
+  // the live cell is authoritative while Link remains inside. Overlay the
+  // tracker view immediately after a spend; Hyrule Castle proper folds into
+  // Escape/Sewers through the shared key-slot helper. Retro uses slot 15 as its
+  // one GenericKey pool, so expose the same live value there.
+  if ((uint8)cur_palace_index_x2 != 0xff) {
+    uint8 key_slot = Rando_IsGenericKeysActive()
+                           ? 15
+                           : Rando_KeySlotFromRawPalace((uint8)cur_palace_index_x2);
+    if (key_slot < 16) out->dungeon_small_keys[key_slot] = link_num_keys;
+  }
+  out->key_ring_selected_mask = Rando_GetSelectedKeyRingMask();
+  out->key_ring_owned_mask = Rando_GetOwnedKeyRingMask();
+  out->skeleton_key_enabled = g_rando_slot_active && g_rando_skeleton_key_present;
+  out->skeleton_key_owned = Rando_HasSkeletonKey();
   out->bigkey_bits = link_bigkey;
   out->map_bits = link_dungeon_map;
   out->compass_bits = link_compass;
@@ -5965,6 +6128,27 @@ static void Rando_DungeonIdSelfCheck(void) {
       kRandoDungeonRuntimeRows[0].compass_game_dungeon != kGameDungeon_None ||
       kRandoDungeonRuntimeRows[0].rando_dungeon != kRandoDungeon_HyruleCastleEscape) {
     fprintf(stderr, "Rando_SelfCheck: HCE runtime row axis mismatch\n");
+    exit(2);
+  }
+  for (uint8 d = 0; d < kRandoDungeon_Count; d++) {
+    uint16 ring = Rando_KeyRingItemForRandoDungeon(d);
+    const DirectGrantIconEntry *icon = rando_direct_grant_icon_entry(ring);
+    uint8 stock = Rando_KeyRingGrantCount(d);
+    if (!Rando_IsKeyRingItem(ring) ||
+        Rando_RandoDungeonFromDungeonItem(ring) != d ||
+        stock == 0 || stock == 0xff || icon == NULL ||
+        icon->gfx != kRandoCustomGfx_KeyRing) {
+      fprintf(stderr,
+              "Rando_SelfCheck: Key Ring mapping/stock/icon mismatch for dungeon %u\n",
+              (unsigned)d);
+      exit(2);
+    }
+  }
+  if (Rando_IsKeyRingItem(ITEM_SkeletonKey) ||
+      rando_direct_grant_icon_entry(ITEM_SkeletonKey) == NULL ||
+      rando_direct_grant_icon_entry(ITEM_SkeletonKey)->gfx !=
+          kRandoCustomGfx_SkeletonKey) {
+    fprintf(stderr, "Rando_SelfCheck: Skeleton Key classification/icon mismatch\n");
     exit(2);
   }
 }
@@ -7282,6 +7466,136 @@ void Rando_SelfCheck(void) {
     link_keys_earned_per_dungeon[7] = saved_slot7;
     link_keys_earned_per_dungeon[8] = saved_slot8;
     link_keys_earned_per_dungeon[10] = saved_slot10;
+  }
+
+  // Key Ring/Skeleton direct grants and derived ownership reconstruction.
+  {
+    static RandoPlacement entries[2];
+    RandoPlacementTable t = { entries, 2 };
+    entries[0].location_id = 166;
+    entries[0].item_id = ITEM_KeyRing_TowerOfHera;
+    entries[1].location_id = 167;
+    entries[1].item_id = ITEM_SkeletonKey;
+
+    const RandoPlacementTable *saved_table = Placement_GetActive();
+    uint8 saved_active = g_rando_slot_active;
+    uint16 saved_palace = cur_palace_index_x2;
+    uint8 saved_live = link_num_keys;
+    uint8 saved_hce = link_keys_earned_per_dungeon[kGameDungeon_HyruleCastleEscape];
+    uint8 saved_toh = link_keys_earned_per_dungeon[kGameDungeon_TowerOfHera];
+    uint8 saved_generic = link_generic_keys;
+    uint8 saved_world_state = g_rando_active_world_state;
+    uint32 saved_features1 = enhanced_features1;
+    uint8 saved_checked = g_rando_checked_bitmap[166 >> 3];
+    uint16 saved_selected = g_rando_key_ring_selected_mask;
+    uint16 saved_owned = g_rando_key_ring_owned_mask;
+    bool saved_skeleton_present = g_rando_skeleton_key_present;
+    bool saved_skeleton_owned = g_rando_skeleton_key_owned;
+    bool saved_settings_valid = g_rando_active_settings_valid;
+    char saved_share[sizeof g_rando_active_share_string];
+    memcpy(saved_share, g_rando_active_share_string, sizeof saved_share);
+
+    g_rando_slot_active = 1;
+    g_rando_active_settings_valid = false;  // placement-derived legacy path
+    Placement_Install(&t);
+    cur_palace_index_x2 = 0;  // HCE, not Tower of Hera
+    link_num_keys = 3;
+    link_keys_earned_per_dungeon[kGameDungeon_TowerOfHera] = 0;
+    if (Rando_DispatchVanillaGrant(166, ITEM_BottleEmpty, 0x16) != kRandoLttpSkip ||
+        link_num_keys != 3 ||
+        link_keys_earned_per_dungeon[kGameDungeon_TowerOfHera] !=
+            Rando_KeyRingGrantCount(kRandoDungeon_TowerOfHera)) {
+      fprintf(stderr, "Rando_SelfCheck: off-dungeon Key Ring grant mismatch\n");
+      exit(2);
+    }
+
+    // Never lower either live or parked state; inside the target family both
+    // copies synchronize to the larger pre-existing value.
+    uint8 stock = Rando_KeyRingGrantCount(kRandoDungeon_TowerOfHera);
+    cur_palace_index_x2 = (uint16)(kGameDungeon_TowerOfHera << 1);
+    link_num_keys = (uint8)(stock + 1);
+    link_keys_earned_per_dungeon[kGameDungeon_TowerOfHera] = (uint8)(stock + 2);
+    (void)Rando_DispatchVanillaGrant(166, ITEM_BottleEmpty, 0x16);
+    if (link_num_keys != (uint8)(stock + 2) ||
+        link_keys_earned_per_dungeon[kGameDungeon_TowerOfHera] != (uint8)(stock + 2)) {
+      fprintf(stderr, "Rando_SelfCheck: Key Ring grant lowered/split live state\n");
+      exit(2);
+    }
+
+    if (Rando_DispatchVanillaGrant(167, ITEM_BottleEmpty, 0x16) != kRandoLttpSkip ||
+        !Rando_HasSkeletonKey()) {
+      fprintf(stderr, "Rando_SelfCheck: Skeleton Key direct grant mismatch\n");
+      exit(2);
+    }
+
+    // Clear only the cache, then prove placement + checked bits reconstruct it.
+    g_rando_key_ring_selected_mask = 0;
+    g_rando_key_ring_owned_mask = 0;
+    g_rando_skeleton_key_present = false;
+    g_rando_skeleton_key_owned = false;
+    Rando_RebuildKeyItemOwnership();
+    if (Rando_GetSelectedKeyRingMask() !=
+            (uint16)(1u << kRandoDungeon_TowerOfHera) ||
+        Rando_GetOwnedKeyRingMask() !=
+            (uint16)(1u << kRandoDungeon_TowerOfHera) ||
+        !Rando_HasSkeletonKey()) {
+      fprintf(stderr, "Rando_SelfCheck: derived key-item ownership rebuild mismatch\n");
+      exit(2);
+    }
+
+    // Even if persisted selector inputs are unavailable, installed placement
+    // rows remain authoritative; a failed validation must not clear the mask.
+    g_rando_active_settings_valid = true;
+    g_rando_active_share_string[0] = '\0';
+    g_rando_key_ring_selected_mask = 0;
+    Rando_RebuildKeyItemOwnership();
+    if (Rando_GetSelectedKeyRingMask() !=
+        (uint16)(1u << kRandoDungeon_TowerOfHera)) {
+      fprintf(stderr, "Rando_SelfCheck: placement-authoritative Key Ring mask lost\n");
+      exit(2);
+    }
+
+    // Tracker/autotracker counters must show the authoritative live spend
+    // immediately, not the parked value that updates only on dungeon exit.
+    // Exercise the HC-proper -> Escape/Sewers fold and Retro's shared slot.
+    RandoItemView key_view;
+    enhanced_features1 |= kFeatures1_RandomizerActive;
+    g_rando_active_world_state = kWorldState_Open;
+    cur_palace_index_x2 = (uint16)(kGameDungeon_HyruleCastle << 1);
+    link_keys_earned_per_dungeon[kGameDungeon_HyruleCastleEscape] = 7;
+    link_num_keys = 2;
+    Rando_FillItemView(&key_view);
+    if (key_view.dungeon_small_keys[kGameDungeon_HyruleCastleEscape] != 2) {
+      fprintf(stderr, "Rando_SelfCheck: live Hyrule Castle key counter missing from tracker view\n");
+      exit(2);
+    }
+
+    g_rando_active_world_state = kWorldState_Retro;
+    cur_palace_index_x2 = (uint16)(kGameDungeon_TowerOfHera << 1);
+    link_generic_keys = 9;
+    link_num_keys = 4;
+    Rando_FillItemView(&key_view);
+    if (key_view.dungeon_small_keys[15] != 4) {
+      fprintf(stderr, "Rando_SelfCheck: live Retro GenericKey counter missing from tracker view\n");
+      exit(2);
+    }
+
+    Placement_Install(saved_table);
+    g_rando_slot_active = saved_active;
+    g_rando_active_settings_valid = saved_settings_valid;
+    cur_palace_index_x2 = saved_palace;
+    link_num_keys = saved_live;
+    link_keys_earned_per_dungeon[kGameDungeon_HyruleCastleEscape] = saved_hce;
+    link_keys_earned_per_dungeon[kGameDungeon_TowerOfHera] = saved_toh;
+    link_generic_keys = saved_generic;
+    g_rando_active_world_state = saved_world_state;
+    enhanced_features1 = saved_features1;
+    g_rando_checked_bitmap[166 >> 3] = saved_checked;
+    g_rando_key_ring_selected_mask = saved_selected;
+    g_rando_key_ring_owned_mask = saved_owned;
+    g_rando_skeleton_key_present = saved_skeleton_present;
+    g_rando_skeleton_key_owned = saved_skeleton_owned;
+    memcpy(g_rando_active_share_string, saved_share, sizeof saved_share);
   }
 
   // §9.4b — 5-icon hash widget. Two share strings with identical settings

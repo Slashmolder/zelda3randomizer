@@ -85,12 +85,26 @@ static bool item_is_small_key(uint16 item_id) {
          item_id <= ITEM_SmallKey_GanonsTower;
 }
 
+uint16 Logic_EffectiveItemCount(const RandoCounts *counts,
+                                const RandoSettings *settings,
+                                uint16 item_id) {
+  if (counts == NULL || item_id >= 256) return 0;
+  if (item_id == ITEM_SkeletonKey) return 0;  // bonus-only; never logic
+  if (!Rando_IsSmallKeyItem(item_id)) return counts->by_item_id[item_id];
+  if (Settings_GenericKeysActive(settings))
+    return counts->by_item_id[ITEM_GenericKey] != 0 ? 0xFFFFu : 0;
+  uint8 d = Rando_RandoDungeonFromDungeonItem(item_id);
+  uint16 ring = Rando_KeyRingItemForRandoDungeon(d);
+  if (ring < 256 && counts->by_item_id[ring] != 0) return 0xFFFFu;
+  return counts->by_item_id[item_id];
+}
+
 static bool eval_has_item(Cursor *c, const PredicateContext *ctx) {
   uint16 item_id = cursor_u16le(c);
   if (c->error || item_id >= 256) return false;
   if (item_is_small_key(item_id) && logic_generic_keys_active(ctx))
     return ctx->counts->by_item_id[ITEM_GenericKey] >= 1;
-  return ctx->counts->by_item_id[item_id] >= 1;
+  return Logic_EffectiveItemCount(ctx->counts, ctx->settings, item_id) >= 1;
 }
 
 static bool eval_has_amount(Cursor *c, const PredicateContext *ctx) {
@@ -99,7 +113,7 @@ static bool eval_has_amount(Cursor *c, const PredicateContext *ctx) {
   if (c->error || item_id >= 256) return false;
   if (item_is_small_key(item_id) && logic_generic_keys_active(ctx))
     return ctx->counts->by_item_id[ITEM_GenericKey] >= 1;  // any key opens any door
-  return ctx->counts->by_item_id[item_id] >= n;
+  return Logic_EffectiveItemCount(ctx->counts, ctx->settings, item_id) >= n;
 }
 
 static bool eval_has_any_of(Cursor *c, const PredicateContext *ctx) {
@@ -114,8 +128,10 @@ static bool eval_has_any_of(Cursor *c, const PredicateContext *ctx) {
     // holding >=1 GenericKey. Inert under default settings (no author uses
     // HAS_ANY for a SmallKey today) but kept consistent so a future logic_parts
     // file that lists a SmallKey in HAS_ANY can't desync from the runtime pool.
-    uint16 eff_id = (generic && item_is_small_key(item_id)) ? ITEM_GenericKey : item_id;
-    if (ctx->counts->by_item_id[eff_id] >= 1) result = true;
+    uint16 count_value = (generic && item_is_small_key(item_id))
+        ? ctx->counts->by_item_id[ITEM_GenericKey]
+        : Logic_EffectiveItemCount(ctx->counts, ctx->settings, item_id);
+    if (count_value >= 1) result = true;
   }
   return result;
 }
@@ -140,7 +156,7 @@ static bool eval_has_any_count(Cursor *c, const PredicateContext *ctx) {
       }
       continue;
     }
-    sum += ctx->counts->by_item_id[item_id];
+    sum += Logic_EffectiveItemCount(ctx->counts, ctx->settings, item_id);
   }
   uint8 n = cursor_u8(c);
   if (c->error) return false;
@@ -234,7 +250,17 @@ static bool eval_item_is(Cursor *c, const PredicateContext *ctx) {
   // release we still guard against bad bytecode reaching here.
   assert(ctx->placement_context && "OP_ITEM_IS only valid in placement context");
   if (!ctx->placement_context) return false;
-  return ctx->candidate_item == item_id;
+  if (ctx->candidate_item == item_id) return true;
+  bool target_key = Rando_IsSmallKeyItem(item_id);
+  bool target_ring = Rando_IsKeyRingItem(item_id);
+  bool candidate_key = Rando_IsSmallKeyItem(ctx->candidate_item);
+  bool candidate_ring = Rando_IsKeyRingItem(ctx->candidate_item);
+  if (!((target_key && candidate_ring) || (target_ring && candidate_key)))
+    return false;
+  uint8 target_d = Rando_RandoDungeonFromDungeonItem(item_id);
+  uint8 candidate_d = Rando_RandoDungeonFromDungeonItem(ctx->candidate_item);
+  if (target_d >= kRandoDungeon_Count || target_d != candidate_d) return false;
+  return (ctx->selected_key_rings_mask & (uint16)(1u << target_d)) != 0;
 }
 
 static bool eval_not(Cursor *c, const PredicateContext *ctx) {
@@ -319,6 +345,80 @@ static void skip_pred(Cursor *c) {
     default:
       assert(0 && "unknown predicate op (skip_pred)");
       c->error = true;
+      return;
+  }
+}
+
+// Structural audit companion for Key Ring stock metadata. Record every
+// authored small-key threshold while walking the same bytecode grammar as
+// skip_pred; Logic_SelfCheck compares the maxima with the runtime grant stock.
+// This makes a future YAML threshold increase fail loudly instead of leaving a
+// ring logically saturated but unable to pay the corresponding real doors.
+static void audit_key_thresholds(Cursor *c,
+                                 uint8 out_max[kRandoDungeon_Count]) {
+  uint8 op = cursor_u8(c);
+  if (c->error) return;
+  switch (op) {
+    case OP_HAS_ITEM: {
+      uint16 item = cursor_u16le(c);
+      uint8 d = Rando_IsSmallKeyItem(item)
+                    ? Rando_RandoDungeonFromDungeonItem(item)
+                    : (uint8)kRandoDungeon_None;
+      if (d < kRandoDungeon_Count && out_max[d] < 1) out_max[d] = 1;
+      return;
+    }
+    case OP_HAS_AMOUNT: {
+      uint16 item = cursor_u16le(c);
+      uint8 amount = cursor_u8(c);
+      uint8 d = Rando_IsSmallKeyItem(item)
+                    ? Rando_RandoDungeonFromDungeonItem(item)
+                    : (uint8)kRandoDungeon_None;
+      if (d < kRandoDungeon_Count && out_max[d] < amount)
+        out_max[d] = amount;
+      return;
+    }
+    case OP_HAS_ANY_OF: {
+      uint8 n = cursor_u8(c);
+      for (uint8 i = 0; i < n && !c->error; i++) {
+        uint16 item = cursor_u16le(c);
+        uint8 d = Rando_IsSmallKeyItem(item)
+                      ? Rando_RandoDungeonFromDungeonItem(item)
+                      : (uint8)kRandoDungeon_None;
+        if (d < kRandoDungeon_Count && out_max[d] < 1) out_max[d] = 1;
+      }
+      return;
+    }
+    case OP_HAS_ANY_COUNT: {
+      uint8 n = cursor_u8(c);
+      uint16 families = 0;
+      for (uint8 i = 0; i < n && !c->error; i++) {
+        uint16 item = cursor_u16le(c);
+        uint8 d = Rando_IsSmallKeyItem(item)
+                      ? Rando_RandoDungeonFromDungeonItem(item)
+                      : (uint8)kRandoDungeon_None;
+        if (d < kRandoDungeon_Count) families |= (uint16)(1u << d);
+      }
+      uint8 amount = cursor_u8(c);
+      for (uint8 d = 0; d < kRandoDungeon_Count; d++)
+        if ((families & (uint16)(1u << d)) && out_max[d] < amount)
+          out_max[d] = amount;
+      return;
+    }
+    case OP_NOT:
+      audit_key_thresholds(c, out_max);
+      return;
+    case OP_AND:
+    case OP_OR: {
+      uint8 n = cursor_u8(c);
+      for (uint8 i = 0; i < n && !c->error; i++)
+        audit_key_thresholds(c, out_max);
+      return;
+    }
+    default:
+      // Rewind the opcode and use the already selfcheck-covered structural
+      // decoder for every leaf that cannot carry a key threshold.
+      c->p--;
+      skip_pred(c);
       return;
   }
 }
@@ -677,11 +777,21 @@ bool Predicate_EvaluatePlacement(const uint8 *bytecode, uint16 length,
                                  const RandoCounts *counts,
                                  const RandoSettings *settings,
                                  uint16 candidate_item) {
+  return Predicate_EvaluatePlacementWithKeyRings(
+      bytecode, length, counts, settings, candidate_item, 0);
+}
+
+bool Predicate_EvaluatePlacementWithKeyRings(const uint8 *bytecode, uint16 length,
+                                             const RandoCounts *counts,
+                                             const RandoSettings *settings,
+                                             uint16 candidate_item,
+                                             uint16 selected_key_rings_mask) {
   PredicateContext ctx;
   memset(&ctx, 0, sizeof(ctx));
   ctx.counts = counts;
   ctx.settings = settings;
   ctx.candidate_item = candidate_item;
+  ctx.selected_key_rings_mask = selected_key_rings_mask;
   ctx.placement_context = 1;
   return Predicate_EvalCtx(bytecode, length, &ctx);
 }
@@ -967,7 +1077,12 @@ static const DoorExploreResult *door_oracle_get(uint8 dungeon, const PredicateCo
   for (int i = 0; i < kDoorTbl_DungeonCount; i++) {
     uint16 sk = kDoorTblDungeons[i].small_key_item;
     uint16 bk = kDoorTblDungeons[i].big_key_item;
-    held_keys[i] = (sk != 0xFFFF && ctx->counts) ? ctx->counts->by_item_id[sk] : 0;
+    if (sk != 0xFFFF && ctx->counts) {
+      uint16 effective = Logic_EffectiveItemCount(ctx->counts, ctx->settings, sk);
+      held_keys[i] = effective > 0xFFu ? 0xFFu : (uint8)effective;
+    } else {
+      held_keys[i] = 0;
+    }
     big_key_held[i] = (bk == 0xFFFF) ? 1
                       : ((ctx->counts && ctx->counts->by_item_id[bk]) ? 1 : 0);
   }
@@ -1041,10 +1156,19 @@ static const DoorExploreResult *door_oracle_get(uint8 dungeon, const PredicateCo
   // fixed layout. Fingerprint exactly those — assumed fill changes one item
   // at a time, and most changes flip no predicate relevant to most dungeons.
   if (g_door_counts_fp_gen != g_door_oracle_gen) {
-    uint64 fp = ctx->counts
-        ? door_fnv64(0xcbf29ce484222325ull, ctx->counts->by_item_id,
-                     sizeof(ctx->counts->by_item_id))
-        : 0;
+    uint64 fp = 0;
+    if (ctx->counts) {
+      // Skeleton Key is bonus-only and must not even perturb logic/oracle cache
+      // identity. Hash the full item vector with that one cell canonicalized to
+      // zero; Key Ring cells remain included and therefore invalidate correctly.
+      uint16 zero = 0;
+      fp = door_fnv64(0xcbf29ce484222325ull, ctx->counts->by_item_id,
+                      ITEM_SkeletonKey * sizeof(ctx->counts->by_item_id[0]));
+      fp = door_fnv64(fp, &zero, sizeof(zero));
+      fp = door_fnv64(fp, ctx->counts->by_item_id + ITEM_SkeletonKey + 1,
+                      (256u - ITEM_SkeletonKey - 1u) *
+                          sizeof(ctx->counts->by_item_id[0]));
+    }
     if (ctx->counts) {
       fp = door_fnv64(fp, &ctx->counts->pot_nonpot_drops_seeded,
                       sizeof(ctx->counts->pot_nonpot_drops_seeded));
@@ -1924,6 +2048,14 @@ void Logic_SelfCheck(void) {
     memset(&dark_counts, 0, sizeof(dark_counts));
     for (uint32 i = 0; i < ITEM__COUNT; i++)
       dark_counts.by_item_id[i] = 4;
+    // This fixture isolates the Big Key requirement. Newly appended Key Rings
+    // are alternate small-key inventory, not part of the legacy "everything
+    // else held" basis: an Eastern ring saturates the door-oracle key budget
+    // and can open a different route into the tested room.
+    for (uint16 item = ITEM_KeyRing_HyruleCastleEscape;
+         item <= ITEM_KeyRing_GanonsTower; item++)
+      dark_counts.by_item_id[item] = 0;
+    dark_counts.by_item_id[ITEM_SkeletonKey] = 0;
     dark_counts.by_item_id[ITEM_BigKey_EasternPalace] = 0;
     for (uint32 i = 0; i < sizeof(kEasternDarknessLocations) / sizeof(kEasternDarknessLocations[0]); i++) {
       const RandoLocationDef *loc = logic_selfcheck_find_location(kEasternDarknessLocations[i]);
@@ -2013,6 +2145,75 @@ void Logic_SelfCheck(void) {
   }
   counts.by_item_id[7] = 0;
 
+  // Every HAS form observes a matching Key Ring as a saturated family-key
+  // count, while Skeleton Key is absent and Retro keeps GenericKey exclusive.
+  {
+    RandoCounts ring_counts;
+    memset(&ring_counts, 0, sizeof(ring_counts));
+    ring_counts.by_item_id[ITEM_KeyRing_PalaceOfDarkness] = 1;
+    ring_counts.by_item_id[ITEM_SkeletonKey] = 1;
+    #define LSC_ITEM16(id) (uint8)((id) & 0xff), (uint8)((id) >> 8)
+    uint8 has_item[] = {
+      OP_HAS_ITEM, LSC_ITEM16(ITEM_SmallKey_PalaceOfDarkness),
+    };
+    uint8 has_amount[] = {
+      OP_HAS_AMOUNT, LSC_ITEM16(ITEM_SmallKey_PalaceOfDarkness), 200,
+    };
+    uint8 has_any[] = {
+      OP_HAS_ANY_OF, 2,
+      LSC_ITEM16(ITEM_SmallKey_PalaceOfDarkness),
+      LSC_ITEM16(ITEM_IceRod),
+    };
+    uint8 has_any_count[] = {
+      OP_HAS_ANY_COUNT, 2,
+      LSC_ITEM16(ITEM_SmallKey_PalaceOfDarkness),
+      LSC_ITEM16(ITEM_IceRod), 200,
+    };
+    uint8 has_skeleton[] = {
+      OP_HAS_ITEM, LSC_ITEM16(ITEM_SkeletonKey),
+    };
+    LSC_ASSERT(Predicate_Evaluate(has_item, sizeof(has_item), &ring_counts, &settings),
+               "Key Ring must satisfy HAS_ITEM for its small-key family");
+    LSC_ASSERT(Predicate_Evaluate(has_amount, sizeof(has_amount), &ring_counts, &settings),
+               "Key Ring must saturate HAS_AMOUNT for its small-key family");
+    LSC_ASSERT(Predicate_Evaluate(has_any, sizeof(has_any), &ring_counts, &settings),
+               "Key Ring must satisfy HAS_ANY_OF for its small-key family");
+    LSC_ASSERT(Predicate_Evaluate(has_any_count, sizeof(has_any_count),
+                                 &ring_counts, &settings),
+               "Key Ring must saturate HAS_ANY_COUNT for its small-key family");
+    LSC_ASSERT(!Predicate_Evaluate(has_skeleton, sizeof(has_skeleton),
+                                  &ring_counts, &settings),
+               "Skeleton Key must be invisible to the predicate VM");
+    ring_counts.by_item_id[ITEM_KeyRing_PalaceOfDarkness] = 0;
+    LSC_ASSERT(!Predicate_Evaluate(has_item, sizeof(has_item), &ring_counts, &settings),
+               "Skeleton Key must not satisfy small-key predicates");
+    ring_counts.by_item_id[ITEM_KeyRing_PalaceOfDarkness] = 1;
+    RandoSettings retro = settings;
+    retro.world_state = kWorldState_Retro;
+    LSC_ASSERT(!Predicate_Evaluate(has_item, sizeof(has_item), &ring_counts, &retro),
+               "Retro must ignore per-dungeon Key Rings in favor of GenericKey");
+    ring_counts.by_item_id[ITEM_GenericKey] = 1;
+    LSC_ASSERT(Predicate_Evaluate(has_amount, sizeof(has_amount), &ring_counts, &retro),
+               "Retro GenericKey wildcard semantics must remain unchanged");
+    #undef LSC_ITEM16
+  }
+
+  // Skeleton Key is a runtime-only bonus: even a full reachability fixed point
+  // must be bit-identical when its inventory cell is toggled. Door-oracle cache
+  // identity separately canonicalizes the same cell above.
+  {
+    RandoCounts without_skeleton;
+    memset(&without_skeleton, 0, sizeof without_skeleton);
+    struct RandoReachability before =
+        *Logic_ComputeReachability(&without_skeleton, &settings);
+    RandoCounts with_skeleton = without_skeleton;
+    with_skeleton.by_item_id[ITEM_SkeletonKey] = 1;
+    struct RandoReachability after =
+        *Logic_ComputeReachability(&with_skeleton, &settings);
+    LSC_ASSERT(memcmp(&before, &after, sizeof before) == 0,
+               "Skeleton Key changed logical reachability");
+  }
+
   // WORLDSTATE_EQ(open) — defaults set world_state = Open (0)
   {
     uint8 bc[] = { OP_WORLDSTATE_EQ, kWorldState_Open };
@@ -2090,6 +2291,38 @@ void Logic_SelfCheck(void) {
                "ITEM_IS(42) with candidate 42 should be true");
     LSC_ASSERT(Predicate_EvaluatePlacement(bc, sizeof(bc), &counts, &settings, 41) == false,
                "ITEM_IS(42) with candidate 41 should be false");
+  }
+  // Selected-family SmallKey/KeyRing aliases are symmetric in placement
+  // context; an unselected or unrelated family remains distinct.
+  {
+    uint8 key_bc[] = {
+      OP_ITEM_IS,
+      (uint8)(ITEM_SmallKey_SwampPalace & 0xff),
+      (uint8)(ITEM_SmallKey_SwampPalace >> 8),
+    };
+    uint8 ring_bc[] = {
+      OP_ITEM_IS,
+      (uint8)(ITEM_KeyRing_SwampPalace & 0xff),
+      (uint8)(ITEM_KeyRing_SwampPalace >> 8),
+    };
+    uint16 sp_bit = (uint16)(1u << kRandoDungeon_SwampPalace);
+    LSC_ASSERT(Predicate_EvaluatePlacementWithKeyRings(
+                   key_bc, sizeof(key_bc), &counts, &settings,
+                   ITEM_KeyRing_SwampPalace, sp_bit),
+               "selected Key Ring must satisfy OP_ITEM_IS(SmallKey)");
+    LSC_ASSERT(Predicate_EvaluatePlacementWithKeyRings(
+                   ring_bc, sizeof(ring_bc), &counts, &settings,
+                   ITEM_SmallKey_SwampPalace, sp_bit),
+               "selected SmallKey must satisfy OP_ITEM_IS(KeyRing)");
+    LSC_ASSERT(!Predicate_EvaluatePlacementWithKeyRings(
+                   key_bc, sizeof(key_bc), &counts, &settings,
+                   ITEM_KeyRing_SwampPalace, 0),
+               "unselected Key Ring must not alias OP_ITEM_IS(SmallKey)");
+    LSC_ASSERT(!Predicate_EvaluatePlacementWithKeyRings(
+                   key_bc, sizeof(key_bc), &counts, &settings,
+                   ITEM_KeyRing_TurtleRock,
+                   (uint16)(sp_bit | (1u << kRandoDungeon_TurtleRock))),
+               "different Key Ring family must not alias OP_ITEM_IS(SmallKey)");
   }
 
   // DUNGEON_CLEARED — driven by cleared_dungeons_bitmask in ctx
@@ -2606,6 +2839,7 @@ void Logic_SelfCheck(void) {
   {
     struct { uint32 off; uint16 len; } blob;
     uint32 walked = 0;
+    uint8 key_threshold_max[kRandoDungeon_Count] = {0};
     #define LSC_SKIP_WALK(what) do { \
       if (blob.len != 0) { \
         Cursor sk = { kRandoPredicateStream + blob.off, \
@@ -2613,6 +2847,11 @@ void Logic_SelfCheck(void) {
         skip_pred(&sk); \
         LSC_ASSERT(!sk.error && sk.p == sk.end, \
                    "skip_pred layout mismatch in " what); \
+        Cursor ka = { kRandoPredicateStream + blob.off, \
+                      kRandoPredicateStream + blob.off + blob.len, false }; \
+        audit_key_thresholds(&ka, key_threshold_max); \
+        LSC_ASSERT(!ka.error && ka.p == ka.end, \
+                   "key-threshold audit layout mismatch in " what); \
         walked++; \
       } \
     } while (0)
@@ -2687,6 +2926,10 @@ void Logic_SelfCheck(void) {
     #undef LSC_REACH_WALK
     #undef LSC_SKIP_WALK
     LSC_ASSERT(walked > 1000, "skip_pred walk covered suspiciously few blobs");
+    for (uint8 d = 0; d < kRandoDungeon_Count; d++) {
+      LSC_ASSERT(key_threshold_max[d] <= Rando_KeyRingGrantCount(d),
+                 "authored small-key threshold exceeds Key Ring grant stock");
+    }
   }
 
   fprintf(stderr, "[Logic_SelfCheck] OK\n");

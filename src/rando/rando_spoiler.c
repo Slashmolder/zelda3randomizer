@@ -18,6 +18,7 @@
 #include "shuffle_chains.h"    // DungeonChainsLayout
 #include "location_ids.h"      // LOC_* medallion config slot names
 #include "item_ids.h"          // ITEM_Nothing (empty-pot filler omitted from listings)
+#include "dungeon_ids.h"       // ring mask order + ring item ids
 #include "../config.h"
 #include "../types.h"
 
@@ -81,6 +82,28 @@ static void write_hex(FILE *f, const uint8 *bytes, size_t n) {
     fputc(hex[bytes[i] >> 4], f);
     fputc(hex[bytes[i] & 0xf], f);
   }
+}
+
+static void spoiler_write_key_ring_names_json(FILE *f, uint16 mask) {
+  bool first = true;
+  fprintf(f, "[");
+  for (uint8 d = 0; d < kRandoDungeon_Count; d++) {
+    if ((mask & (uint16)(1u << d)) == 0) continue;
+    fprintf(f, "%s\"%s\"", first ? "" : ", ",
+            BossShuffle_DungeonName(d));
+    first = false;
+  }
+  fprintf(f, "]");
+}
+
+static void spoiler_write_key_ring_names_text(FILE *f, uint16 mask) {
+  bool first = true;
+  for (uint8 d = 0; d < kRandoDungeon_Count; d++) {
+    if ((mask & (uint16)(1u << d)) == 0) continue;
+    fprintf(f, "%s%s", first ? "" : ", ", BossShuffle_DungeonName(d));
+    first = false;
+  }
+  if (first) fprintf(f, "(none)");
 }
 
 static int placement_cmp(const void *a, const void *b) {
@@ -587,6 +610,29 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
           (uint8)((canon[29] & kGrassShuffleAxis_Mask) >> kGrassShuffleAxis_Shift));
   fprintf(f, "    \"rock_shuffle\": %u,\n",
           (uint8)((canon[29] & kRockShuffleAxis_Mask) >> kRockShuffleAxis_Shift));
+  uint16 key_rings_eligible = KeyRings_EligibleMask(s->settings);
+  uint16 key_rings_selected = 0;
+  bool key_rings_selection_valid =
+      KeyRings_Select(s->settings, s->seed_u64, &key_rings_selected);
+  fprintf(f, "    \"key_rings_requested\": %u,\n",
+          (uint8)((canon[30] & kKeyRingsAxis_Mask) >> kKeyRingsAxis_Shift));
+  fprintf(f, "    \"key_rings\": %u,\n",
+          (uint8)((canon[30] & kKeyRingsAxis_Mask) >> kKeyRingsAxis_Shift));
+  fprintf(f, "    \"key_rings_effective\": %u,\n",
+          Settings_EffectiveKeyRings(s->settings));
+  fprintf(f, "    \"key_rings_eligible_mask\": %u,\n", key_rings_eligible);
+  fprintf(f, "    \"key_rings_eligible_names\": ");
+  spoiler_write_key_ring_names_json(f, key_rings_eligible);
+  fprintf(f, ",\n");
+  fprintf(f, "    \"key_rings_selected_mask\": %u,\n", key_rings_selected);
+  fprintf(f, "    \"key_rings_selected_names\": ");
+  spoiler_write_key_ring_names_json(f, key_rings_selected);
+  fprintf(f, ",\n");
+  fprintf(f, "    \"key_rings_selection_salt_version\": 1,\n");
+  fprintf(f, "    \"key_rings_selection_valid\": %s,\n",
+          key_rings_selection_valid ? "true" : "false");
+  fprintf(f, "    \"skeleton_key\": %s,\n",
+          (canon[30] & kSkeletonKeyAxis_Enabled) ? "true" : "false");
   fprintf(f, "    \"canonical_hex\": \"");
   for (int ci = 0; ci < kSettingsCanonicalLen; ci++) fprintf(f, "%02x", canon[ci]);
   fprintf(f, "\"\n");
@@ -1075,44 +1121,31 @@ int Spoiler_ReadSuppressed(const char *path, RandoSuppressedSpoiler *out) {
   if (f == NULL) return -1;
   uint8 buf[kRandoSuppressedSpoilerSize];
   size_t got = fread(buf, 1, sizeof(buf), f);
+  int trailing = fgetc(f);
   fclose(f);
-  enum {
-    kLegacyZrsrSize138 = 138,   // 28-canonical era
-    kLegacyZrsrSettingsLen28 = 28,
-    kLegacyZrsrCrcOffset134 = 134,
-    kLegacyZrsrSize139 = 139,   // 29-canonical era (pre-terrain byte [29])
-    kLegacyZrsrSettingsLen29 = 29,
-    kLegacyZrsrCrcOffset135 = 135,
-  };
-  bool legacy138 = (got == kLegacyZrsrSize138);
-  bool legacy139 = (got == kLegacyZrsrSize139);
-  // Legacy sizes parse far enough that the caller classifies them by
-  // generator_version (kRandoReveal_VersionMismatch), not as malformed.
-  if (got != sizeof(buf) && !legacy138 && !legacy139) return -2;
+  // The only historical size changes are append-only settings bytes:
+  // 138/139/140/141 bytes carry canonical lengths 28/29/30/31. Refuse both
+  // unknown sizes and a future file whose known prefix fills our buffer.
+  if (trailing != EOF || got < 138 || got > kRandoSuppressedSpoilerSize)
+    return -2;
+  uint32 settings_len = (uint32)got - 110u;  // 106 prefix + settings + 4 CRC
+  if (settings_len < 28 || settings_len > kRandoSuppressedSpoilerSettingsLen)
+    return -2;
   if (memcmp(buf, kRandoSuppressedSpoilerMagic, 4) != 0) return -2;
 
-  uint32 crc_offset = legacy138 ? kLegacyZrsrCrcOffset134
-                    : legacy139 ? kLegacyZrsrCrcOffset135
-                                : kRandoSuppressedSpoilerCrcOffset;
+  uint32 crc_offset = (uint32)got - 4u;
   uint32 disk_crc = read_u32_le(buf + crc_offset);
   uint32 calc_crc = crc32_ieee(buf, crc_offset);
   if (disk_crc != calc_crc) return -3;
 
+  memset(out, 0, sizeof(*out));
   memcpy(out->magic, buf + 0, 4);
   out->generator_version = read_u16_le(buf + 4);
   memcpy(out->spoiler_stamp, buf + 6, 32);
   out->share_string_len = read_u32_le(buf + 38);
   if (out->share_string_len > kRandoSuppressedSpoilerShareStringMax) return -2;
   memcpy(out->share_string, buf + 42, kRandoSuppressedSpoilerShareStringMax);
-  if (legacy138 || legacy139) {
-    uint32 legacy_len =
-        legacy138 ? kLegacyZrsrSettingsLen28 : kLegacyZrsrSettingsLen29;
-    memcpy(out->settings_canonical, buf + 106, legacy_len);
-    memset(out->settings_canonical + legacy_len, 0,
-           kRandoSuppressedSpoilerSettingsLen - legacy_len);
-  } else {
-    memcpy(out->settings_canonical, buf + 106, kRandoSuppressedSpoilerSettingsLen);
-  }
+  memcpy(out->settings_canonical, buf + 106, settings_len);
   out->crc32 = disk_crc;
   return 0;
 }
@@ -1172,6 +1205,20 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
   fprintf(f, "\n");
   fprintf(f, "World state: %u, Goal: %u\n",
           s->settings->world_state, s->settings->goal);
+  {
+    uint16 eligible = KeyRings_EligibleMask(s->settings);
+    uint16 selected = 0;
+    bool selection_valid = KeyRings_Select(s->settings, s->seed_u64, &selected);
+    fprintf(f, "Key rings: requested %u, effective %u (selection salt v1%s)\n",
+            s->settings->key_rings, Settings_EffectiveKeyRings(s->settings),
+            selection_valid ? "" : ", invalid eligible set");
+    fprintf(f, "Eligible key rings: 0x%04x — ", eligible);
+    spoiler_write_key_ring_names_text(f, eligible);
+    fprintf(f, "\nSelected key rings: 0x%04x — ", selected);
+    spoiler_write_key_ring_names_text(f, selected);
+    fprintf(f, "\nSkeleton Key enabled: %s (bonus only; logic never requires it)\n",
+            s->settings->skeleton_key ? "yes" : "no");
+  }
   fprintf(f, "Generation wall-clock: %u ms\n", (unsigned)s->generation_wall_clock_ms);
   fprintf(f, "Goal completable: %s\n\n", s->goal_completable ? "yes" : "no");
 

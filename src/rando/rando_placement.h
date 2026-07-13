@@ -31,7 +31,18 @@ typedef struct RandoPlacementTable {
 // Build the per-settings item pool. Returns the number of items written.
 // |out_items| must be sized to hold the maximum possible pool (~216 entries
 // at Phase A worst case).
-uint16 BuildItemPool(const RandoSettings *settings, uint16 *out_items, uint16 capacity);
+// Return the small-key families that have at least one shuffled copy before
+// Key Ring collapse (base chest keys + every active itemized key source).
+uint16 KeyRings_EligibleMask(const RandoSettings *settings);
+
+// Resolve the requested Key Ring mode for this seed without consuming the
+// assumed-fill RNG stream. Effective Random with fewer than two eligible
+// families is invalid and returns false; effective Off succeeds with mask 0.
+bool KeyRings_Select(const RandoSettings *settings, uint64 seed_u64,
+                     uint16 *out_mask);
+
+uint16 BuildItemPool(const RandoSettings *settings, uint64 seed_u64,
+                     uint16 *out_items, uint16 capacity);
 
 // Fail-fast validation for settings combinations that the placement pipeline
 // cannot honestly build. BuildItemPool keeps equivalent guards for low-level

@@ -165,6 +165,7 @@ class ItemDef:
     id: int
     name: str
     category: str
+    display_name: str = ""
     max_count: int = 1
     dispatch: str = ""
 
@@ -241,6 +242,7 @@ def load_items(path: Path) -> dict[str, ItemDef]:
             id=raw["id"],
             name=raw["name"],
             category=raw.get("category", ""),
+            display_name=raw.get("display_name", raw["name"]),
             max_count=raw.get("max_count", 1),
             dispatch=raw.get("dispatch", ""),
         )
@@ -4141,7 +4143,7 @@ def emit_logic_data(
         # Indexed by registry item_id.
         name_by_id = [None] * (max_item_id + 1)
         for it in items.values():
-            name_by_id[it.id] = it.name
+            name_by_id[it.id] = it.display_name
         out.append("// Item registry ID → human-readable name. Used by the spoiler writer.")
         out.append(f"static const char *kRandoItemNames[{max_item_id + 1}] = {{")
         for i, nm in enumerate(name_by_id):

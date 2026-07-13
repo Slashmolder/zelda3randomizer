@@ -54,7 +54,7 @@ The randomizer lives inside the same `zelda3` executable as the vanilla port.
 | `--customizer=<path>` | Customizer mode: load a manifest that PINS a subset of locations to chosen items; the assumed-fill placer completes the rest. See [Customizer mode](#customizer-mode). |
 | `--print-assets-hash` | Print the SHA-256 of the loaded `zelda3_assets.dat` and exit. Useful for baking the vanilla hash. |
 | `--rando-selftest` | Run subsystem self-tests (SHA-256 vectors, RNG, settings, logic, placement, prize/medallion shuffles, boss shuffle, drop shuffle, save, textfield, dispatch) and exit. CI invokes this on every Linux / macOS / Windows runner. |
-| `--race-mode` | Generate a race-mode seed. Overrides `--settings=race_mode=false`. The spoiler is written as a 139-byte suppressed `ZRSR` binary file at the same path (instead of full JSON + .txt sibling); reveal via `--reveal-spoiler` to expand. |
+| `--race-mode` | Generate a race-mode seed. Overrides `--settings=race_mode=false`. The spoiler is written as a 141-byte suppressed `ZRSR` binary file at the same path (instead of full JSON + .txt sibling); reveal via `--reveal-spoiler` to expand. |
 | `--reveal-spoiler=<path>` | Read a suppressed `ZRSR` file at `<path>`, validate magic + CRC + version + stamp, regenerate the placement, and overwrite the file in place with the full JSON. Writes a sibling `.txt` text spoiler. Exits 0 on success; non-zero with a numeric `kRandoReveal_*` code on any failure (CrcMismatch, VersionMismatch, StampMismatch, ParseError, FileNotFound). Idempotent: a second invocation on an already-revealed file is a no-op success. |
 
 Examples:
@@ -122,6 +122,8 @@ axis via `item_pool`.
 | `mode.weapons` | `randomized`, `assured`, `swordless` | `randomized` |
 | `accessibility` | `items`, `locations`, `none` (alias `beatable`; UI label "beatable only") | `items` (auto-set to `locations` for Completionist) |
 | `dungeon_items.{small_keys,big_keys,maps,compasses}` | `vanilla`, `dungeon`, `wild` | `vanilla` |
+| `key_rings` | `off`, `random`, `all` | `off` (`random` deterministically converts a non-empty proper subset of eligible dungeon key families; `all` converts every eligible family; effective `vanilla` or Retro generic keys resolve rings off without discarding the requested setting) |
+| `skeleton_key` | `true`, `false` | `false` (adds one bonus item that opens every small-key door without spending keys; never opens Big Key doors and is deliberately absent from generation logic) |
 | `prize_shuffle` | `true`, `false` | `true` |
 | `medallion_shuffle` | `true`, `false` | `true` |
 | `boss_shuffle` | `true`, `false` | `false` (playable, experimental; render via the Enemizer redirect model; see [Boss & drop shuffle](#boss--drop-shuffle-experimental)) |
@@ -480,6 +482,38 @@ listing each start door, its ordered dungeons, and its terminal boss.
 **Status:** generated and headless-validated; runtime remains experimental until
 the owner-run playtest matrix for the door, boss, death/reload, mirror, and
 auxiliary-exit seams is complete.
+
+### Key Rings and Skeleton Key (experimental)
+
+`key_rings` reduces repetitive dungeon-key checks without changing which active
+locations exist. A ring is specific to one of the 13 small-key families. For a
+selected family, every shuffled copy contributed by the base pool, active key
+pots, and active enemy-key checks is collapsed into exactly one Key Ring; normal
+junk padding fills the released checks. Free vanilla drops that are not active
+randomizer checks remain available as harmless surplus.
+
+- `off` keeps every ordinary shuffled small key.
+- `random` uses a dedicated seed-salted selection domain and guarantees a real
+  mix: at least one eligible family uses a ring and at least one retains regular
+  keys. It does not consume the assumed-fill RNG stream.
+- `all` converts every eligible family. Eligibility is data-driven from the
+  pre-collapse pool, so Eastern Palace receives a ring only when an active pot or
+  enemy source actually contributes an Eastern small key.
+
+Rings keep their dungeon identity. Dungeon-mode rings are confined like their
+family's small key; Wild-mode rings may appear worldwide. In logic, holding the
+ring satisfies every authored and door-shuffle key threshold for that family. At
+runtime the pickup max-credits the complete authored key stock into that dungeon's
+existing key counter, including when collected elsewhere. Requested ring settings
+remain in shares/saves/spoilers, while effective Vanilla small keys and Retro's
+shared GenericKey model resolve rings off.
+
+`skeleton_key=true` replaces one junk item with a single unrestricted bonus
+Skeleton Key. Once collected it takes the normal successful small-key-door path
+without decrementing dungeon or Retro GenericKey counters. It does not satisfy
+logic, is never assumed during fill, may be outside beatable-only goal spheres,
+and does not open or replace Big Keys. Seeds are therefore certified beatable
+without it.
 
 ### Pot shuffle (experimental)
 
@@ -893,7 +927,7 @@ slot (the 31-byte raw blob plus one pad byte), the suppressed `ZRSR` race file,
 the spoiler filename and the spoiler JSON's `meta.share_string`, the 5-icon
 visual hash, and the file-select banner prefix.
 
-**v2 — magic `ZRS2`, exactly 72 characters.** Payload layout:
+**v2 — magic `ZRS2`, exactly 76 characters.** Payload layout:
 `magic | generator_version | settings_len | settings_canonical | seed_u64 | checksum`.
 v2 embeds the **full canonical settings plus the seed**: pasting one restores
 every setting AND the seed, and pins the seed so Generate reproduces the
@@ -920,7 +954,7 @@ then pressing Generate opens a confirmation modal — settings no longer match
 the pasted share string — instead of silently generating a different seed.
 
 v2 is transport-only, which has one visible consequence: the window shows the
-72-character v2 string while the file-select banner prefix comes from the
+ 76-character v2 string while the file-select banner prefix comes from the
 slot's stored v1 identity string, so the two differ. Banner-prefix matching
 between friends still works — both slots store the same v1 string for the
 same seed.
@@ -946,7 +980,8 @@ slots as vanilla. Sidecar layout:
   without verification).
 - 3 slots × {80-byte header + embedded placement table + checked-location bitmap
   + a versioned canonical `RandoSettings` blob (absent for v1, 28-byte legacy
-  prefix for v2/v3, current `kSettingsCanonicalLen` for v4+)
+  prefix for v2/v3, 29 bytes for v4-v7, 30 for v8/v9, and current
+  `kSettingsCanonicalLen` for v10+)
   + (format_version ≥ 3) an 8-byte slot extension block}.
 - No 4th slot anywhere.
 
@@ -963,9 +998,15 @@ format_version ≥ 3 slot extension block.
 
 **format_version 2** (added with the rich tracker windows): each slot appends a
 28-byte legacy canonical `RandoSettings` prefix after the checked bitmap. Version
-4 widened that physical blob to the current `kSettingsCanonicalLen` (29 bytes);
-v2/v3 loads zero-extend the legacy tail, so `enemy_drop_checks` defaults to
-`off`. This lets a reloaded slot reproduce the seed's full settings *and*
+4 widened the blob to 29 bytes, version 8 to 30, and version 10 to the current 31
+bytes. Version 9 retained the 30-byte settings blob while adding enemy-registry
+identity to the extension block. Older supported bodies zero-extend each missing
+tail byte, so their newer settings default to `off`. The current reader explicitly
+refuses future versions and trailing bytes. Version-10 sidecars are unsupported by
+pre-v10 binaries; older readers did not promise a future-version refusal, so do
+not use an older binary to open or rewrite a v10 sidecar.
+
+This lets a reloaded slot reproduce the seed's full settings *and*
 recompute the prize/medallion shuffle assignments (from the share string's seed,
 in the exact placer order) — both of which the runtime reachability engine
 needs. Older v1 slots have no blob and load unchanged via the version-aware
@@ -1009,7 +1050,7 @@ later via `--reveal-spoiler` (the binary regenerates and overwrites the file
 in place with the full JSON).
 
 **Generation**: pass `--race-mode` (or set `race_mode=true` via `--settings`).
-The spoiler path receives a 139-byte binary file with magic `ZRSR` instead
+The spoiler path receives a 141-byte binary file with magic `ZRSR` instead
 of the usual JSON + .txt pair. File layout (all multi-byte fields LE):
 
 ```
@@ -1019,11 +1060,11 @@ of the usual JSON + .txt pair. File layout (all multi-byte fields LE):
                 (with race_mode and wall-clock fields normalized to 0)
 +38   4 bytes   share_string_len (u32 LE)
 +42   64 bytes  share_string (zero-padded)
-+106  29 bytes  settings_canonical (= kSettingsCanonicalLen)
-+135  4 bytes   crc32 (IEEE 802.3 over bytes 0..134, LE on disk)
++106  31 bytes  settings_canonical (= kSettingsCanonicalLen)
++137  4 bytes   crc32 (IEEE 802.3 over bytes 0..136, LE on disk)
 ```
 
-Total: 139 bytes. The settings are public on race sheets, so including the
+Total: 141 bytes. The settings are public on race sheets, so including the
 canonical bytes does not leak the placement — they're needed at reveal time
 to regenerate.
 
@@ -1570,6 +1611,7 @@ Current `kGeneratorVersion` is in `src/rando/rando.h` (search for `#define kGene
 | 134→135 | **Renewable general bomb access** — `CanBombThings()` again matches ALTTPR's always-true ordinary-world model (drops, terrain secrets, and shops are renewable), while `CanKillEscapeThings()` retains an explicit Bombs1/Bombs3/Bombs10 branch so Standard escape combat still receives concrete ammo. | 164 of 192 corpus rows move; Retro, No Logic, and other already-inert cases remain unchanged. Full v135 corpus regenerated. |
 | 137→138 | **Dungeon bosses no longer duplicate their reward** — the ten dungeon-boss event rows were removed from `enemy_drop_checks=all`; their existing heart-container and dungeon-prize sequence remains the only boss reward. The three GT miniboss/refight checks remain because they have no dungeon-prize reward. | Prevents an extra direct-grant item from colliding with the boss heart/prize animation. Corpus regenerated at v138. |
 | 139→140 | **GT miniboss runtime-room identities** — the Ice Armos, Lanmolas 2, and Moldorm event rows now key their death hooks on physical rooms `0x01C`, `0x06C`, and `0x04D` while retaining logical door regions `0x064`, `0x067`, and `0x06A` for reachability. | Runtime lookup correction only; all 192 placement and sphere digests remained byte-identical. A generator contract pins the physical/logical pairs. |
+| 140→141 | **Dungeon Key Rings and Skeleton Key** — append 13 family-specific ring items plus one logic-neutral Skeleton Key, add requested/effective ring settings in canonical byte `[30]`, collapse selected base/pot/enemy key copies before junk padding, make every logic/door count ring-aware, and add derived runtime ownership plus the small-key-only Skeleton bypass. | The zero default keeps feature-Off placement tables identical, but every settings hash/v1 identity changes because the canonical SHA input grows 30→31 bytes. New Random/All/Skeleton corpus rows pin the active behavior. |
 | 14→15 | Slice 3a #52 — 7 new item-registry IDs for Retro shop consumables | Pool composition unchanged at default settings; Retro entries shift if pool difficulty changes |
 | 15→16 | Cluster-audit H1 fix — `PlacementTable_ComputeDigest` 256→512 entry cap | 3 Retro corpus entries get new digests (the truncation was silently dropping 9 slots from the hash) |
 | 16→17 | Slice 3a #53 part 2 — `LOCTYPE_Shop` identity-pinned per ALTTPR `Randomizer.php:737-750` | Retro placement changes; 3 Retro entries regenerated |

@@ -4,7 +4,7 @@
 // The canonical layout is pinned below. Reordering, widening, or renumbering
 // any field is a kGeneratorVersion bump trigger (tasks.md §13.6).
 //
-// Layout (kSettingsCanonicalLen = 29 bytes):
+// Layout (kSettingsCanonicalLen = 31 bytes):
 //   offset 0   world_state                 WorldState enum
 //   offset 1   goal                        Goal enum
 //   offset 2   crystals_ganon              0..7
@@ -47,6 +47,8 @@
 //   offset 29  grass_shuffle               bits0-1 (TerrainShuffle enum)
 //              rock_shuffle                bits2-3 (TerrainShuffle enum,
 //                                          add-rando-grass-rock-shuffle)
+//   offset 30  key_rings                   bits0-1 (KeyRingsMode enum)
+//              skeleton_key                bit2 (bonus-only item toggle)
 //
 // settings_version is NOT serialized — it's a runtime constant pinned to 1
 // for Phase A. Bumping the layout requires kGeneratorVersion increment.
@@ -131,6 +133,8 @@ void Settings_SetDefaults(RandoSettings *s) {
   // default settings_hash byte-identical).
   s->souls_shuffle = kSoulsShuffle_Off;
   s->npc_souls = 0;  // add-npc-souls default off (byte-identical)
+  s->key_rings = kKeyRings_Off;
+  s->skeleton_key = 0;
 }
 
 // Apply derived-from-other-fields normalization rules.
@@ -153,6 +157,15 @@ uint8 Settings_EffectiveSmallKeysMode(const RandoSettings *s) {
       Settings_EffectiveDungeonChains(s))
     return kDungeonItemMode_Dungeon;
   return s->dungeon_small_keys_mode;
+}
+
+uint8 Settings_EffectiveKeyRings(const RandoSettings *s) {
+  if (s == NULL || s->key_rings == kKeyRings_Off)
+    return kKeyRings_Off;
+  if (Settings_GenericKeysActive(s) ||
+      Settings_EffectiveSmallKeysMode(s) == kDungeonItemMode_Vanilla)
+    return kKeyRings_Off;
+  return s->key_rings;
 }
 
 uint8 Settings_EffectiveBigKeysMode(const RandoSettings *s) {
@@ -403,7 +416,7 @@ bool Settings_EnemyChecksAllActive(const RandoSettings *s) {
 int Settings_CanonicalSerialize(const RandoSettings *s_in,
                                 uint8 out[kSettingsCanonicalLen]) {
   // Layout per `randomizer-core / Settings canonical serialization order`.
-  // 21 single-byte fields + 2×u16 LE + 3 pad bytes + 1 appended axis = 29 bytes
+  // 21 single-byte fields + 2×u16 LE + packed/append-only axes = 31 bytes
   // (kGenVer 14 §66 grew 18→21 single-byte fields by absorbing hints +
   // boss_shuffle + drop_shuffle at offsets [22..24]).
   RandoSettings sn = *s_in;
@@ -479,11 +492,16 @@ int Settings_CanonicalSerialize(const RandoSettings *s_in,
   // settings_hash once, under that change's kGeneratorVersion bump.
   out[29] = (uint8)(((s->grass_shuffle << kGrassShuffleAxis_Shift) & kGrassShuffleAxis_Mask) |
                     ((s->rock_shuffle << kRockShuffleAxis_Shift) & kRockShuffleAxis_Mask));
+  // add-rando-key-rings-skeleton-key — preserve the REQUESTED ring policy.
+  // Effective-off semantics are computed by Settings_EffectiveKeyRings and are
+  // deliberately not part of apply_derived_rules.
+  out[30] = (uint8)(((s->key_rings << kKeyRingsAxis_Shift) & kKeyRingsAxis_Mask) |
+                    (s->skeleton_key ? kSkeletonKeyAxis_Enabled : 0));
   return kSettingsCanonicalLen;
 }
 
 // Phase B Slice 6 — inverse of Settings_CanonicalSerialize. Reads the
-// kSettingsCanonicalLen (29)-byte canonical blob and populates `out`. Returns 0
+// kSettingsCanonicalLen (31)-byte canonical blob and populates `out`. Returns 0
 // on success, -1 if the input is NULL. Body occupies [0..24] (through
 // drop_shuffle); [25] = entrance axes, [26] = enemy_shuffle + customizer +
 // traps + inverse instant-flute, [27] = door_shuffle, [28] = enemy_drop_checks.
@@ -589,6 +607,12 @@ int Settings_CanonicalDeserialize(const uint8 in[kSettingsCanonicalLen],
   s.rock_shuffle = (uint8)((in[29] & kRockShuffleAxis_Mask) >> kRockShuffleAxis_Shift);
   if (in[29] & ~(uint8)(kGrassShuffleAxis_Mask | kRockShuffleAxis_Mask)) return -2;
   if (s.grass_shuffle > kTerrainShuffle_All || s.rock_shuffle > kTerrainShuffle_All) return -2;
+  // add-rando-key-rings-skeleton-key — [30] is strict append-only data. Older
+  // containers zero-extend a 30-byte blob before calling this function.
+  if (in[30] & ~(uint8)kKeyRingsAxis_DefinedMask) return -2;
+  s.key_rings = (uint8)((in[30] & kKeyRingsAxis_Mask) >> kKeyRingsAxis_Shift);
+  s.skeleton_key = (in[30] & kSkeletonKeyAxis_Enabled) ? 1 : 0;
+  if (s.key_rings > kKeyRings_All) return -2;
   // FIX #5 — refuse out-of-range enum bytes. The permissiveness documented
   // above is for the undefined BITS of the flag bytes [25]-[27] (already
   // masked); the raw enum bytes [0..17] have defined ranges and a value
@@ -665,6 +689,8 @@ bool Settings_Validate(const RandoSettings *s) {
   // 0..2 defined (add-rando-grass-rock-shuffle); 3 is reserved.
   if (s->grass_shuffle > kTerrainShuffle_All) return false;
   if (s->rock_shuffle > kTerrainShuffle_All) return false;
+  // [30] bits 0-1: requested key-ring mode; bit2: Skeleton Key item toggle.
+  if (s->key_rings > kKeyRings_All || s->skeleton_key > 1) return false;
   return true;
 }
 
@@ -775,18 +801,62 @@ void Settings_SelfCheck(void) {
 
   uint8 hash[32];
   Settings_ComputeHash(&s, hash);
-  // SHA-256 of the kExpectedCanonical bytes (30 bytes; hints=1 default —
-  // re-pinned when add-rando-grass-rock-shuffle appended byte [29]).
+  // SHA-256 of the kExpectedCanonical bytes (31 bytes; hints=1 default —
+  // re-pinned when key rings/Skeleton Key appended byte [30]).
   static const uint8 kExpectedHash[32] = {
-    0x27, 0xb2, 0x1b, 0x4c, 0x5f, 0xf1, 0x2e, 0xf6,
-    0x04, 0x71, 0x33, 0x66, 0xf9, 0x48, 0x60, 0x32,
-    0xb0, 0x26, 0x91, 0xc4, 0x8e, 0x12, 0x17, 0x0c,
-    0xf7, 0x5c, 0x7a, 0xad, 0x9f, 0xc7, 0xf1, 0x48,
+    0xab, 0x22, 0x19, 0xd8, 0x32, 0xf2, 0xad, 0x1e,
+    0xd3, 0x1f, 0x42, 0xd9, 0xf7, 0x24, 0x7b, 0x05,
+    0xb5, 0x36, 0x5f, 0x8a, 0x20, 0x3e, 0x65, 0xee,
+    0x0b, 0x82, 0x15, 0x1e, 0x63, 0xac, 0xc4, 0x0f,
   };
   if (!settings_byte_eq(hash, kExpectedHash, 32)) {
     fprintf(stderr,
             "Settings_SelfCheck: default settings_hash mismatch (SHA-256 broken?).\n");
     exit(2);
+  }
+
+  // Key rings preserve the requested mode even while Vanilla/Retro semantics
+  // make them ineffective. Skeleton Key is independent and byte [30] refuses
+  // every unclaimed bit.
+  {
+    RandoSettings kr, round;
+    uint8 blob[kSettingsCanonicalLen];
+    Settings_SetDefaults(&kr);
+    kr.key_rings = kKeyRings_All;
+    kr.skeleton_key = 1;
+    if (Settings_EffectiveKeyRings(&kr) != kKeyRings_Off) {
+      fprintf(stderr, "Settings_SelfCheck: Vanilla small keys must disable key rings\n");
+      exit(2);
+    }
+    Settings_CanonicalSerialize(&kr, blob);
+    if (blob[30] != (uint8)((uint8)kKeyRings_All |
+                            (uint8)kSkeletonKeyAxis_Enabled) ||
+        Settings_CanonicalDeserialize(blob, &round) != 0 ||
+        round.key_rings != kKeyRings_All || !round.skeleton_key) {
+      fprintf(stderr, "Settings_SelfCheck: requested key rings/Skeleton Key round-trip mismatch\n");
+      exit(2);
+    }
+    kr.dungeon_small_keys_mode = kDungeonItemMode_Wild;
+    if (Settings_EffectiveKeyRings(&kr) != kKeyRings_All) {
+      fprintf(stderr, "Settings_SelfCheck: Wild small keys must enable requested key rings\n");
+      exit(2);
+    }
+    kr.world_state = kWorldState_Retro;
+    if (Settings_EffectiveKeyRings(&kr) != kKeyRings_Off) {
+      fprintf(stderr, "Settings_SelfCheck: Retro Generic Keys must disable key rings\n");
+      exit(2);
+    }
+    blob[30] |= 0x08;
+    if (Settings_CanonicalDeserialize(blob, &round) == 0) {
+      fprintf(stderr, "Settings_SelfCheck: undefined canonical [30] bits must be refused\n");
+      exit(2);
+    }
+    Settings_SetDefaults(&kr);
+    if (Settings_ParseCsv("key_rings=random,skeleton_key=true", &kr) != 0 ||
+        kr.key_rings != kKeyRings_Random || !kr.skeleton_key) {
+      fprintf(stderr, "Settings_SelfCheck: key-rings CSV parse mismatch\n");
+      exit(2);
+    }
   }
 
   // A pre-dungeon-chains/default canonical blob has [25] bit6 clear and must
@@ -2246,6 +2316,22 @@ static int parse_terrain_shuffle(const char *v, int vlen, uint8 *out) {
   return -1;
 }
 
+static int parse_key_rings(const char *v, int vlen, uint8 *out) {
+  if (csv_str_eq(v, vlen, "off") || csv_str_eq(v, vlen, "0")) {
+    *out = kKeyRings_Off;
+    return 0;
+  }
+  if (csv_str_eq(v, vlen, "random") || csv_str_eq(v, vlen, "1")) {
+    *out = kKeyRings_Random;
+    return 0;
+  }
+  if (csv_str_eq(v, vlen, "all") || csv_str_eq(v, vlen, "2")) {
+    *out = kKeyRings_All;
+    return 0;
+  }
+  return -1;
+}
+
 // Bitmap of keys seen — used to reject duplicate keys per spec.
 typedef struct {
   uint64 seen;
@@ -2314,6 +2400,8 @@ enum {
   KEY_npc_souls,
   KEY_grass_shuffle,   // add-rando-grass-rock-shuffle
   KEY_rock_shuffle,
+  KEY_key_rings,       // add-rando-key-rings-skeleton-key
+  KEY_skeleton_key,
 };
 
 static int handle_kv(const char *key, int klen, const char *val, int vlen,
@@ -2550,6 +2638,12 @@ static int handle_kv(const char *key, int klen, const char *val, int vlen,
     // (off|junk|all). Serialized in canonical [29] bits 2-3.
     MARK_SEEN(KEY_rock_shuffle);
     if (parse_terrain_shuffle(val, vlen, &s->rock_shuffle) != 0) goto bad_value;
+  } else if (csv_str_eq(key, klen, "key_rings")) {
+    MARK_SEEN(KEY_key_rings);
+    if (parse_key_rings(val, vlen, &s->key_rings) != 0) goto bad_value;
+  } else if (csv_str_eq(key, klen, "skeleton_key")) {
+    MARK_SEEN(KEY_skeleton_key);
+    if (parse_bool(val, vlen, &s->skeleton_key) != 0) goto bad_value;
   } else if (csv_str_eq(key, klen, "instant_flute")) {
     // Randomizer QoL — seed-burned flute activation behavior. Default true.
     MARK_SEEN(KEY_instant_flute);

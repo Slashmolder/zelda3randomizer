@@ -78,6 +78,20 @@ icons:
   TriforcePiece: { gfx: 0x80, big: 2, oam_flags: 0x36, notes: "kRandoCustomGfx_TriforcePiece: 16x16 triforce tile (kRandoCustomItemGfx entry 0, MIT z3r art) + green_blue_guard upper-half palette via SP3" }
   HalfMagic:     { gfx: 0x81, big: 2, oam_flags: 0x36, notes: "kRandoCustomGfx_HalfMagic: 16x16 1/2-magic decanter (kRandoCustomItemGfx entry 1, MIT z3r art) + green_blue_guard upper-half palette via SP3" }
   QuarterMagic:  { gfx: 0x82, big: 2, oam_flags: 0x36, notes: "kRandoCustomGfx_QuarterMagic: 16x16 1/4-magic decanter (kRandoCustomItemGfx entry 2, MIT z3r art) + green_blue_guard upper-half palette via SP3" }
+  KeyRing_HyruleCastleEscape: { gfx: 0x86, big: 2, oam_flags: 0x36, notes: "shared Key Ring custom art" }
+  KeyRing_EasternPalace:      { gfx: 0x86, big: 2, oam_flags: 0x36, notes: "shared Key Ring custom art" }
+  KeyRing_DesertPalace:       { gfx: 0x86, big: 2, oam_flags: 0x36, notes: "shared Key Ring custom art" }
+  KeyRing_TowerOfHera:        { gfx: 0x86, big: 2, oam_flags: 0x36, notes: "shared Key Ring custom art" }
+  KeyRing_HyruleCastleTower:  { gfx: 0x86, big: 2, oam_flags: 0x36, notes: "shared Key Ring custom art" }
+  KeyRing_PalaceOfDarkness:   { gfx: 0x86, big: 2, oam_flags: 0x36, notes: "shared Key Ring custom art" }
+  KeyRing_SwampPalace:        { gfx: 0x86, big: 2, oam_flags: 0x36, notes: "shared Key Ring custom art" }
+  KeyRing_SkullWoods:         { gfx: 0x86, big: 2, oam_flags: 0x36, notes: "shared Key Ring custom art" }
+  KeyRing_ThievesTown:        { gfx: 0x86, big: 2, oam_flags: 0x36, notes: "shared Key Ring custom art" }
+  KeyRing_IcePalace:          { gfx: 0x86, big: 2, oam_flags: 0x36, notes: "shared Key Ring custom art" }
+  KeyRing_MiseryMire:         { gfx: 0x86, big: 2, oam_flags: 0x36, notes: "shared Key Ring custom art" }
+  KeyRing_TurtleRock:         { gfx: 0x86, big: 2, oam_flags: 0x36, notes: "shared Key Ring custom art" }
+  KeyRing_GanonsTower:        { gfx: 0x86, big: 2, oam_flags: 0x36, notes: "shared Key Ring custom art" }
+  SkeletonKey:                { gfx: 0x87, big: 2, oam_flags: 0x36, notes: "Skeleton Key custom art" }
 
   # --- prizes: pendants (gfx 0x23, palette distinguishes color) ---
   Prize_GreenPendant: { gfx: 0x23, big: 2, oam_flags: 0x38, notes: "pendant bundle; green palette (lttp 0x37)" }

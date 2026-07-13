@@ -139,6 +139,13 @@ typedef struct RandoCounts {
   // kDoorTbl_DungeonCount (asserted in rando_logic.c).
   uint8 door_source_keys_collected[16];
 } RandoCounts;
+
+// Ring-aware logical item count. For a per-dungeon SmallKey outside Retro, a
+// held matching Key Ring saturates the count; other item ids use their raw
+// count. Retro GenericKey remains the mutually exclusive wildcard model.
+uint16 Logic_EffectiveItemCount(const RandoCounts *counts,
+                                const RandoSettings *settings,
+                                uint16 item_id);
 // The registry must stay within this fixed inventory-snapshot capacity —
 // souls.c carries a _Static_assert(ITEM__COUNT <= 256) (item_ids.h is not
 // visible here).
@@ -167,6 +174,7 @@ typedef struct PredicateContext {
 
   // can_place context:
   uint16 candidate_item;
+  uint16 selected_key_rings_mask;  // family bits; OP_ITEM_IS key/ring aliases
   uint8 placement_context;  // 0 = can_reach, 1 = can_place (OP_ITEM_IS allowed)
 
   // Per-seed shuffle tables:
@@ -206,6 +214,11 @@ bool Predicate_EvaluatePlacement(const uint8 *bytecode, uint16 length,
                                  const RandoCounts *counts,
                                  const RandoSettings *settings,
                                  uint16 candidate_item);
+bool Predicate_EvaluatePlacementWithKeyRings(const uint8 *bytecode, uint16 length,
+                                             const RandoCounts *counts,
+                                             const RandoSettings *settings,
+                                             uint16 candidate_item,
+                                             uint16 selected_key_rings_mask);
 
 // Self-check (per Rng_SelfCheck / Share_SelfCheck / Settings_SelfCheck
 // pattern). Builds a minimal in-memory bytecode stream exercising each op,

@@ -251,10 +251,12 @@ No new authoritative ownership TLV or SRAM field is needed. A missing/corrupt
 placement or checked table follows the existing slot/snapshot refusal contract;
 it must not guess ownership from counters.
 
-Grow the sidecar to format version 9 so its settings section is 31 bytes. A v9
-reader accepts v1..v8 files using their versioned shorter bodies and zero-extends
-the missing key-item byte to Off/false. Pre-v9 binaries refuse v9 files under the
-existing sequential-body compatibility rule. Update the snapshot RandoState
+Grow the sidecar to format version 10 so its settings section is 31 bytes. A v10
+reader accepts v1..v9 files using their versioned shorter bodies and zero-extends
+the missing key-item byte to Off/false, refuses future versions, and refuses
+trailing bytes. V10 files are unsupported by pre-v10 binaries; the older reader did
+not provide a contractual future-version refusal, so this change does not claim
+one retroactively. Update the snapshot RandoState
 settings payload parser, race-mode suppressed-spoiler size/layout, fixed-settings
 fixtures, and every `_Static_assert` coupled to `kSettingsCanonicalLen`.
 

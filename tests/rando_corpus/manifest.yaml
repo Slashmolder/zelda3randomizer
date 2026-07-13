@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 141  # bump_rando_corpus.py --apply
+generator_version: 142  # bump_rando_corpus.py --apply - audit fixes + Key Rings/Skeleton integration
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -1167,8 +1167,8 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, grass_shuffle: all, rock_shuffle: all, accessibility: items }
     seed: "0x4752524F434B0003"
     label: "terrain-grass-rock-all"
-    expected_digest: "b4ecb283c9fdece55794d76f29f308cef2b491ffbb0e65793b7f697d6b09507e"
-    expected_sphere_digest: "fe45ddb0691c505137098b611bcaca87fee4c493a1659f684a46abc1abbfded0"
+    expected_digest: "c535c5854fbd91ee613f366250946ce70a67b2bc78647512a4c996696252e5c6"
+    expected_sphere_digest: "9526617f54db78c5f8534520c06df0b1cbaa83b21813de1b3bef812380e8d6d7"
   - settings: { mode.state: retro, goal: ganon, grass_shuffle: all, rock_shuffle: all }
     seed: "0x4752524F434B0004"
     label: "terrain-retro"
@@ -1177,8 +1177,8 @@ entries:
   - settings: { mode.state: inverted, goal: fast_ganon, grass_shuffle: all, rock_shuffle: all, accessibility: items }
     seed: "0x4752524F434B0005"
     label: "terrain-inverted"
-    expected_digest: "6248d2496cda240b1a53bb50cf4480d023f77767e50de7a4f06d6caa8dab5939"
-    expected_sphere_digest: "33ec59c1906b80a00dd900a5875239eb7862c1ba49e6e5b4e0cc68a8ba0ec407"
+    expected_digest: "6bad6064a5d6d16f28b93a1a92f5c77ba94a662fb45277524f75a776eaa30db2"
+    expected_sphere_digest: "3a379b329bf1d2d486190c2c57070b1f85ab8ca3293c6deb435e2b0c61782296"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, door_shuffle: basic, grass_shuffle: all, rock_shuffle: all }
     seed: "0x4752524F434B0006"
     label: "terrain-door-basic-composes"
@@ -1192,8 +1192,8 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, enemy_drop_checks: keys, grass_shuffle: all, rock_shuffle: all }
     seed: "0x4752524F434B0008"
     label: "terrain-enemy-drop"
-    expected_digest: "1845a750c1ceab1df901a933bc5b89c155efe7fe553087d3924ed9d9999074bd"
-    expected_sphere_digest: "287d291c3222ba2d5381f0785e531a564e170f30d6aa4eb2077ad1d018082c13"
+    expected_digest: "6e9469b84a6892bd01b8d1f2adedb52eb83c21a13e7e3a0fd3f1334ee544c1b2"
+    expected_sphere_digest: "25080813d254165d9b5b56e165db0f5c80f025f11fc441364f3e95ddb1040726"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, pot_shuffle: all, grass_shuffle: all, rock_shuffle: all }
     seed: "0x4752524F434B0009"
     label: "terrain-pot-shuffle"
@@ -1250,8 +1250,8 @@ entries:
   - settings: { mode.state: open, grass_shuffle: all, rock_shuffle: all, shuffle_dungeon_entrances: true, accessibility: none }
     seed: "0x0000000000000207"
     label: "terrain-dungeon-entrance-composes"
-    expected_digest: "2efceb10100c1e36d80fe40bea9af0e052fdb54ffa3b5f3583ec4201e908e4af"
-    expected_sphere_digest: "d720d86a6418acc710ea447b6a13d86bbfaf8e8132d464dc0fd958d905f078e3"
+    expected_digest: "6626e80a66779ba4e6d733ba7f9bfe205b9c7f65911714ae25aae7f1fa6abf99"
+    expected_sphere_digest: "122d7343c23707a0e7609e12fa383c937d7837ab4fd08e05ba0ccabe1806fd52"
   # Exercises the door-oracle collect-model key subtraction (door x npc_souls
   # with credited key-source rows active). pot=keys (not all) keeps the row
   # inside the per-row runtime budget while still exercising the same path:
@@ -1261,6 +1261,81 @@ entries:
     label: "door-npc-souls-pot-keys"
     expected_digest: "f06f6f708c8ad0afc811da6c5351d3bc638d62a8c7f7b2b735aa4e1292b891e7"
     expected_sphere_digest: "cd3f943f8233c767c0ff9e5949d19f5ac8adcbbfc68b658d56225d0c91d1dddd"
+
+  # add-rando-key-rings-skeleton-key — selection, source-collapse, logic,
+  # interaction, normalization, and bonus-item witnesses. Seeds carry the
+  # ASCII tag 0x4B455952 ("KEYR") for traceability. Digests are regenerated at
+  # generator version 142 after the integrated Release build passes selfcheck.
+  - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: dungeon, key_rings: "off" }
+    seed: "0x4B45595200000001"
+    label: "key-rings-explicit-off-control"
+    expected_digest: "1810b22943896e39bf5b53c9b94cf7dc1ec8a3ea99ada47fca71284a9fe42a07"
+    expected_sphere_digest: "94ee4b6795eb243eeac808da5f5cc24a8082623478ae5b220afd2d4c2c270097"
+  - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: dungeon, key_rings: random }
+    seed: "0x4B45595200000002"
+    label: "key-rings-random-dungeon"
+    expected_digest: "237d255f14bf79f21f70dfe6767044f79e6c24c9f4b020eda69110d352b9e0fb"
+    expected_sphere_digest: "e19f5dc48a2651c21b33b7bad4f1c1ccbf9f71eab624fec74311f5648d4371cc"
+  - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, key_rings: random }
+    seed: "0x4B45595200000003"
+    label: "key-rings-random-wild"
+    expected_digest: "3d2ea1f7e8de7fc6234700aab1eee6519a108aee45a59feb13a78f1d00d127bb"
+    expected_sphere_digest: "b136a98d7ccb6a8153325feddef03a761188274ca2624d1c3e77914447df73c2"
+  - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: dungeon, key_rings: all }
+    seed: "0x4B45595200000004"
+    label: "key-rings-all-dungeon"
+    expected_digest: "6aaa60ef14a288efadfef5dbbfb6265fcf6418ed78843c2ae44ae439cec04dc4"
+    expected_sphere_digest: "09254e6887b39b78be089917b7961cd3a0c9917ccc5c5fd43568e4a0a26420c9"
+  - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, pot_shuffle: keys, key_rings: all }
+    seed: "0x4B45595200000005"
+    label: "key-rings-all-pot-keys"
+    expected_digest: "002bab812fc85ea28e121cdc65e5f51dbe3c30761a6cebdea358a1e89e980150"
+    expected_sphere_digest: "f932f4517528f679c12f00a825c95c1f8356498aa9d469b09739f700776929ab"
+  - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, enemy_drop_checks: keys, key_rings: all }
+    seed: "0x4B45595200000006"
+    label: "key-rings-all-enemy-keys"
+    expected_digest: "a477d5489242d313d7aa5a6a6225a5d5de722ec7049e7826646f1436be628c5e"
+    expected_sphere_digest: "2c89ec3718fb1424500ed065723be16c8d7f86b032335c49022d498e3d098bef"
+  - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, pot_shuffle: keys, enemy_drop_checks: keys, key_rings: all }
+    seed: "0x4B45595200000007"
+    label: "key-rings-all-pot-enemy-keys"
+    expected_digest: "7991fbf502b2b8104a5baab9c7b102089a56bd014d62121e6b4f1c74d6c565ed"
+    expected_sphere_digest: "d20cf986fae6a623ba8d654df7e43312e5b94026b60964728ca7588c3787f20b"
+  - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, door_shuffle: basic, key_rings: random }
+    seed: "0x4B45595200000008"
+    label: "key-rings-random-door-basic"
+    expected_digest: "d1fe4bf65a1c26abd1ad430091690a8ba53044c1a0ab2ea2032c756cf02e4dfc"
+    expected_sphere_digest: "e38c76e15c74f72736bf3b484d21060d491b6cb7902a9b94c4e6695ea6a81ec0"
+  - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, dungeon_chains: true, key_rings: random }
+    seed: "0x4B45595200000009"
+    label: "key-rings-random-dungeon-chains"
+    expected_digest: "4a998f39384e8b6eebe9f7a24b2aa0ebc6a70ebba5075beb30b03a4696cccaf2"
+    expected_sphere_digest: "851726e896990a27c43f91f38e7d3b6b4cdc59d83b36fde6055f050d8d0661bf"
+  - settings: { mode.state: inverted, goal: fast_ganon, dungeon_items.small_keys: wild, key_rings: random }
+    seed: "0x4B4559520000000A"
+    label: "key-rings-random-inverted"
+    expected_digest: "9bbc29f28a06929f9668b4077ded82327d3a1e1098c34edf30188b641af5e5f3"
+    expected_sphere_digest: "110590e85e4d9d2fece4b5adc2e32f1716a86e365d27df0d6c99dc50c8ce628e"
+  - settings: { mode.state: standard, goal: fast_ganon, dungeon_items.small_keys: dungeon, key_rings: random }
+    seed: "0x4B4559520000000B"
+    label: "key-rings-random-standard-escape"
+    expected_digest: "5c5caf2700cc0588bdbe4b6259450a61e28f508ffa374e6f424726489e9db5a6"
+    expected_sphere_digest: "9d32a30c9fe5e6632fc174c58b07a7685ea83b36f18262b39af45e8f1c2a9d0f"
+  - settings: { mode.state: retro, goal: fast_ganon, dungeon_items.small_keys: wild, key_rings: random }
+    seed: "0x4B4559520000000C"
+    label: "key-rings-retro-requested-random-effective-off"
+    expected_digest: "bba9f7b5905f29d1be51c71271c0910e4374f969401a10c1a2075b5626931e7d"
+    expected_sphere_digest: "be8e0afb5f56bb63583066289ec515cb912b7e4ec27b34f8d124700c7f15ee00"
+  - settings: { mode.state: open, goal: fast_ganon, skeleton_key: true }
+    seed: "0x4B4559520000000D"
+    label: "skeleton-key-only"
+    expected_digest: "3baf91539a94e38cbd1793f64dc88a33f54be9259e0b649f94095d0cb9382ed4"
+    expected_sphere_digest: "cbd0cf678e4ff07efd1a2551a3b981b088d1797a876bbb5b24badd8804cafbc8"
+  - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, key_rings: random, skeleton_key: true }
+    seed: "0x4B4559520000000E"
+    label: "key-rings-random-with-skeleton-key"
+    expected_digest: "3fabc0b622661fe52dec7675ca7a9a0ac1f9eb56100e688c2513f6decfb07cb4"
+    expected_sphere_digest: "a7587ea667423aa18afdea25da489381639059954173843c720c126a20c51ede"
 
 # Celebrity-seed candidates (task 12.2) — these are the named seeds we plan
 # to capture once the generator stabilizes. Listed here as comments so the

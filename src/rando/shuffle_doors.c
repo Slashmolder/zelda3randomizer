@@ -31,10 +31,14 @@
 #include "door_runtime.h"  // DoorRt_KindOverlaySelfCheck (Stage-1b kind overlay)
 #include "rando_rng.h"
 #include "rando_generate.h"  // Rando_PlaceWithEntrances + overlay clear (leak selftest)
+#include "dungeon_ids.h"  // Key Ring full-stock threshold guard
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+_Static_assert(kDoorTbl_DungeonCount == kRandoDungeon_Count,
+               "door-table and Key Ring dungeon orders must stay aligned");
 
 // From the generated logic tables (rando_logic.h pulls in much more; the
 // names are only used for one-time location classification at init).
@@ -1216,7 +1220,17 @@ static uint64 DoorSeedSalt(uint64 seed, uint32 attempt, uint8 dungeon) {
   return x;
 }
 
-static uint8 g_door_fail_stage;  // selftest diagnostics: 0 ok, 1 stitch, 2 keys
+static uint8 g_door_fail_stage;  // selftest diagnostics: 0 ok, 1 stitch, 2 keys, 3 ring stock
+
+static bool Door_KeyThresholdsFitRingStock(const DoorShuffleLayout *layout,
+                                           uint8 dungeon) {
+  if (layout == NULL || dungeon >= kRandoDungeon_Count) return false;
+  uint8 stock = Rando_KeyRingGrantCount(dungeon);
+  for (uint8 i = 0; i < layout->key_door_count[dungeon]; i++) {
+    if (layout->key_worst_case[dungeon][i] > stock) return false;
+  }
+  return true;
+}
 
 bool DoorShuffle_Generate(uint64 seed, uint32 attempt, uint16 dungeon_mask,
                           uint8 pot_tier, uint8 enemy_drop_keys,
@@ -1249,6 +1263,13 @@ bool DoorShuffle_Generate(uint64 seed, uint32 attempt, uint16 dungeon_mask,
     }
     if (!DoorKeys_ShuffleDungeon(d, &rng, origins, norigins, out)) {
       g_door_fail_stage = 2;
+      return false;
+    }
+    // A ring's runtime max-write must be sufficient for every accepted layout
+    // threshold. Fail this attempt closed if future door authoring exceeds the
+    // centralized full stock; --door-selftest exercises the same guard broadly.
+    if (!Door_KeyThresholdsFitRingStock(out, d)) {
+      g_door_fail_stage = 3;
       return false;
     }
     out->shuffled_mask |= 1 << d;

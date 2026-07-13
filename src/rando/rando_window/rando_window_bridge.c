@@ -196,6 +196,15 @@ int RandoWindowBridge_Validate(const RandoSettings *s, char *out_err, size_t cap
     return 1;
   }
 
+  uint16 selected_key_rings = 0;
+  if (Settings_EffectiveKeyRings(s) == kKeyRings_Random &&
+      !KeyRings_Select(s, g_rando_window_bridge.seed_u64, &selected_key_rings)) {
+    if (out_err != NULL && cap > 0)
+      snprintf(out_err, cap,
+               "Random key rings need at least two eligible dungeon key families.");
+    return 1;
+  }
+
   // add-rando-customizer-mode — both rejections mirror Rando_GenerateSlot's
   // fail-closed guards; validating here surfaces them as inline UI errors
   // (disabled Generate button) instead of a post-generate failure modal.

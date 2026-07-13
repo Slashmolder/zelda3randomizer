@@ -16,7 +16,7 @@
 //   magic "ZRS2"[4] | generator_version[1] | settings_len[1] |
 //   settings_canonical[settings_len] | seed_u64[8] LE | crc16[2] LE
 //   = 16+settings_len bytes -> ceil((16+settings_len)*8/5) base32 chars
-//   (46 bytes -> exactly 74 chars at the current kSettingsCanonicalLen 30).
+//   (47 bytes -> exactly 76 chars at the current kSettingsCanonicalLen 31).
 //   settings_hash is NOT embedded — decoders that need it recompute it from
 //   the canonical bytes (Settings_CanonicalDeserialize + Settings_HashShort).
 //   A v2 string restores settings AND seed.
@@ -36,10 +36,10 @@
 #include "rando_settings.h"  // kSettingsCanonicalLen — the v2 payload size
 
 #define kShareStringBinaryLen 31  // v1 binary blob (the stored seed identity)
-#define kShareStringV2BinaryLen (16 + kSettingsCanonicalLen)  // 46 today
+#define kShareStringV2BinaryLen (16 + kSettingsCanonicalLen)  // 47 today
 
 // Text-buffer bound for encode/decode (string + NUL). Sized with headroom
-// beyond the current 74-char v2 string so a future canonical growth doesn't
+// beyond the current 76-char v2 string so a future canonical growth doesn't
 // immediately overflow every coupled buffer; rando_share.c carries the
 // compile-time assert tying this to kSettingsCanonicalLen. (Asserts live in
 // the .c, not here — this header is included from a C++ TU via the
@@ -84,7 +84,7 @@ int Share_Encode(const ShareString *ss, char *out, int out_capacity);
 // Encode `ss` into `out` as a v2 string (reads version, seed_u64, and the
 // full settings_canonical[kSettingsCanonicalLen]; writes settings_len =
 // kSettingsCanonicalLen on the wire — `ss->settings_len` is ignored).
-// Returns the number of chars written (74 at the current canonical length,
+// Returns the number of chars written (76 at the current canonical length,
 // excluding the trailing NUL) or -1 on insufficient capacity; caller passes
 // `out_capacity` >= the encoded length + 1 (kShareStringBase32MaxLen always
 // suffices).
@@ -134,7 +134,7 @@ void Share_SelfCheck(void);
 // error message per status.
 //
 // This is the Switch / in-game textfield surface and is v1-only by design
-// (D7). The TYPICAL v2 string (74 chars) cannot fit kRandoTextFieldMaxLen
+// (D7). The TYPICAL v2 string (76 chars) cannot fit kRandoTextFieldMaxLen
 // (64), but a SHORT v2 string (settings_len <= 24) physically could — so this
 // helper REFUSES any non-v1 format (returns kShareDecodeBadMagic) rather than
 // returning it seed-only with a zeroed hash. For a v1 string the settings_hash

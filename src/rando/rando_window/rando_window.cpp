@@ -310,6 +310,7 @@ static const char *const kGoalLabels[] = {
     "triforce-hunt", "ganonhunt", "completionist"};
 static const char *const kItemPoolLabels[] = {"easy", "normal", "hard", "expert"};
 static const char *const kDungeonModeLabels[] = {"vanilla", "dungeon", "wild"};
+static const char *const kKeyRingsLabels[] = {"Off", "Random mix", "All"};
 // mode_weapons: randomized=0, assured=1, swordless=3 are exposed. vanilla=2 stays
 // reserved (out of scope), so the combo maps display rows to enum values
 // NON-contiguously (can't use the index==value EnumCombo helper).
@@ -1074,6 +1075,26 @@ static void Panel_Dungeons() {
   } else {
     if (EnumCombo("Small keys", &s->dungeon_small_keys_mode, kDungeonModeLabels, 3)) changed = true;
   }
+  bool rings_forced_off = Settings_GenericKeysActive(s) ||
+                          Settings_EffectiveSmallKeysMode(s) == kDungeonItemMode_Vanilla;
+  if (rings_forced_off) ImGui::BeginDisabled();
+  if (EnumCombo("Key rings", &s->key_rings, kKeyRingsLabels, 3)) changed = true;
+  if (rings_forced_off) {
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::TextDisabled("(effective: Off — %s)",
+                        Settings_GenericKeysActive(s) ? "Retro Generic Keys"
+                                                      : "Vanilla small keys");
+    HelpTooltip("The requested mode is preserved, but rings are effective only when dungeon-specific small keys are shuffled.");
+  }
+  bool skeleton_key = s->skeleton_key != 0;
+  if (ImGui::Checkbox("Skeleton Key", &skeleton_key)) {
+    s->skeleton_key = skeleton_key ? 1 : 0;
+    changed = true;
+  }
+  ImGui::SameLine();
+  ImGui::TextDisabled("Bonus only; logic never requires it");
+  HelpTooltip("Adds one universal small-key-door item. It never opens big-key doors and placement logic never requires it.");
   if (keys_forced_dungeon) {
     ImGui::BeginDisabled();
     uint8 bk_shown = (uint8)kDungeonItemMode_Dungeon;
