@@ -28,7 +28,10 @@ game data, no memory:
      locations, matched by door_region) get the room's souls.
   4. For kill->chest rooms, the fork chest locations homed in the room's own
      regions get the souls.
-  5. Cave rooms outside the door graph (Mimic Cave, Mini Moldorm Cave,
+  5. Reviewed in-graph exceptions add conservative player-facing gates where
+     directed/one-way door semantics make the raw flood less restrictive than
+     live play; targets are validated against the committed location table.
+  6. Cave rooms outside the door graph (Mimic Cave, Mini Moldorm Cave,
      Paradox Cave) carry reviewed bindings; their trap doors are verified
      against the room-data door lists (kDungeonRoomDoorOffs) so a binding
      can't silently bind a room with no shutter.
@@ -124,6 +127,30 @@ CAVE_BINDINGS = {
     },
 }
 
+# Reviewed conservative bindings INSIDE the door graph. These are intentionally
+# separate from `behind_regions`: the latter describes regions dominated by a
+# trap door in the abstract graph and feeds generated pot/enemy rows, while
+# these bind only named checks/events whose player-facing availability contract
+# is stricter.
+#
+# HCE room 0x071 has a one-way normal entrance to Armory Main and soul-held
+# shutters around the room. The graph can still prove Zelda's Cell reachable
+# through the normal entrance, but a player on the Boomerang side is trapped
+# when the ordinary Soldier is suppressed. The tracker contract deliberately
+# reports the downstream cell/rescue unavailable until Soul_Soldier is owned,
+# independent of dynamic guard kill state. Do not add regions 14/15 here: they
+# are not shutter-dominated, and broad region wrapping would over-gate generated
+# pots/enemies that are outside this reviewed contract.
+REVIEWED_IN_GRAPH_BINDINGS = {
+    0x071: {
+        "name": "Hyrule Dungeon Armory",
+        "loc_ids": [7],
+        "loc_names": ["Hyrule Castle - Zelda's Cell"],
+        "event_names": ["Zelda"],
+        "reason": "static Soldier-soul tracker gate across the Armory shutters",
+    },
+}
+
 # Curated event sites: logic locations that live in a door-graph region but are
 # NOT in kDoorTblLocations (events, not chests). Region name -> logic location
 # names to wrap when that region is gated. Souls are computed from the flood,
@@ -199,8 +226,10 @@ class DoorGraph:
             self.doors_in_room[v[self.D_ROOM]].append(di)
         # region -> [(fork_loc_id, name)]
         self.locs_in_region = defaultdict(list)
+        self.loc_by_id = {}
         for v, c in self.locations:
             self.locs_in_region[v[1]].append((v[0], c))
+            self.loc_by_id[v[0]] = c
 
     def rooms_in_graph(self):
         return set(self.doors_in_room.keys())
@@ -477,6 +506,27 @@ def make_doc(assets_path: Path, assets, graph: DoorGraph,
             entry["trap_doors"] = sorted(graph.doors[di][1] for di in trap) if trap else []
             if "doors" in row["kinds"] and not trap:
                 die(f"room 0x{room:03X} kill->doors tag but no trap doors in the door graph")
+
+            binding = REVIEWED_IN_GRAPH_BINDINGS.get(room)
+            if binding is not None:
+                if "doors" not in row["kinds"] or not trap:
+                    die(f"reviewed in-graph binding 0x{room:03X} no longer names "
+                        f"a kill->doors room with trap doors")
+                if len(binding["loc_ids"]) != len(binding["loc_names"]):
+                    die(f"reviewed in-graph binding 0x{room:03X} has mismatched "
+                        f"loc_ids/loc_names lengths")
+                for loc_id, loc_name in zip(binding["loc_ids"], binding["loc_names"]):
+                    actual = graph.loc_by_id.get(loc_id)
+                    if actual != loc_name:
+                        die(f"reviewed in-graph binding 0x{room:03X}: loc {loc_id} "
+                            f"expected {loc_name!r}, door table has {actual!r}")
+                    loc_wraps[loc_id].update(souls)
+                    loc_names[loc_id] = loc_name
+                for event_name in binding["event_names"]:
+                    name_wraps[event_name].update(souls)
+                entry["reviewed_extra_loc_ids"] = list(binding["loc_ids"])
+                entry["reviewed_extra_event_names"] = list(binding["event_names"])
+                entry["reviewed_extra_reason"] = binding["reason"]
         else:
             binding = CAVE_BINDINGS.get(room)
             if binding is None:
@@ -498,6 +548,10 @@ def make_doc(assets_path: Path, assets, graph: DoorGraph,
     for room in CAVE_BINDINGS:
         if room not in bound_rooms:
             die(f"CAVE_BINDINGS entry 0x{room:03X} matched no kill-gated souled room (stale binding)")
+    for room in REVIEWED_IN_GRAPH_BINDINGS:
+        if room not in bound_rooms:
+            die(f"REVIEWED_IN_GRAPH_BINDINGS entry 0x{room:03X} matched no "
+                f"kill-gated souled room (stale binding)")
 
     # Pot locations are matched by ROOM (pots.gen.yaml has no door-region
     # column): a room whose regions intersect ANY kill room's behind-set gets

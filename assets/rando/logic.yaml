@@ -138,6 +138,9 @@ locations:
     # soldiers — neither has pots available, so killing them needs a real
     # weapon. The rando-pool small key is reserved for the sewers section
     # (Sanctuary / Secret Rooms), not for this path.
+    # gen_soul_room_tables.py adds the reviewed room-0x071 Soul_Soldier wrap
+    # to this base predicate and every world-state override. It is a static
+    # inventory gate; guard kill state never changes reachability.
     can_reach: "CanKillEscapeThings(world)"
     source: "app/Region/Standard/HyruleCastleEscape.php:95-97"
 
@@ -171,6 +174,8 @@ locations:
   # `Zelda` prize-event (php:51, 120) — can_complete = Sanctuary canAccess.
   # The rescue requires escorting Zelda through the dark sewers to the
   # Sanctuary, so Lamp is needed (same as Sanctuary itself).
+  # gen_soul_room_tables.py also applies Zelda's Cell's reviewed static
+  # Soldier-soul gate to this event and all world-state overrides.
   - id: "Zelda"
     region: HyruleCastleEscape
     can_reach: "CanKillEscapeThings(world) AND HAS_ITEM(SmallKey_HyruleCastleEscape) AND HAS_ITEM(Lamp)"

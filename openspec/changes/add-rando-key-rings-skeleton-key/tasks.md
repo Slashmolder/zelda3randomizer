@@ -132,7 +132,9 @@
 - [x] 8.2 Run `git diff --check`, codegen strict/freshness/wiring checks, registry
   append-only checks, audit guard, settings/share/save selfchecks, and corpus schema
   validation.
-- [x] 8.3 Build Release x64 and run `--rando-selftest` plus `--door-selftest`.
+- [x] 8.3 Build Release x64 and run `--rando-selftest` plus `--door-selftest`,
+  including the HCE Key Ring composition regression proving Zelda's Cell and the
+  Zelda rescue remain gated by `Soul_Soldier` rather than guard kill state.
 - [x] 8.4 Prove feature-Off placement tables are byte-identical to the pre-change
   generator for exact seeds; rebaseline only the intentional provenance/hash
   changes.

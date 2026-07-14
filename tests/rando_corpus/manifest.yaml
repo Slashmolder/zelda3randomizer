@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 142  # bump_rando_corpus.py --apply - audit fixes + Key Rings/Skeleton integration
+generator_version: 143  # bump_rando_corpus.py --apply - HCE Soldier-soul gate
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -1049,7 +1049,7 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, souls_shuffle: all }
     seed: "0x50554C5300000003"
     label: "souls-all-open-fast-ganon"
-    expected_digest: "5f637440be45672db960a0de5af1524724aec50fe3b6b5e8af3458efdf45a5ba"
+    expected_digest: "613350f7095fd91dd4b827b37cb0f74d9da8b7cb3e6da05981d058c4008a0727"
   - settings: { mode.state: open, goal: fast_ganon, souls_shuffle: bosses, boss_shuffle: true }
     seed: "0x50554C5300000004"
     label: "souls-bosses-boss-shuffle"
@@ -1069,11 +1069,11 @@ entries:
   - settings: { mode.state: standard, goal: ganon, souls_shuffle: all }
     seed: "0x50554C5300000007"
     label: "souls-all-standard-ganon"
-    expected_digest: "8f54ffc997866a530030e16bb94706f230e879d3dd95b9b64d407b370e47851d"
+    expected_digest: "bf9f9b24d244ee6f5d13c36a430ded2a20f19cd492d4c7eba7131c0016c71ef5"
   - settings: { mode.state: open, goal: fast_ganon, souls_shuffle: all, enemy_shuffle: true }
     seed: "0x50554C5300000008"
     label: "souls-all-enemy-shuffle-pin"
-    expected_digest: "bebf0757cd33c83565d996d0ff24c95711c168bf4900dae56da4dd58ce758142"
+    expected_digest: "759371d9fb00aa3c2e80d10ff3a017f362b23bdedb4f88a631ba1af2cbf78428"
   # Degrade proof: souls are fully inert under door shuffle, so this entry's
   # digest MUST equal c-door-basic-open-ganon (same settings minus the souls
   # axis, same seed). A divergence means some consumer read the RAW souls tier.
@@ -1084,18 +1084,18 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, souls_shuffle: all, dungeon_items.small_keys: wild, enemy_drop_checks: keys }
     seed: "0x50554C530000000A"
     label: "souls-all-enemy-drop-keys-wild"
-    expected_digest: "b9d04404d6886e9fca026fcb7b69592cb6e3020210777a04c51bdea52e0106ed"
+    expected_digest: "4045977b3581b4fdbc7a7caea538ae14a9540a3fc74aacac754d27537c85f2a6"
   - settings: { mode.state: open, goal: fast_ganon, souls_shuffle: all, pot_shuffle: keys }
     seed: "0x50554C530000000B"
     label: "souls-all-pot-keys"
-    expected_digest: "cd759fc07f91611bb4d5e4bd7b0136e1a739cb73d5d4ac6f123e03d38e5ae57a"
+    expected_digest: "28365ad2acb1dc269aad921eaa0c6fa78c02dd4a4730bf66101d68bd15f47692"
   # Witness for the fresh-eyes chains seam fix: the successor dungeon's entry
   # routes through the previous dungeon's BossRoom approach edge, which must
   # carry CanKillBoss + the kill-room souls.
   - settings: { mode.state: open, goal: ganon, souls_shuffle: all, dungeon_chains: true }
     seed: "0x50554C530000000C"
     label: "souls-all-chains-ganon"
-    expected_digest: "d6391ab4e343ab7594dcee7e5a72d52c61f4932657a19aeee8cf3d6d7e0da9db"
+    expected_digest: "77f476bd14dbcf287051f670dfc1b183e7c65f14cee9193111f2146cc514e435"
   # add-npc-souls witnesses: 23 NPC souls in the pool; Kiki gates the PoD
   # entry edge (Inverted bypasses via its additive edge; a chains seam entry
   # bypasses physically); no degrade under door shuffle (first collecting-
@@ -1108,8 +1108,8 @@ entries:
   - settings: { mode.state: open, goal: ganon, souls_shuffle: all, npc_souls: true }
     seed: "0x4E50430000000002"
     label: "npc-souls-x-souls-all"
-    expected_digest: "0fdcc9fbfaeb7871e4a7312b371565885d2aeb3e22654064e47c93b503d8ba82"
-    expected_sphere_digest: "b43a01e23e578eaed20bfa55d8928bea500ca11344e9b7c103cc3ea6ab32ba28"
+    expected_digest: "cebab1284c599a735ff9307fcba34c547b2192b438a8ad31c4af034b95ca194c"
+    expected_sphere_digest: "e05a114f080593d8d9208a082908ddba043821a9c7037ad18c8b06da64eafaa8"
   - settings: { mode.state: standard, goal: ganon, npc_souls: true }
     seed: "0x4E50430000000003"
     label: "npc-souls-standard"
@@ -1231,12 +1231,12 @@ entries:
     seed: "0x0000000000000203"
     label: "chains-pots-souls-compose"
     expected_digest: "32b0c19862c49057afc1c3175433a7d82ce5c1caab01d304946287338a6ebcc7"
-    expected_sphere_digest: "60beb8c425dfb22f353faf846d008f103bb6236f34db4b3d92b4b8069fc4477e"
+    expected_sphere_digest: "862990239cbf4e50e80d60a29b959071aa427edfe4dd01def93969501794bb89"
   - settings: { mode.state: inverted, souls_shuffle: all, npc_souls: true, accessibility: none }
     seed: "0x0000000000000204"
     label: "inverted-souls-all"
-    expected_digest: "427bf6c51f3b47e0465ed1a08719f0dec62bc15297eed5fde57dab8901cfa054"
-    expected_sphere_digest: "af4cfc3380da8e4ad88c5683183e7fe49ee29354f7021b1ea9ce577795f38a28"
+    expected_digest: "2065b9b0656a42444e8f3787a84c46dea495ba8c73e5a65e32a928287bea6de8"
+    expected_sphere_digest: "bfd03f71a88014f71b0749dd0ff5cd0f66a34c95e6e52a0aaf278607bb78186f"
   - settings: { mode.state: inverted, enemy_drop_checks: all, dungeon_items.small_keys: wild, accessibility: none }
     seed: "0x0000000000000205"
     label: "inverted-enemy-checks-all"
@@ -1246,7 +1246,7 @@ entries:
     seed: "0x0000000000000206"
     label: "souls-all-hunt-none"
     expected_digest: "10cd2f47e9770ede2075d23c2fca0d9bd4458ecc30d0c0925a612076389636e3"
-    expected_sphere_digest: "17df44a8f41fe004384ced4f2970f3ef98bd265294c9f04ca2146b6198a29729"
+    expected_sphere_digest: "3f2732298e8e244d17e29db0a38f926658388a03fdd38f65dfe3f4543bc53f6b"
   - settings: { mode.state: open, grass_shuffle: all, rock_shuffle: all, shuffle_dungeon_entrances: true, accessibility: none }
     seed: "0x0000000000000207"
     label: "terrain-dungeon-entrance-composes"

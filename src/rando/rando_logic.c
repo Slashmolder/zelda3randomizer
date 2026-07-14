@@ -2785,6 +2785,78 @@ void Logic_SelfCheck(void) {
                "souls=off: the soul term must be inert (pre-souls reachability)");
   }
 
+  // Key Rings only replace small keys; they must not waive the generated static
+  // soul requirement for Hyrule Castle's room-0x071 guard. Both generation and
+  // the live F12 tracker consume this same reachability result, so this prevents
+  // a tracker-only/dynamic-kill-state workaround. Run both Open/base and
+  // Inverted/override predicates: the soul-room wrapper must cover both.
+  if (kRandoSoulRoomsBaked) {
+    RandoSettings shce;
+    Settings_SetDefaults(&shce);
+    shce.souls_shuffle = kSoulsShuffle_BossesEnemies;
+    shce.dungeon_small_keys_mode = kDungeonItemMode_Dungeon;
+
+    RandoCounts hc;
+    memset(&hc, 0, sizeof(hc));
+    for (int item = 0; item < ITEM__COUNT; item++)
+      hc.by_item_id[item] = 4;
+    hc.by_item_id[ITEM_SmallKey_HyruleCastleEscape] = 0;
+    hc.by_item_id[ITEM_KeyRing_HyruleCastleEscape] = 1;
+    hc.by_item_id[ITEM_Soul_Soldier] = 0;
+
+    const RandoReachability *hr = Logic_ComputeReachability(&hc, &shce);
+    LSC_ASSERT(hr != NULL, "HCE soul/key-ring reachability returned NULL");
+    LSC_ASSERT(!Reachability_HasLocation(hr, LOC_Hyrule_Castle_Zelda_s_Cell),
+               "HCE key ring must not waive Zelda's Cell Soldier soul gate");
+    LSC_ASSERT(!Reachability_HasLocation(hr, LOC_Zelda),
+               "HCE key ring must not waive Zelda rescue's Soldier soul gate");
+
+    hc.by_item_id[ITEM_Soul_Soldier] = 1;
+    hr = Logic_ComputeReachability(&hc, &shce);
+    LSC_ASSERT(Reachability_HasLocation(hr, LOC_Hyrule_Castle_Zelda_s_Cell),
+               "Soldier soul should open Zelda's Cell with the HCE key ring");
+    LSC_ASSERT(Reachability_HasLocation(hr, LOC_Zelda),
+               "Soldier soul should open Zelda rescue with the HCE key ring");
+
+    shce.enemy_drop_checks = kEnemyDropChecks_Keys;
+    hc.by_item_id[ITEM_Soul_Soldier] = 0;
+    hr = Logic_ComputeReachability(&hc, &shce);
+    LSC_ASSERT(!Reachability_HasLocation(hr, LOC_Hyrule_Castle_Zelda_s_Cell),
+               "enemy keys: HCE ring must not waive Zelda's Cell Soldier soul gate");
+    LSC_ASSERT(!Reachability_HasLocation(hr, LOC_Zelda),
+               "enemy keys: HCE ring must not waive Zelda rescue's Soldier soul gate");
+    hc.by_item_id[ITEM_Soul_Soldier] = 1;
+    hr = Logic_ComputeReachability(&hc, &shce);
+    LSC_ASSERT(Reachability_HasLocation(hr, LOC_Hyrule_Castle_Zelda_s_Cell),
+               "enemy keys: Soldier soul should open Zelda's Cell");
+    LSC_ASSERT(Reachability_HasLocation(hr, LOC_Zelda),
+               "enemy keys: Soldier soul should open Zelda rescue");
+
+    shce.enemy_drop_checks = kEnemyDropChecks_Off;
+    hc.by_item_id[ITEM_Soul_Soldier] = 0;
+    shce.world_state = kWorldState_Inverted;
+    hr = Logic_ComputeReachability(&hc, &shce);
+    LSC_ASSERT(!Reachability_HasLocation(hr, LOC_Hyrule_Castle_Zelda_s_Cell),
+               "Inverted HCE override must retain Zelda's Cell Soldier soul gate");
+    LSC_ASSERT(!Reachability_HasLocation(hr, LOC_Zelda),
+               "Inverted HCE override must retain Zelda rescue's Soldier soul gate");
+    hc.by_item_id[ITEM_Soul_Soldier] = 1;
+    hr = Logic_ComputeReachability(&hc, &shce);
+    LSC_ASSERT(Reachability_HasLocation(hr, LOC_Hyrule_Castle_Zelda_s_Cell),
+               "Inverted: Soldier soul should open Zelda's Cell");
+    LSC_ASSERT(Reachability_HasLocation(hr, LOC_Zelda),
+               "Inverted: Soldier soul should open Zelda rescue");
+
+    RandoSettings shce_off;
+    Settings_SetDefaults(&shce_off);
+    hc.by_item_id[ITEM_Soul_Soldier] = 0;
+    hr = Logic_ComputeReachability(&hc, &shce_off);
+    LSC_ASSERT(Reachability_HasLocation(hr, LOC_Hyrule_Castle_Zelda_s_Cell),
+               "souls=off: Zelda's Cell soul term must be inert");
+    LSC_ASSERT(Reachability_HasLocation(hr, LOC_Zelda),
+               "souls=off: Zelda rescue soul term must be inert");
+  }
+
   // add-npc-souls end-to-end gate probe: with npc_souls on and a full
   // inventory (minus NPC souls), Stumpy is unreachable until his soul is
   // granted, the Kiki edge holds Palace of Darkness shut until Kiki's, and

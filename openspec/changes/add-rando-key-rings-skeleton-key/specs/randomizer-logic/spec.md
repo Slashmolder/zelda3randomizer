@@ -33,6 +33,14 @@ ownership.
 - **THEN** live counts still contain that ring item and use its saturated family
   count
 
+#### Scenario: A ring does not waive non-key soul gates
+
+- **WHEN** enemy souls are enabled and the inventory contains
+  `KeyRing_HyruleCastleEscape` but not `Soul_Soldier`
+- **THEN** Zelda's Cell and the Zelda rescue event remain unreachable in both
+  generation and live tracker logic, and become reachable only after the Soldier
+  soul is owned (subject to their other requirements)
+
 ### Requirement: Skeleton Key is absent from generation logic
 
 Skeleton Key ownership SHALL not modify any predicate, count alias, door oracle,
