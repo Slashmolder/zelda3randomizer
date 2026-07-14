@@ -314,12 +314,11 @@ static void DrawItemTracker(void *) {
   // would render every dungeon's real prize when settings are unknown.
   const RandoSettings *rset = Rando_GetActiveSettings();
   bool shuffle_on = (rset == NULL) || rset->prize_shuffle;
-  if (ImGui::BeginTable("##dungeons", 7,
+  if (ImGui::BeginTable("##dungeons", 6,
                         ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
     ImGui::TableSetupColumn("Dungeon");
     ImGui::TableSetupColumn("Prize");
     ImGui::TableSetupColumn("Keys");
-    ImGui::TableSetupColumn("Ring");
     ImGui::TableSetupColumn("Big");
     ImGui::TableSetupColumn("Map");
     ImGui::TableSetupColumn("Cmp");
@@ -334,9 +333,6 @@ static void DrawItemTracker(void *) {
       uint16 compass_bit = Rando_DungeonBitForGameDungeon(row->compass_game_dungeon);
       uint8 key_slot = Rando_IsGenericKeysActive() ? 15 : row->key_slot;
       int keys = v.dungeon_small_keys[key_slot];
-      uint16 ring_bit = (uint16)(1u << row->rando_dungeon);
-      bool ring_selected = (v.key_ring_selected_mask & ring_bit) != 0;
-      bool ring_owned = (v.key_ring_owned_mask & ring_bit) != 0;
 
       // Completion: prize obtained for prize dungeons; Agahnim for Castle Tower.
       bool prize_obtained = false; int prize_icon = -1, crystal_num = 0;
@@ -380,16 +376,11 @@ static void DrawItemTracker(void *) {
       }
 
       // Small keys: the game shows these as a count (no standalone HUD sprite).
+      // This is deliberately the ONLY Key Ring tracker surface. Showing
+      // selected/owned ring state would reveal the seed's per-dungeon roll
+      // before the item is found. A ring receipt max-writes this live counter.
       ImGui::TableNextColumn();
       ImGui::TextColored(keys > 0 ? on : off, "x%d", keys);
-      // Selected and owned are distinct: an unselected family is intentionally
-      // absent, not missing progression; an owned ring remains lit even after
-      // some of its granted numeric keys are spent.
-      ImGui::TableNextColumn();
-      if (ring_selected)
-        ImGui::TextColored(ring_owned ? on : off, "%s", ring_owned ? "Owned" : "Missing");
-      else
-        ImGui::TextDisabled("-");
       // Big key / map / compass: the real dungeon-HUD sprites, dimmed when absent.
       ImGui::TableNextColumn(); IconImage(kRandoIcon_BigKey, 18.0f, (v.bigkey_bits & bigkey_bit) != 0);
       ImGui::TableNextColumn(); IconImage(kRandoIcon_Map, 18.0f, (v.map_bits & map_bit) != 0);

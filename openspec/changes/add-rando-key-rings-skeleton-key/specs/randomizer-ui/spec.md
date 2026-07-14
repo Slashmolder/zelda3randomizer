@@ -18,9 +18,10 @@ reason rather than implying rings will generate.
 Spoiler JSON/text SHALL include requested/effective ring mode, eligible and selected
 family masks/names, selection algorithm version, and Skeleton enabled state, in
 addition to normal placement rows for actual items. Tracker/autotracker output
-SHALL expose selected/owned rings and Skeleton ownership while preserving numeric
-remaining-key counters. Unselected ring families SHALL not appear as missing
-progression.
+SHALL NOT expose selected or owned ring families, because doing so reveals whether
+a dungeon rolled a ring before its key item is found. Those surfaces SHALL expose
+only the live numeric remaining-key counter; Skeleton ownership MAY remain visible
+as an ordinary bonus-item state. Spoiler output remains the explicit audit surface.
 
 #### Scenario: Random seed is independently auditable
 
@@ -28,8 +29,15 @@ progression.
 - **THEN** it lists eligible and selected dungeon names so the exact mix can be
   checked without rerunning selection
 
-#### Scenario: Tracker separates ownership from remaining keys
+#### Scenario: Tracker does not reveal the pool shape
 
-- **WHEN** a ring is owned and some of its granted keys have been spent
-- **THEN** the tracker reports the ring owned and the current numeric key counter
-  separately
+- **WHEN** a seed starts with either ordinary shuffled keys or a Key Ring for a
+  dungeon
+- **THEN** the tracker and autotracker both report zero keys and no ring-selection
+  or ring-ownership field for that dungeon
+
+#### Scenario: Ring collection updates the ordinary counter
+
+- **WHEN** the player collects a dungeon's Key Ring
+- **THEN** the tracker and autotracker report that dungeon's complete granted key
+  stock through the same numeric counter used by ordinary key pickups

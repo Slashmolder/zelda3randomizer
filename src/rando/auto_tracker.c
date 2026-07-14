@@ -401,13 +401,12 @@ static void at_append_dungeons(AtStr *s, const RandoItemView *v) {
     if (i) at_str_puts(s, ",");
     at_str_puts(s, "{\"name\":");
     at_json_str(s, row->name);
-    uint16 ring_bit = (uint16)(1u << row->rando_dungeon);
     uint8 key_slot = Rando_IsGenericKeysActive() ? 15 : row->key_slot;
-    at_str_printf(s, ",\"small_keys\":%u,\"key_ring_selected\":%s,"
-                     "\"key_ring_owned\":%s,\"big_key\":%s,\"map\":%s,\"compass\":%s}",
+    // Do not expose selected/owned ring state: that would reveal whether this
+    // dungeon rolled a ring before the player finds the item. The live numeric
+    // counter starts at zero for either pool shape and rises on actual receipt.
+    at_str_printf(s, ",\"small_keys\":%u,\"big_key\":%s,\"map\":%s,\"compass\":%s}",
                   (unsigned)v->dungeon_small_keys[key_slot],
-                  at_b((v->key_ring_selected_mask & ring_bit) != 0),
-                  at_b((v->key_ring_owned_mask & ring_bit) != 0),
                   at_b((v->bigkey_bits & bigkey_bit) != 0),
                   at_b((v->map_bits & map_bit) != 0),
                   at_b((v->compass_bits & compass_bit) != 0));

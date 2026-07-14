@@ -281,13 +281,16 @@ selected family mask and names, selection salt version, Skeleton Key enabled sta
 and ordinary placement rows for the actual ring/Skeleton items. This lets a seed be
 audited without reimplementing selection.
 
-The item tracker and autotracker expose each selected ring's owned state, Skeleton
-Key owned state, and the existing remaining numeric key counters. Unselected ring
-families are absent/disabled rather than displayed as missing progression. The
-reach panel uses D5's effective counts, while the HUD keeps showing the real
-remaining numeric counter. Hints may name a ring as progression and may hint the
-Skeleton Key as a bonus; Skeleton Key remains excluded from progression-only hint
-or accessibility calculations.
+The item tracker and autotracker never expose selected or owned ring families:
+that metadata would reveal the Random mix before the player finds its key items.
+They expose only the existing live numeric remaining-key counters, which begin at
+zero for either an ordinary-key or ring family. A Key Ring receipt max-writes the
+same counter to full stock, so the earned benefit becomes visible without a
+separate ring flag. Skeleton Key owned state may remain visible as a normal bonus
+item. The reach panel uses D5's effective counts, while the HUD keeps showing the
+real remaining numeric counter. Hints may name a ring as progression and may hint
+the Skeleton Key as a bonus; Skeleton Key remains excluded from progression-only
+hint or accessibility calculations.
 
 ## D9 - Compatibility matrix
 

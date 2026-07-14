@@ -116,10 +116,12 @@
   `docs/randomizer.md` with interactions and non-goals.
 - [x] 7.3 Emit spoiler JSON/text fields for requested/effective mode, eligible and
   selected masks/names, selection version, and Skeleton enabled state.
-- [x] 7.4 Add ring and Skeleton ownership to item tracker/map/reach panels as
-  appropriate; keep the numeric remaining-key HUD/counters intact.
-- [x] 7.5 Extend autotracker output with selected/owned ring families and Skeleton
-  ownership using an additive schema field.
+- [x] 7.4 Keep ring selection/ownership out of tracker/map panels so Random mix
+  cannot leak; expose only the live numeric remaining-key counters, while allowing
+  Skeleton ownership to remain visible as a normal bonus item.
+- [x] 7.5 Keep selected/owned ring families out of autotracker output; prove both
+  ordinary-key and ring families begin at zero and a collected ring updates the
+  existing numeric key field to full stock.
 - [x] 7.6 Make rings progression-hintable and Skeleton bonus-hintable without
   letting Skeleton enter progression-only accessibility/hint selection.
 

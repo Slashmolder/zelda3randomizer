@@ -508,6 +508,12 @@ existing key counter, including when collected elsewhere. Requested ring setting
 remain in shares/saves/spoilers, while effective Vanilla small keys and Retro's
 shared GenericKey model resolve rings off.
 
+The item tracker and autotracker deliberately expose only each dungeon's live
+numeric key counter, not whether that dungeon rolled ordinary keys or a Key Ring.
+Both pool shapes therefore display `0` at seed start. Ordinary key pickups add one;
+a Key Ring pickup raises the same counter to that family's complete authored stock.
+Spoiler output remains the explicit place to inspect selected ring families.
+
 `skeleton_key=true` replaces one junk item with a single unrestricted bonus
 Skeleton Key. Once collected it takes the normal successful small-key-door path
 without decrementing dungeon or Retro GenericKey counters. It does not satisfy

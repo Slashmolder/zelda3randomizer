@@ -1069,11 +1069,6 @@ typedef struct RandoItemView {
   // GRANT, dispatches to index 0 = the sewers/escape sub-area — a separate
   // index from the HC dungeon proper; do not conflate the two.)
   uint8 dungeon_small_keys[16];
-  // Key Ring state is indexed by RandoDungeonId (13 low bits). Selection is
-  // separate from ownership so tracker surfaces can hide unselected families
-  // instead of presenting them as missing progression.
-  uint16 key_ring_selected_mask;
-  uint16 key_ring_owned_mask;
   bool skeleton_key_enabled;
   bool skeleton_key_owned;
   uint16 bigkey_bits;
@@ -1086,8 +1081,10 @@ void Rando_FillItemView(RandoItemView *out);
 // Key Rings / Skeleton Key are not authoritative SRAM fields. Ownership is
 // reconstructed from the installed placement table plus checked-location
 // bitmap after sidecar/snapshot restore and cached for hot door/tracker reads.
-// The selected mask uses RandoDungeonId bits; numeric remaining key counters
-// remain independently visible through RandoItemView::dungeon_small_keys.
+// Ring selection/ownership stays internal: exposing it through the tracker
+// would reveal whether a dungeon rolled a ring before the player finds its key
+// item. Tracker surfaces see only the live numeric remaining-key counters in
+// RandoItemView::dungeon_small_keys; collecting a ring updates that same counter.
 void Rando_RebuildKeyItemOwnership(void);
 uint16 Rando_GetSelectedKeyRingMask(void);
 uint16 Rando_GetOwnedKeyRingMask(void);

@@ -5612,8 +5612,6 @@ void Rando_FillItemView(RandoItemView *out) {
                            : Rando_KeySlotFromRawPalace((uint8)cur_palace_index_x2);
     if (key_slot < 16) out->dungeon_small_keys[key_slot] = link_num_keys;
   }
-  out->key_ring_selected_mask = Rando_GetSelectedKeyRingMask();
-  out->key_ring_owned_mask = Rando_GetOwnedKeyRingMask();
   out->skeleton_key_enabled = g_rando_slot_active && g_rando_skeleton_key_present;
   out->skeleton_key_owned = Rando_HasSkeletonKey();
   out->bigkey_bits = link_bigkey;
@@ -7473,7 +7471,7 @@ void Rando_SelfCheck(void) {
     static RandoPlacement entries[2];
     RandoPlacementTable t = { entries, 2 };
     entries[0].location_id = 166;
-    entries[0].item_id = ITEM_KeyRing_TowerOfHera;
+    entries[0].item_id = ITEM_SmallKey_TowerOfHera;
     entries[1].location_id = 167;
     entries[1].item_id = ITEM_SkeletonKey;
 
@@ -7497,15 +7495,43 @@ void Rando_SelfCheck(void) {
 
     g_rando_slot_active = 1;
     g_rando_active_settings_valid = false;  // placement-derived legacy path
-    Placement_Install(&t);
+    g_rando_checked_bitmap[166 >> 3] &=
+        (uint8)~((1u << (166 & 7)) | (1u << (167 & 7)));
     cur_palace_index_x2 = 0;  // HCE, not Tower of Hera
-    link_num_keys = 3;
+    link_num_keys = 0;
     link_keys_earned_per_dungeon[kGameDungeon_TowerOfHera] = 0;
+
+    // Tracker privacy: an uncollected ordinary key placement and an
+    // uncollected Key Ring placement must look identical. Neither placement
+    // row is inventory; only a receipt may change the live numeric counter.
+    Placement_Install(&t);
+    Rando_RebuildKeyItemOwnership();
+    RandoItemView ordinary_key_view;
+    Rando_FillItemView(&ordinary_key_view);
+    entries[0].item_id = ITEM_KeyRing_TowerOfHera;
+    Placement_Install(&t);
+    Rando_RebuildKeyItemOwnership();
+    RandoItemView uncollected_ring_view;
+    Rando_FillItemView(&uncollected_ring_view);
+    if (ordinary_key_view.dungeon_small_keys[kGameDungeon_TowerOfHera] != 0 ||
+        uncollected_ring_view.dungeon_small_keys[kGameDungeon_TowerOfHera] != 0) {
+      fprintf(stderr, "Rando_SelfCheck: tracker leaked uncollected key-item shape\n");
+      exit(2);
+    }
+
+    link_num_keys = 3;
     if (Rando_DispatchVanillaGrant(166, ITEM_BottleEmpty, 0x16) != kRandoLttpSkip ||
         link_num_keys != 3 ||
         link_keys_earned_per_dungeon[kGameDungeon_TowerOfHera] !=
             Rando_KeyRingGrantCount(kRandoDungeon_TowerOfHera)) {
       fprintf(stderr, "Rando_SelfCheck: off-dungeon Key Ring grant mismatch\n");
+      exit(2);
+    }
+    RandoItemView collected_ring_view;
+    Rando_FillItemView(&collected_ring_view);
+    if (collected_ring_view.dungeon_small_keys[kGameDungeon_TowerOfHera] !=
+        Rando_KeyRingGrantCount(kRandoDungeon_TowerOfHera)) {
+      fprintf(stderr, "Rando_SelfCheck: collected Key Ring missing from numeric tracker count\n");
       exit(2);
     }
 
