@@ -1075,8 +1075,7 @@ static void Panel_Dungeons() {
   } else {
     if (EnumCombo("Small keys", &s->dungeon_small_keys_mode, kDungeonModeLabels, 3)) changed = true;
   }
-  bool rings_forced_off = Settings_GenericKeysActive(s) ||
-                          Settings_EffectiveSmallKeysMode(s) == kDungeonItemMode_Vanilla;
+  bool rings_forced_off = Settings_KeyRingsForcedOff(s);
   if (rings_forced_off) ImGui::BeginDisabled();
   if (EnumCombo("Key rings", &s->key_rings, kKeyRingsLabels, 3)) changed = true;
   if (rings_forced_off) {

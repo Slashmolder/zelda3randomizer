@@ -35,11 +35,16 @@ typedef struct RandoPlacementTable {
 // Key Ring collapse (base chest keys + every active itemized key source).
 uint16 KeyRings_EligibleMask(const RandoSettings *settings);
 
-// Resolve the requested Key Ring mode for this seed without consuming the
-// assumed-fill RNG stream. Effective Random with fewer than two eligible
-// families is invalid and returns false; effective Off succeeds with mask 0.
-bool KeyRings_Select(const RandoSettings *settings, uint64 seed_u64,
-                     uint16 *out_mask);
+typedef struct KeyRingSelection {
+  uint16 eligible_mask;
+  uint16 selected_mask;
+} KeyRingSelection;
+
+// Resolve eligibility and the requested per-seed selection together without
+// consuming the assumed-fill RNG stream. Effective Random with fewer than two
+// eligible families is invalid; effective Off succeeds with selected_mask=0.
+bool KeyRings_Resolve(const RandoSettings *settings, uint64 seed_u64,
+                      KeyRingSelection *out);
 
 uint16 BuildItemPool(const RandoSettings *settings, uint64 seed_u64,
                      uint16 *out_items, uint16 capacity);

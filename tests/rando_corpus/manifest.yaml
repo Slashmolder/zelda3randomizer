@@ -1144,6 +1144,12 @@ entries:
   # add-rando-grass-rock-shuffle (task 6.1) — terrain axes + compositions.
   # Seeds carry the ascii tag 0x4752... ("GR..") for traceability. Digests
   # filled by bump_rando_corpus.py --apply at kGeneratorVersion 130.
+  # Registry provenance: the v142 capture changed four otherwise feature-Off
+  # terrain rows (grass+rock all, Inverted, enemy-drop, and dungeon-entrance
+  # composition) relative to v141 because the local generated registries were
+  # newer. A three-way comparison with identical registry inputs showed the
+  # v141 and v142 generators byte-identical for those rows; do not attribute
+  # those four digest changes to Key Rings or Skeleton Key behavior.
   - settings: { mode.state: open, goal: fast_ganon, grass_shuffle: junk, accessibility: items }
     seed: "0x4752415353000001"
     label: "terrain-grass-junk"

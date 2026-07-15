@@ -11,6 +11,7 @@
 #include "rando_settings.h"   // RandoSettings, Settings_SetDefaults (placement selfcheck)
 #include "rando_placement.h"  // Place_AssumedFill, PlacementTable_ComputeDigest
 #include "item_ids.h"         // ITEM_Prize_GreenPendant .. ITEM_DefeatAgahnim
+#include "dungeon_ids.h"      // Rando_IsFixedKeyCardinalityItem
 #include "third_party/sha256/sha256.h"  // sha256_buffer
 
 // MSVC has no strtok_r; strtok_s is signature-identical (C11 Annex K aside).
@@ -157,14 +158,6 @@ bool Customizer_IsNonGrantableItem(uint16 item_id) {
          item_id == ITEM_HyruleCastleBigKey;
 }
 
-static bool customizer_is_key_cardinality_item(uint16 item_id) {
-  return (item_id >= ITEM_SmallKey_HyruleCastleEscape &&
-          item_id <= ITEM_SmallKey_GanonsTower) ||
-         (item_id >= ITEM_KeyRing_HyruleCastleEscape &&
-          item_id <= ITEM_KeyRing_GanonsTower) ||
-         item_id == ITEM_SkeletonKey;
-}
-
 // Parse a pool_overrides list value: "[A, B, C]" or a bare "A". Resolves each
 // item name and appends its id to out[*count] (capped at cap). Rejects unknown
 // items; when reject_non_grantable is set, also rejects prize/event/virtual
@@ -202,7 +195,7 @@ static int parse_pool_list(const char *value, int line, const char *which,
                line, t);
       return 1;
     }
-    if (customizer_is_key_cardinality_item(id)) {
+    if (Rando_IsFixedKeyCardinalityItem(id)) {
       snprintf(err, errlen,
                "line %d: item '%s' cannot appear in pool_overrides; "
                "small keys, Key Rings, and Skeleton Key have fixed cardinality",

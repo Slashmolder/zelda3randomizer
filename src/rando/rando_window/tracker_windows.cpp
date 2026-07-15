@@ -331,7 +331,7 @@ static void DrawItemTracker(void *) {
       uint16 bigkey_bit = Rando_DungeonBitForGameDungeon(row->bigkey_game_dungeon);
       uint16 map_bit = Rando_DungeonBitForGameDungeon(row->map_game_dungeon);
       uint16 compass_bit = Rando_DungeonBitForGameDungeon(row->compass_game_dungeon);
-      uint8 key_slot = Rando_IsGenericKeysActive() ? 15 : row->key_slot;
+      uint8 key_slot = Rando_EffectiveKeySlot(row->key_slot);
       int keys = v.dungeon_small_keys[key_slot];
 
       // Completion: prize obtained for prize dungeons; Agahnim for Castle Tower.

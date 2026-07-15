@@ -408,7 +408,7 @@ enum {
 // kGeneratorVersion bump; sidecar format_version 8 widened the stored blob.
 // add-rando-key-rings-skeleton-key grows 30 -> 31 with append-only byte [30]:
 // key_rings bits 0-1, skeleton_key bit 2, bits 3-7 refused-undefined; sidecar
-// format_version 9 carries the widened blob.
+// format_version 10 carries the widened blob.
 #define kSettingsCanonicalLen 31
 
 // Populate the struct with Phase A defaults (Open / Fast Ganon / Normal
@@ -437,6 +437,11 @@ uint8 Settings_EffectiveSmallKeysMode(const RandoSettings *s);
 // canonicalizes the requested key_rings field, so a temporarily disabled UI
 // choice survives share/config round-trips.
 uint8 Settings_EffectiveKeyRings(const RandoSettings *s);
+// True when the requested ring mode is temporarily unavailable because the
+// seed uses vanilla/free small keys or Retro's shared Generic Key model. UIs
+// use the same authority as Settings_EffectiveKeyRings instead of re-spelling
+// the condition.
+bool Settings_KeyRingsForcedOff(const RandoSettings *s);
 
 // Topology-changing dungeon axes force in-dungeon big keys at every placer read
 // so generated reachability cannot rely on a vanilla-mode pregrant that the

@@ -166,6 +166,13 @@ static inline bool Rando_IsKeyRingItem(uint16 item_id) {
          item_id <= ITEM_KeyRing_GanonsTower;
 }
 
+// Customizer pool edits may relocate these items but must never mint or remove
+// copies: their counts are derived from the selected key model.
+static inline bool Rando_IsFixedKeyCardinalityItem(uint16 item_id) {
+  return Rando_IsSmallKeyItem(item_id) || Rando_IsKeyRingItem(item_id) ||
+         item_id == ITEM_SkeletonKey;
+}
+
 static inline uint16 Rando_SmallKeyItemForRandoDungeon(uint8 rando_dungeon) {
   return rando_dungeon < kRandoDungeon_Count
              ? (uint16)(ITEM_SmallKey_HyruleCastleEscape + rando_dungeon)

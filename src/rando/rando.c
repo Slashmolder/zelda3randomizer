@@ -1820,6 +1820,10 @@ bool Rando_IsGenericKeysActive(void) {
   return Rando_IsRetroActive();
 }
 
+uint8 Rando_EffectiveKeySlot(uint8 key_slot) {
+  return Rando_IsGenericKeysActive() ? 15 : key_slot;
+}
+
 // Retro genericKeys BUYABLE shop-slot grant (ALTTPR ShopKey, Randomizer.php:746-747
 // — `$shop->addInventory(1, Item::get('ShopKey', ...), 100)`). The predicate VM
 // treats holding >=1 GenericKey as opening EVERY small-key door (eval_has_item /
@@ -3819,18 +3823,17 @@ void Rando_RebuildKeyItemOwnership(void) {
   // be decoded).
   uint16 selected = placement_selected;
   if (g_rando_slot_active && g_rando_active_settings_valid) {
-    uint16 recomputed_selected = 0;
+    KeyRingSelection recomputed;
     ShareString ss;
     if (g_rando_active_share_string[0] != '\0' &&
         Share_Decode(g_rando_active_share_string, &ss) == kShareDecodeOk &&
-        KeyRings_Select(&g_rando_active_settings, ss.seed_u64,
-                        &recomputed_selected) &&
-        recomputed_selected != placement_selected) {
+        KeyRings_Resolve(&g_rando_active_settings, ss.seed_u64, &recomputed) &&
+        recomputed.selected_mask != placement_selected) {
       // A mismatch means the persisted selector inputs no longer describe the
       // installed table. Surface it while continuing to display/use the table.
       fprintf(stderr,
               "Rando WARNING: selected Key Ring mask %04x differs from placement mask %04x\n",
-              (unsigned)recomputed_selected, (unsigned)placement_selected);
+              (unsigned)recomputed.selected_mask, (unsigned)placement_selected);
     }
     skeleton_present = skeleton_present || g_rando_active_settings.skeleton_key != 0;
   }
@@ -5607,9 +5610,8 @@ void Rando_FillItemView(RandoItemView *out) {
   // Escape/Sewers through the shared key-slot helper. Retro uses slot 15 as its
   // one GenericKey pool, so expose the same live value there.
   if ((uint8)cur_palace_index_x2 != 0xff) {
-    uint8 key_slot = Rando_IsGenericKeysActive()
-                           ? 15
-                           : Rando_KeySlotFromRawPalace((uint8)cur_palace_index_x2);
+    uint8 key_slot = Rando_EffectiveKeySlot(
+        Rando_KeySlotFromRawPalace((uint8)cur_palace_index_x2));
     if (key_slot < 16) out->dungeon_small_keys[key_slot] = link_num_keys;
   }
   out->skeleton_key_enabled = g_rando_slot_active && g_rando_skeleton_key_present;

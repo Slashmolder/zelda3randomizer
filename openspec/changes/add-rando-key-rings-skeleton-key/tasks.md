@@ -28,7 +28,7 @@
   requested mode; keep Skeleton Key independent.
 - [x] 2.4 Implement the centralized pre-collapse eligible-family counter over base,
   pot, enemy, and future registered shuffled key sources.
-- [x] 2.5 Implement salted `KeyRings_Select(settings, seed)` without consuming the
+- [x] 2.5 Implement salted `KeyRings_Resolve(settings, seed)` without consuming the
   main fill RNG; pin fixed-seed masks and Random's non-empty/non-total property;
   refuse effective-Random configurations with fewer than two eligible families
   while allowing requested Random that resolves Off under Vanilla/Retro.
@@ -143,6 +143,14 @@
   escape, Retro normalization, Skeleton-only, and rings+Skeleton.
 - [x] 8.6 Run exact-seed determinism/reload checks: selected mask, placement table,
   spoiler fields, sidecar activation, and snapshot replay must agree.
+- [x] 8.7 Address implementation-review coherence findings: centralize fixed key
+  cardinality, base key counts, forced-Off policy, effective tracker slots, and
+  itemized-source scans; resolve each seed's ring plan once before fill retries;
+  cache native validation by canonical settings + seed; remove duplicate spoiler
+  aliases and the ring-blind placement-predicate API.
+- [x] 8.8 Keep soul-pinned enemy rooms' vanilla sprite-sheet quartet and enemy
+  type under the same effective-tier decision, so enemy randomizer cannot force a
+  vanilla soul-gated enemy after widening away the sheet it needs.
 
 ## 9. Owner playtests and closeout
 

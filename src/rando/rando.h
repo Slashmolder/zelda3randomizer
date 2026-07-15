@@ -845,6 +845,9 @@ bool Rando_IsRetroActive(void);
 // diverge, and so the runtime intent reads clearly at each site. When it returns
 // false the vanilla per-dungeon key path runs byte-identically.
 bool Rando_IsGenericKeysActive(void);
+// Resolve a game-side dungeon key slot for tracker/runtime display. Retro folds
+// every dungeon onto the persisted shared Generic Key slot 15.
+uint8 Rando_EffectiveKeySlot(uint8 key_slot);
 
 // Rando_GrantGenericKeyPurchase — grant one shared generic small key, the way an
 // in-world GenericKey pickup would (bumps the persisted shared counter, and the

@@ -75,16 +75,6 @@ static bool eval(Cursor *c, const PredicateContext *ctx);
 // ITEM_SmallKey_HyruleCastleEscape..ITEM_SmallKey_GanonsTower). When generic
 // keys are NOT active the caller falls through to the normal per-dungeon count,
 // so non-Retro evaluation is byte-identical.
-static bool logic_generic_keys_active(const PredicateContext *ctx) {
-  return ctx->settings != NULL &&
-         ctx->settings->world_state == (uint8)kWorldState_Retro;
-}
-
-static bool item_is_small_key(uint16 item_id) {
-  return item_id >= ITEM_SmallKey_HyruleCastleEscape &&
-         item_id <= ITEM_SmallKey_GanonsTower;
-}
-
 uint16 Logic_EffectiveItemCount(const RandoCounts *counts,
                                 const RandoSettings *settings,
                                 uint16 item_id) {
@@ -102,8 +92,6 @@ uint16 Logic_EffectiveItemCount(const RandoCounts *counts,
 static bool eval_has_item(Cursor *c, const PredicateContext *ctx) {
   uint16 item_id = cursor_u16le(c);
   if (c->error || item_id >= 256) return false;
-  if (item_is_small_key(item_id) && logic_generic_keys_active(ctx))
-    return ctx->counts->by_item_id[ITEM_GenericKey] >= 1;
   return Logic_EffectiveItemCount(ctx->counts, ctx->settings, item_id) >= 1;
 }
 
@@ -111,15 +99,12 @@ static bool eval_has_amount(Cursor *c, const PredicateContext *ctx) {
   uint16 item_id = cursor_u16le(c);
   uint8 n = cursor_u8(c);
   if (c->error || item_id >= 256) return false;
-  if (item_is_small_key(item_id) && logic_generic_keys_active(ctx))
-    return ctx->counts->by_item_id[ITEM_GenericKey] >= 1;  // any key opens any door
   return Logic_EffectiveItemCount(ctx->counts, ctx->settings, item_id) >= n;
 }
 
 static bool eval_has_any_of(Cursor *c, const PredicateContext *ctx) {
   uint8 count = cursor_u8(c);
   bool result = false;
-  bool generic = logic_generic_keys_active(ctx);
   for (uint8 i = 0; i < count; i++) {
     uint16 item_id = cursor_u16le(c);
     if (c->error || item_id >= 256) { result = false; continue; }
@@ -128,9 +113,8 @@ static bool eval_has_any_of(Cursor *c, const PredicateContext *ctx) {
     // holding >=1 GenericKey. Inert under default settings (no author uses
     // HAS_ANY for a SmallKey today) but kept consistent so a future logic_parts
     // file that lists a SmallKey in HAS_ANY can't desync from the runtime pool.
-    uint16 count_value = (generic && item_is_small_key(item_id))
-        ? ctx->counts->by_item_id[ITEM_GenericKey]
-        : Logic_EffectiveItemCount(ctx->counts, ctx->settings, item_id);
+    uint16 count_value = Logic_EffectiveItemCount(
+        ctx->counts, ctx->settings, item_id);
     if (count_value >= 1) result = true;
   }
   return result;
@@ -140,7 +124,7 @@ static bool eval_has_any_count(Cursor *c, const PredicateContext *ctx) {
   uint8 count = cursor_u8(c);
   // Sum the counts across all ids, then compare to threshold.
   uint32 sum = 0;
-  bool generic = logic_generic_keys_active(ctx);
+  bool generic = Settings_GenericKeysActive(ctx->settings);
   bool added_generic = false;
   for (uint8 i = 0; i < count; i++) {
     uint16 item_id = cursor_u16le(c);
@@ -149,7 +133,7 @@ static bool eval_has_any_count(Cursor *c, const PredicateContext *ctx) {
     // id in the list into the single shared GenericKey count, added at most
     // once so multiple SmallKey ids don't multiply-count the shared pool.
     // Inert under default settings (no author uses HAS_ANY for a SmallKey).
-    if (generic && item_is_small_key(item_id)) {
+    if (generic && Rando_IsSmallKeyItem(item_id)) {
       if (!added_generic) {
         sum += ctx->counts->by_item_id[ITEM_GenericKey];
         added_generic = true;
@@ -776,16 +760,8 @@ bool Predicate_Evaluate(const uint8 *bytecode, uint16 length,
 bool Predicate_EvaluatePlacement(const uint8 *bytecode, uint16 length,
                                  const RandoCounts *counts,
                                  const RandoSettings *settings,
-                                 uint16 candidate_item) {
-  return Predicate_EvaluatePlacementWithKeyRings(
-      bytecode, length, counts, settings, candidate_item, 0);
-}
-
-bool Predicate_EvaluatePlacementWithKeyRings(const uint8 *bytecode, uint16 length,
-                                             const RandoCounts *counts,
-                                             const RandoSettings *settings,
-                                             uint16 candidate_item,
-                                             uint16 selected_key_rings_mask) {
+                                 uint16 candidate_item,
+                                 uint16 selected_key_rings_mask) {
   PredicateContext ctx;
   memset(&ctx, 0, sizeof(ctx));
   ctx.counts = counts;
@@ -1543,7 +1519,7 @@ static bool logic_pot_active(const RandoLocationDef *loc, const RandoSettings *s
   bool is_empty = (loc->vanilla_item_id == ITEM_Nothing);
   switch (s->pot_shuffle) {
     case kPotShuffle_Off:      return false;
-    case kPotShuffle_Keys:     return item_is_small_key(loc->vanilla_item_id);
+    case kPotShuffle_Keys:     return Rando_IsSmallKeyItem(loc->vanilla_item_id);
     case kPotShuffle_Contents: return !is_empty;
     case kPotShuffle_All:      return true;
     default:                   return false;
@@ -2287,9 +2263,9 @@ void Logic_SelfCheck(void) {
   // ITEM_IS in placement context — true iff candidate matches
   {
     uint8 bc[] = { OP_ITEM_IS, 42, 0 };
-    LSC_ASSERT(Predicate_EvaluatePlacement(bc, sizeof(bc), &counts, &settings, 42) == true,
+    LSC_ASSERT(Predicate_EvaluatePlacement(bc, sizeof(bc), &counts, &settings, 42, 0) == true,
                "ITEM_IS(42) with candidate 42 should be true");
-    LSC_ASSERT(Predicate_EvaluatePlacement(bc, sizeof(bc), &counts, &settings, 41) == false,
+    LSC_ASSERT(Predicate_EvaluatePlacement(bc, sizeof(bc), &counts, &settings, 41, 0) == false,
                "ITEM_IS(42) with candidate 41 should be false");
   }
   // Selected-family SmallKey/KeyRing aliases are symmetric in placement
@@ -2306,19 +2282,19 @@ void Logic_SelfCheck(void) {
       (uint8)(ITEM_KeyRing_SwampPalace >> 8),
     };
     uint16 sp_bit = (uint16)(1u << kRandoDungeon_SwampPalace);
-    LSC_ASSERT(Predicate_EvaluatePlacementWithKeyRings(
+    LSC_ASSERT(Predicate_EvaluatePlacement(
                    key_bc, sizeof(key_bc), &counts, &settings,
                    ITEM_KeyRing_SwampPalace, sp_bit),
                "selected Key Ring must satisfy OP_ITEM_IS(SmallKey)");
-    LSC_ASSERT(Predicate_EvaluatePlacementWithKeyRings(
+    LSC_ASSERT(Predicate_EvaluatePlacement(
                    ring_bc, sizeof(ring_bc), &counts, &settings,
                    ITEM_SmallKey_SwampPalace, sp_bit),
                "selected SmallKey must satisfy OP_ITEM_IS(KeyRing)");
-    LSC_ASSERT(!Predicate_EvaluatePlacementWithKeyRings(
+    LSC_ASSERT(!Predicate_EvaluatePlacement(
                    key_bc, sizeof(key_bc), &counts, &settings,
                    ITEM_KeyRing_SwampPalace, 0),
                "unselected Key Ring must not alias OP_ITEM_IS(SmallKey)");
-    LSC_ASSERT(!Predicate_EvaluatePlacementWithKeyRings(
+    LSC_ASSERT(!Predicate_EvaluatePlacement(
                    key_bc, sizeof(key_bc), &counts, &settings,
                    ITEM_KeyRing_TurtleRock,
                    (uint16)(sp_bit | (1u << kRandoDungeon_TurtleRock))),

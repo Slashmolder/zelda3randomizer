@@ -401,7 +401,7 @@ static void at_append_dungeons(AtStr *s, const RandoItemView *v) {
     if (i) at_str_puts(s, ",");
     at_str_puts(s, "{\"name\":");
     at_json_str(s, row->name);
-    uint8 key_slot = Rando_IsGenericKeysActive() ? 15 : row->key_slot;
+    uint8 key_slot = Rando_EffectiveKeySlot(row->key_slot);
     // Do not expose selected/owned ring state: that would reveal whether this
     // dungeon rolled a ring before the player finds the item. The live numeric
     // counter starts at zero for either pool shape and rises on actual receipt.

@@ -694,8 +694,8 @@ def _enemy_source_counts(doc: dict) -> dict[str, dict[str, int]]:
 
 
 # Vanilla placed/chest small-key counts per dungeon (structural fact; mirrors
-# kVanillaSmallKeyCounts in src/rando/rando_placement.c / ALTTPR config
-# `small_keys.*`). _enemy_depth_terms needs a WILD cap for EVERY key dungeon,
+# the centralized Rando_BaseSmallKeyCount metadata in src/rando/dungeon_ids.h /
+# ALTTPR config `small_keys.*`). _enemy_depth_terms needs a WILD cap for EVERY key dungeon,
 # but enemy_drops.gen.yaml's small_key_source_counts only carries rows for the
 # dungeons that HAVE forced enemy key drops — Swamp/Thieves'/Desert/Hera/PoD
 # have none, and the old "no row -> leave wild uncapped" fallback emitted their

@@ -162,10 +162,14 @@ uint8 Settings_EffectiveSmallKeysMode(const RandoSettings *s) {
 uint8 Settings_EffectiveKeyRings(const RandoSettings *s) {
   if (s == NULL || s->key_rings == kKeyRings_Off)
     return kKeyRings_Off;
-  if (Settings_GenericKeysActive(s) ||
-      Settings_EffectiveSmallKeysMode(s) == kDungeonItemMode_Vanilla)
+  if (Settings_KeyRingsForcedOff(s))
     return kKeyRings_Off;
   return s->key_rings;
+}
+
+bool Settings_KeyRingsForcedOff(const RandoSettings *s) {
+  return s == NULL || Settings_GenericKeysActive(s) ||
+         Settings_EffectiveSmallKeysMode(s) == kDungeonItemMode_Vanilla;
 }
 
 uint8 Settings_EffectiveBigKeysMode(const RandoSettings *s) {

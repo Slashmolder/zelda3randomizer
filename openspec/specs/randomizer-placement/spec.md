@@ -594,8 +594,8 @@ location pool like any other location; the remaining pot slots are filled by the
 existing junk padder. **Pot-key locations are dungeon small-key locations that follow
 the dungeon's `dungeon_small_keys_mode`** — identity-pinned to the pot in vanilla key
 mode, an open shuffled slot otherwise — but a pot key is an ADDITIONAL key the pool
-must carry, NOT one of the fixed vanilla *chest* keys (`kVanillaSmallKeyCounts` counts
-chests only). Its full economy (separate pooling, the in-dungeon vs world distribution,
+must carry, NOT one of the fixed vanilla *chest* keys (the centralized base
+small-key count covers chests only). Its full economy (separate pooling, the in-dungeon vs world distribution,
 and the non-pot-drop free-grant) and the in-context key-door logic gating are specified
 in `Pot-key small-key economy` (this capability) and `randomizer-logic / Pot-key
 small-key logic gating`. **Empty-pot locations
@@ -713,8 +713,8 @@ check and a sort-on-install fallback.
 ### Requirement: Pot-key small-key economy
 
 A dungeon's POT keys SHALL be economy-correct when `pot_shuffle` turns them into
-checks. `kVanillaSmallKeyCounts` counts only a dungeon's vanilla *chest* keys, so a pot
-key is NOT in it; the economy SHALL treat an active key pot's vanilla small key as an
+checks. `Rando_BaseSmallKeyCount` counts only a dungeon's vanilla *chest* keys, so a
+pot key is NOT in it; the economy SHALL treat an active key pot's vanilla small key as an
 ADDITIONAL pooled item, never relying on the chest count to cover it. Specifically:
 
 - **Vanilla key mode:** the key pot is identity-pinned (`location_is_prepinned`) and
@@ -899,4 +899,3 @@ all-tier placement.
 - **WHEN** a customizer manifest pins an item to an emitted all-tier location whose
   item class is supported by that source's collection model
 - **THEN** placement honors the pin like other real non-empty checks
-

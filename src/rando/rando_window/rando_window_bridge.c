@@ -14,6 +14,31 @@
 
 RandoWindowBridge g_rando_window_bridge;
 
+typedef struct KeyRingValidationCache {
+  bool valid;
+  uint8 canonical[kSettingsCanonicalLen];
+  uint64 seed_u64;
+  bool selection_valid;
+} KeyRingValidationCache;
+
+static KeyRingValidationCache g_key_ring_validation_cache;
+
+static bool key_ring_random_selection_valid(const RandoSettings *s,
+                                            uint64 seed_u64) {
+  uint8 canonical[kSettingsCanonicalLen];
+  Settings_CanonicalSerialize(s, canonical);
+  KeyRingValidationCache *cache = &g_key_ring_validation_cache;
+  if (!cache->valid || cache->seed_u64 != seed_u64 ||
+      memcmp(cache->canonical, canonical, sizeof(canonical)) != 0) {
+    KeyRingSelection selection;
+    cache->selection_valid = KeyRings_Resolve(s, seed_u64, &selection);
+    memcpy(cache->canonical, canonical, sizeof(canonical));
+    cache->seed_u64 = seed_u64;
+    cache->valid = true;
+  }
+  return cache->selection_valid;
+}
+
 bool RandoWindowBridge_WriteSpoilerFiles(const char *json_path, const char *txt_path) {
   const RandoWindowBridge *b = &g_rando_window_bridge;
   if (!b->has_last_generated || b->last_generated_placement.entries == NULL)
@@ -196,9 +221,8 @@ int RandoWindowBridge_Validate(const RandoSettings *s, char *out_err, size_t cap
     return 1;
   }
 
-  uint16 selected_key_rings = 0;
   if (Settings_EffectiveKeyRings(s) == kKeyRings_Random &&
-      !KeyRings_Select(s, g_rando_window_bridge.seed_u64, &selected_key_rings)) {
+      !key_ring_random_selection_valid(s, g_rando_window_bridge.seed_u64)) {
     if (out_err != NULL && cap > 0)
       snprintf(out_err, cap,
                "Random key rings need at least two eligible dungeon key families.");

@@ -66,7 +66,7 @@ Eligibility is based on the **pre-ring shuffled key multiset**, not a hard-coded
 list. For each of the 13 small-key families, count copies that would enter the
 pool from:
 
-1. `kVanillaSmallKeyCounts` when effective keys are Dungeon/Wild;
+1. the centralized base chest-key count when effective keys are Dungeon/Wild;
 2. every active key-pot location;
 3. every active forced-enemy small-key location; and
 4. future registered shuffled key-source contributors routed through the same
@@ -77,9 +77,10 @@ ineligible but automatically becomes eligible if an active itemized source adds 
 Eastern key. This avoids both a useless Eastern ring and a future source-specific
 exception.
 
-`KeyRings_Select(settings, seed_u64)` returns a 13-bit randomizer-dungeon mask:
+`KeyRings_Resolve(settings, seed_u64)` returns the eligible and selected 13-bit
+randomizer-dungeon masks together:
 
-- Off: return zero.
+- Off: report the eligible mask but return a zero selected mask.
 - All: the complete eligible mask.
 - Random: seed a dedicated RNG domain from `(seed_u64, "key-rings/v1")`; draw a
   bit for every eligible family and retry the salted selection until the result is
@@ -92,10 +93,14 @@ validation refuses generation with a diagnostic instead of silently changing
 Random to Off or All. A requested Random mode that resolves to Off under
 Vanilla/Retro is already Off and returns a zero selected mask without this refusal.
 
-The selection must not consume the main assumed-fill RNG stream. The same helper is
-used by pool construction, logic, spoiler, runtime activation, customizer
-validation, and selfchecks. The selected mask is reproducible from persisted seed
-+ requested canonical settings after deriving the effective mode, and does not need
+The selection must not consume the main assumed-fill RNG stream. Pool construction
+resolves the immutable selection once per seed before assumed-fill retries, then
+passes the selected mask into placement logic aliases and customizer validation.
+Spoiler output, runtime consistency checks, native validation, and selfchecks call
+the resolver directly; the native settings validator caches the result by the
+complete canonical settings blob plus seed instead of rescanning the location
+registry every frame. The selected mask is reproducible from persisted seed +
+requested canonical settings after deriving the effective mode, and does not need
 its own authoritative save field.
 
 ## D3 - Append-only item model and presentation

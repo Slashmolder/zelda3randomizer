@@ -2978,8 +2978,7 @@ static void CycleRow(int row, int delta) {
       break;
     }
     case kRow_KeyRings: {
-      if (Settings_GenericKeysActive(s) ||
-          Settings_EffectiveSmallKeysMode(s) == kDungeonItemMode_Vanilla) {
+      if (Settings_KeyRingsForcedOff(s)) {
         mutated = false;
         sound_effect_1 = 0x3c;
         break;

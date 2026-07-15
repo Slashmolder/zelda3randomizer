@@ -610,23 +610,20 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
           (uint8)((canon[29] & kGrassShuffleAxis_Mask) >> kGrassShuffleAxis_Shift));
   fprintf(f, "    \"rock_shuffle\": %u,\n",
           (uint8)((canon[29] & kRockShuffleAxis_Mask) >> kRockShuffleAxis_Shift));
-  uint16 key_rings_eligible = KeyRings_EligibleMask(s->settings);
-  uint16 key_rings_selected = 0;
+  KeyRingSelection key_rings;
   bool key_rings_selection_valid =
-      KeyRings_Select(s->settings, s->seed_u64, &key_rings_selected);
+      KeyRings_Resolve(s->settings, s->seed_u64, &key_rings);
   fprintf(f, "    \"key_rings_requested\": %u,\n",
-          (uint8)((canon[30] & kKeyRingsAxis_Mask) >> kKeyRingsAxis_Shift));
-  fprintf(f, "    \"key_rings\": %u,\n",
           (uint8)((canon[30] & kKeyRingsAxis_Mask) >> kKeyRingsAxis_Shift));
   fprintf(f, "    \"key_rings_effective\": %u,\n",
           Settings_EffectiveKeyRings(s->settings));
-  fprintf(f, "    \"key_rings_eligible_mask\": %u,\n", key_rings_eligible);
+  fprintf(f, "    \"key_rings_eligible_mask\": %u,\n", key_rings.eligible_mask);
   fprintf(f, "    \"key_rings_eligible_names\": ");
-  spoiler_write_key_ring_names_json(f, key_rings_eligible);
+  spoiler_write_key_ring_names_json(f, key_rings.eligible_mask);
   fprintf(f, ",\n");
-  fprintf(f, "    \"key_rings_selected_mask\": %u,\n", key_rings_selected);
+  fprintf(f, "    \"key_rings_selected_mask\": %u,\n", key_rings.selected_mask);
   fprintf(f, "    \"key_rings_selected_names\": ");
-  spoiler_write_key_ring_names_json(f, key_rings_selected);
+  spoiler_write_key_ring_names_json(f, key_rings.selected_mask);
   fprintf(f, ",\n");
   fprintf(f, "    \"key_rings_selection_salt_version\": 1,\n");
   fprintf(f, "    \"key_rings_selection_valid\": %s,\n",
@@ -1206,16 +1203,16 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
   fprintf(f, "World state: %u, Goal: %u\n",
           s->settings->world_state, s->settings->goal);
   {
-    uint16 eligible = KeyRings_EligibleMask(s->settings);
-    uint16 selected = 0;
-    bool selection_valid = KeyRings_Select(s->settings, s->seed_u64, &selected);
+    KeyRingSelection key_rings;
+    bool selection_valid = KeyRings_Resolve(
+        s->settings, s->seed_u64, &key_rings);
     fprintf(f, "Key rings: requested %u, effective %u (selection salt v1%s)\n",
             s->settings->key_rings, Settings_EffectiveKeyRings(s->settings),
             selection_valid ? "" : ", invalid eligible set");
-    fprintf(f, "Eligible key rings: 0x%04x — ", eligible);
-    spoiler_write_key_ring_names_text(f, eligible);
-    fprintf(f, "\nSelected key rings: 0x%04x — ", selected);
-    spoiler_write_key_ring_names_text(f, selected);
+    fprintf(f, "Eligible key rings: 0x%04x — ", key_rings.eligible_mask);
+    spoiler_write_key_ring_names_text(f, key_rings.eligible_mask);
+    fprintf(f, "\nSelected key rings: 0x%04x — ", key_rings.selected_mask);
+    spoiler_write_key_ring_names_text(f, key_rings.selected_mask);
     fprintf(f, "\nSkeleton Key enabled: %s (bonus only; logic never requires it)\n",
             s->settings->skeleton_key ? "yes" : "no");
   }

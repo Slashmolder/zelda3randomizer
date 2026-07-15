@@ -840,6 +840,23 @@ static bool widen_set_fillable(const uint8 live[4], bool is_dungeon, uint8 sig_i
   return false;
 }
 
+// Soul predicates for kill-gated and forced-key rooms name their vanilla
+// residents. Type substitution and sheet widening must therefore share this
+// exact pin: forcing the vanilla type after unloading its sheet can produce an
+// invisible/garbled enemy that the player must kill to open the room.
+static bool soul_room_pin_decision(bool enemies_tier, bool room_pinned) {
+  return enemies_tier && room_pinned;
+}
+
+static bool soul_room_pin_active_for_tier(uint16 room, bool enemies_tier) {
+  return soul_room_pin_decision(enemies_tier,
+                                Souls_RoomPinnedVanilla(room));
+}
+
+static bool soul_room_pin_active(uint16 room) {
+  return soul_room_pin_active_for_tier(room, Souls_EnemiesTierActive());
+}
+
 void EnemyShuffle_ReshuffleCurrentRoomSheets(const uint8 *tileset_row) {
   if (!g_enemy_shuffle_active || tileset_row == NULL) return;
 
@@ -887,7 +904,8 @@ void EnemyShuffle_ReshuffleCurrentRoomSheets(const uint8 *tileset_row) {
   uint8 ow_pal = 0;
   if (ES_ENABLE_SHEET_WIDENING) {
     build_vanilla_context_table();
-    blocked = room_blocked_slots(is_dungeon, key16, &has_water);
+    if (!(is_dungeon && soul_room_pin_active(key16)))
+      blocked = room_blocked_slots(is_dungeon, key16, &has_water);
     if (is_dungeon) {
       sig_id = dung_pal_sig_id_find(Dungeon_GetSpritePaletteSig(key16));
       forbid_flying = room_in_list(key16, kFlyingExcludeRooms, kFlyingExcludeRoomsCount);
@@ -1000,7 +1018,7 @@ uint8 EnemyShuffle_PickDungeon(uint16 room, uint8 slot, uint8 vanilla_type) {
   // (soul_rooms.gen.yaml -> kRandoSoulPinRooms). Substituting here would make
   // the placer require a soul the spawned species doesn't answer to (or vice
   // versa). Other rooms shuffle freely; suppression keys on the final species.
-  if (Souls_EnemiesTierActive() && Souls_RoomPinnedVanilla(room))
+  if (soul_room_pin_active(room))
     return vanilla_type;
 
   uint8 live[4];
@@ -1574,6 +1592,14 @@ void EnemyShuffle_SelfCheck(void) {
 
   // 6) Sheet-reshuffle (design.md D4) pure-logic invariants — per reshuffled slot.
   {
+    // (0) The sheet resolver and picker share this decision. Only the effective
+    // enemies tier + a generated pinned room may force vanilla sheets/types;
+    // door shuffle degrades the tier and therefore keeps ordinary widening.
+    if (!soul_room_pin_decision(true, true) ||
+        soul_room_pin_decision(false, true) ||
+        soul_room_pin_decision(true, false))
+      enemy_selfcheck_die("soul-room sheet/type pin decision drifted");
+
     // (a) Pool integrity: every DUNGEON pool sheet self-contains a randomizable,
     // killable, key-capable enemy in THAT slot (so each reshuffled slot keeps key
     // rooms fillable). OVERWORLD pool sheets must have any randomizable enemy in

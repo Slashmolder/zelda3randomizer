@@ -5,7 +5,7 @@ Key to the native randomizer.
 
 ## Status
 
-**Implementation complete; ready for owner playtest (48/55).** The remaining
+**Implementation complete; ready for owner playtest (50/57).** The remaining
 six gameplay checks and archive/merge closeout are intentionally owner-gated.
 The implementation was reconciled against the item pool, predicate VM,
 dungeon-key RAM, door-shuffle oracle, sidecar, snapshot, spoiler, tracker, and
@@ -39,5 +39,5 @@ native-window paths.
 - The canonical settings blob grows from 30 to 31 bytes, requiring the normal
   generator/share/sidecar/corpus version cascade.
 
-The implementation checklist contains 55 tasks: 48 implementation/automated
+The implementation checklist contains 57 tasks: 50 implementation/automated
 validation tasks complete, with six owner playtests and archive closeout pending.

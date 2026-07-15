@@ -271,23 +271,6 @@ uint16 Rando_GetDungeonPrizeLocation(int rando_dungeon) {
   return kDungeonPrizeLocations[rando_dungeon];
 }
 
-// Per-dungeon small-key counts (vanilla per ALTTPR config; small_keys.X).
-static const struct { uint16 item_id; uint8 count; } kVanillaSmallKeyCounts[] = {
-  { ID_SmallKey_HCE, 1 },
-  { ID_SmallKey_EP,  0 }, // EP has no small keys in vanilla
-  { ID_SmallKey_DP,  1 },
-  { ID_SmallKey_TH,  1 },
-  { ID_SmallKey_HCT, 2 },
-  { ID_SmallKey_PoD, 6 },
-  { ID_SmallKey_SP,  1 },
-  { ID_SmallKey_SW,  3 },
-  { ID_SmallKey_TT,  1 },
-  { ID_SmallKey_IP,  2 },
-  { ID_SmallKey_MM,  3 },
-  { ID_SmallKey_TR,  4 },
-  { ID_SmallKey_GT,  4 },
-};
-
 static const uint16 kBigKeys[] = {
   ID_BigKey_EP, ID_BigKey_DP, ID_BigKey_TH, ID_BigKey_PoD, ID_BigKey_SP,
   ID_BigKey_SW, ID_BigKey_TT, ID_BigKey_IP, ID_BigKey_MM, ID_BigKey_TR, ID_BigKey_GT,
@@ -375,8 +358,9 @@ static void seed_pot_nonpot_drops(RandoCounts *counts, const RandoSettings *s) {
 void Rando_SeedVanillaDungeonItems(RandoCounts *counts, const RandoSettings *settings) {
   if (counts == NULL || settings == NULL) return;
   if (Settings_EffectiveSmallKeysMode(settings) == kDungeonItemMode_Vanilla) {
-    for (uint8 i = 0; i < (uint8)(sizeof(kVanillaSmallKeyCounts) / sizeof(kVanillaSmallKeyCounts[0])); i++)
-      counts->by_item_id[kVanillaSmallKeyCounts[i].item_id] = kVanillaSmallKeyCounts[i].count;
+    for (uint8 d = 0; d < kRandoDungeon_Count; d++)
+      counts->by_item_id[Rando_SmallKeyItemForRandoDungeon(d)] =
+          Rando_BaseSmallKeyCount(d);
   }
   if (Settings_EffectiveBigKeysMode(settings) == kDungeonItemMode_Vanilla) {
     for (uint8 i = 0; i < (uint8)(sizeof(kBigKeys) / sizeof(kBigKeys[0])); i++)
@@ -439,19 +423,15 @@ static bool enemy_drop_active(const RandoLocationDef *loc, const RandoSettings *
          Settings_EnemyDropKeysActive(s);
 }
 
-// Count the exact pre-collapse shuffled small-key multiset. This is the one
-// source of truth for Key Ring eligibility: base chest keys plus every active
-// itemized key pot and forced enemy key-drop check. Free/non-itemized dungeon
-// drops deliberately stay out — they remain in the ROM after a ring collapse.
-static void key_rings_count_sources(const RandoSettings *settings,
-                                    uint16 out_counts[kRandoDungeon_Count]) {
+// Count active itemized small-key sources once. Key Ring eligibility adds these
+// to the base pool; dungeon-key reachability subtracts the same counts from the
+// authored free-drop stock. Keeping both consumers on this scan prevents a new
+// pot/enemy source from entering one model but not the other.
+static void count_itemized_key_sources(
+    const RandoSettings *settings,
+    uint16 out_counts[kRandoDungeon_Count]) {
   memset(out_counts, 0, sizeof(uint16) * kRandoDungeon_Count);
-  if (settings == NULL ||
-      Settings_EffectiveSmallKeysMode(settings) == kDungeonItemMode_Vanilla)
-    return;
-
-  for (uint8 d = 0; d < kRandoDungeon_Count; d++)
-    out_counts[d] = Rando_BaseSmallKeyCount(d);
+  if (settings == NULL) return;
 
   for (uint32 i = 0; i < kRandoLocationsCount; i++) {
     const RandoLocationDef *loc = &kRandoLocations[i];
@@ -463,6 +443,23 @@ static void key_rings_count_sources(const RandoSettings *settings,
         out_counts[d]++;
     }
   }
+}
+
+// Count the exact pre-collapse shuffled small-key multiset. This is the one
+// source of truth for Key Ring eligibility: base chest keys plus every active
+// itemized key pot and forced enemy key-drop check. Free/non-itemized dungeon
+// drops deliberately stay out — they remain in the ROM after a ring collapse.
+static void key_rings_count_sources(const RandoSettings *settings,
+                                    uint16 out_counts[kRandoDungeon_Count]) {
+  memset(out_counts, 0, sizeof(uint16) * kRandoDungeon_Count);
+  if (settings == NULL ||
+      Settings_EffectiveSmallKeysMode(settings) == kDungeonItemMode_Vanilla)
+    return;
+
+  uint16 itemized[kRandoDungeon_Count];
+  count_itemized_key_sources(settings, itemized);
+  for (uint8 d = 0; d < kRandoDungeon_Count; d++)
+    out_counts[d] = (uint16)(Rando_BaseSmallKeyCount(d) + itemized[d]);
 }
 
 uint16 KeyRings_EligibleMask(const RandoSettings *settings) {
@@ -483,16 +480,17 @@ static uint8 key_rings_mask_count(uint16 mask) {
   return n;
 }
 
-bool KeyRings_Select(const RandoSettings *settings, uint64 seed_u64,
-                     uint16 *out_mask) {
-  if (out_mask == NULL || settings == NULL) return false;
-  *out_mask = 0;
+bool KeyRings_Resolve(const RandoSettings *settings, uint64 seed_u64,
+                      KeyRingSelection *out) {
+  if (out == NULL || settings == NULL) return false;
+  memset(out, 0, sizeof(*out));
+  out->eligible_mask = KeyRings_EligibleMask(settings);
   uint8 mode = Settings_EffectiveKeyRings(settings);
   if (mode == kKeyRings_Off) return true;
 
-  uint16 eligible = KeyRings_EligibleMask(settings);
+  uint16 eligible = out->eligible_mask;
   if (mode == kKeyRings_All) {
-    *out_mask = eligible;
+    out->selected_mask = eligible;
     return true;
   }
   if (mode != kKeyRings_Random || key_rings_mask_count(eligible) < 2)
@@ -510,7 +508,7 @@ bool KeyRings_Select(const RandoSettings *settings, uint64 seed_u64,
       if ((eligible & bit) && (Rng_NextU32(&rng) & 1u)) selected |= bit;
     }
     if (selected != 0 && selected != eligible) {
-      *out_mask = selected;
+      out->selected_mask = selected;
       return true;
     }
   }
@@ -524,7 +522,7 @@ bool KeyRings_Select(const RandoSettings *settings, uint64 seed_u64,
     if (!(eligible & bit)) continue;
     if ((ordinal++ & 1u) == 0) selected |= bit;
   }
-  *out_mask = selected;
+  out->selected_mask = selected;
   return true;
 }
 
@@ -721,27 +719,10 @@ static bool dungeon_key_depth_active(const RandoSettings *s) {
 // Count = door-rando DROP total - active key pots - active enemy small-key drops.
 static void seed_dungeon_free_key_drops(RandoCounts *counts, const RandoSettings *s) {
   if (counts == NULL || !dungeon_key_depth_active(s)) return;
-  bool pots = Settings_PotKeysActive(s);
-  bool enemies = Settings_EnemyDropKeysActive(s);
-  for (uint8 d = 0; d < 13; d++) {
-    uint16 key_id = kVanillaSmallKeyCounts[d].item_id;
-    uint16 itemized = 0;
-    if (pots) {
-      for (uint32 i = 0; i < kRandoLocationsCount; i++) {
-        const RandoLocationDef *loc = &kRandoLocations[i];
-        if (loc->type == LOCTYPE_Pot && pot_active(loc, s) &&
-            loc->vanilla_item_id == key_id)
-          itemized++;
-      }
-    }
-    if (enemies) {
-      for (uint32 i = 0; i < kRandoLocationsCount; i++) {
-        const RandoLocationDef *loc = &kRandoLocations[i];
-        if (loc->type == LOCTYPE_EnemyDrop && enemy_drop_active(loc, s) &&
-            loc->vanilla_item_id == key_id)
-          itemized++;
-      }
-    }
+  uint16 itemized[kRandoDungeon_Count];
+  count_itemized_key_sources(s, itemized);
+  for (uint8 d = 0; d < kRandoDungeon_Count; d++) {
+    uint16 key_id = Rando_SmallKeyItemForRandoDungeon(d);
     // itemized == 0 must still grant: the ENEMY_DROP_KEYS_DUNGEON /
     // POT_KEYS_DUNGEON min-depth gates are emitted per-row for EVERY dungeon
     // and the ops are GLOBAL (Settings_*Active), so a dungeon with no
@@ -754,8 +735,8 @@ static void seed_dungeon_free_key_drops(RandoCounts *counts, const RandoSettings
     // (the DUNGEON-arm sibling of the wild-cap fix in rando_logic_gen.py's
     // _enemy_depth_terms).
     uint8 drop_total = Rando_DropSmallKeyCount(d);
-    if (itemized >= drop_total) continue;
-    counts->by_item_id[key_id] += (uint16)(drop_total - itemized);
+    if (itemized[d] >= drop_total) continue;
+    counts->by_item_id[key_id] += (uint16)(drop_total - itemized[d]);
   }
 }
 
@@ -973,8 +954,11 @@ static bool pool_remove_deterministic_junk(uint16 *pool, uint16 *used) {
   return false;
 }
 
-uint16 BuildItemPool(const RandoSettings *settings, uint64 seed_u64,
-                     uint16 *out_items, uint16 capacity) {
+static uint16 build_item_pool_internal(const RandoSettings *settings,
+                                       uint64 seed_u64,
+                                       uint16 *out_items,
+                                       uint16 capacity,
+                                       KeyRingSelection *out_selection) {
   if (settings == NULL || out_items == NULL || capacity == 0) return 0;
 
   // Validate Triforce/Ganon-Hunt parameters before pool construction.
@@ -1046,13 +1030,21 @@ uint16 BuildItemPool(const RandoSettings *settings, uint64 seed_u64,
     return 0;
   }
 
-  uint16 selected_key_rings = 0;
-  if (!KeyRings_Select(settings, seed_u64, &selected_key_rings)) {
+  KeyRingSelection key_rings;
+  memset(&key_rings, 0, sizeof(key_rings));
+  // Preserve the feature-off hot path: eligibility scans the complete
+  // location registry, but an effective-Off pool needs neither eligibility
+  // nor selection. Spoiler/UI callers that display eligibility use
+  // KeyRings_Resolve directly.
+  if (Settings_EffectiveKeyRings(settings) != kKeyRings_Off &&
+      !KeyRings_Resolve(settings, seed_u64, &key_rings)) {
     fprintf(stderr,
       "BuildItemPool: key_rings=random requires at least two eligible "
       "small-key families\n");
     return 0;
   }
+  if (out_selection != NULL) *out_selection = key_rings;
+  uint16 selected_key_rings = key_rings.selected_mask;
 
   uint16 n = 0;
 
@@ -1180,9 +1172,10 @@ uint16 BuildItemPool(const RandoSettings *settings, uint64 seed_u64,
     // unchanged; only the item identity changes. wildKeys already routes them
     // wild. Non-Retro keeps per-dungeon identity.
     bool generic = Settings_GenericKeysActive(settings);
-    for (uint8 i = 0; i < (uint8)(sizeof(kVanillaSmallKeyCounts) / sizeof(kVanillaSmallKeyCounts[0])); i++) {
-      uint16 key_id = generic ? (uint16)ID_GenericKey : kVanillaSmallKeyCounts[i].item_id;
-      n = pool_add(out_items, n, capacity, key_id, Rando_BaseSmallKeyCount(i));
+    for (uint8 d = 0; d < kRandoDungeon_Count; d++) {
+      uint16 key_id = generic ? (uint16)ID_GenericKey
+                              : Rando_SmallKeyItemForRandoDungeon(d);
+      n = pool_add(out_items, n, capacity, key_id, Rando_BaseSmallKeyCount(d));
     }
   }
   if (Settings_EffectiveBigKeysMode(settings) != kDungeonItemMode_Vanilla) {
@@ -1202,7 +1195,7 @@ uint16 BuildItemPool(const RandoSettings *settings, uint64 seed_u64,
   }
 
   // ----- Pot keys -----
-  // kVanillaSmallKeyCounts above is the placed/chest key count; a dungeon's POT
+  // Rando_BaseSmallKeyCount is the placed/chest key count; a dungeon's POT
   // keys are NOT in it. When pot_shuffle turns the key pots into live checks
   // their small key must ALSO enter the pool, or it vanishes. Under WILD keys the
   // keys live in the general world pool; under DUNGEON keys they shuffle within
@@ -1228,7 +1221,7 @@ uint16 BuildItemPool(const RandoSettings *settings, uint64 seed_u64,
   }
 
   // ----- Enemy-drop checks -----
-  // Forced enemy small-key drops are outside kVanillaSmallKeyCounts, same as
+  // Forced enemy small-key drops are outside Rando_BaseSmallKeyCount, same as
   // key pots. When the tier is active, each generated enemy-drop location
   // becomes a fillable check and contributes its vanilla key to the pool (or the
   // shared GenericKey under Retro). Under Dungeon keys, exact min-depth gates and
@@ -1387,6 +1380,11 @@ uint16 BuildItemPool(const RandoSettings *settings, uint64 seed_u64,
   }
 
   return n;
+}
+
+uint16 BuildItemPool(const RandoSettings *settings, uint64 seed_u64,
+                     uint16 *out_items, uint16 capacity) {
+  return build_item_pool_internal(settings, seed_u64, out_items, capacity, NULL);
 }
 
 // ---------------------------------------------------------------------------
@@ -1628,7 +1626,7 @@ static bool location_accepts_item(const RandoLocationDef *loc,
     return true;
   }
   if (g_place_profile_active) g_place_profile.accept_vm_can_place++;
-  if (Predicate_EvaluatePlacementWithKeyRings(
+  if (Predicate_EvaluatePlacement(
           cp_bc, cp_length, counts, settings, candidate_item,
           selected_key_rings_mask)) {
     return true;
@@ -1644,7 +1642,7 @@ static bool location_accepts_item(const RandoLocationDef *loc,
     }
   }
   if (g_place_profile_active) g_place_profile.accept_vm_always_allow++;
-  return Predicate_EvaluatePlacementWithKeyRings(
+  return Predicate_EvaluatePlacement(
       aa_bc, aa_length, counts, settings, candidate_item,
       selected_key_rings_mask);
 }
@@ -1654,7 +1652,9 @@ static bool location_accepts_item(const RandoLocationDef *loc,
 // otherwise (forward-fill fallback fired at least once). The outer
 // Place_AssumedFill wraps this with a bounded-retry loop.
 static bool place_assumed_fill_attempt(const RandoSettings *settings,
-                                       uint64 base_seed_u64,
+                                       const uint16 *pool,
+                                       uint16 pool_n,
+                                       uint16 selected_key_rings_mask,
                                        uint64 seed_u64,
                                        RandoPlacementTable *out,
                                        uint16 *out_fallback_count);
@@ -1753,6 +1753,15 @@ bool Place_AssumedFill(const RandoSettings *settings,
   // attempt function sets it on an illegal pin (see §3c).
   Customizer__ClearError();
 
+  // Pool shape and Key Ring selection depend only on the base seed/settings,
+  // never on the retry seed. Build and resolve them once so the collapsed
+  // families and OP_ITEM_IS aliases are one inseparable plan across attempts.
+  uint16 base_pool[kRandoLocationCapacity];
+  KeyRingSelection key_rings;
+  uint16 base_pool_n = build_item_pool_internal(
+      settings, seed_u64, base_pool, kRandoLocationCapacity, &key_rings);
+  if (base_pool_n == 0) return false;
+
   // Boss-shuffle runtime — install the per-seed boss assignment into the LOGIC
   // VM so OP_CAN_KILL_BOSS gates each `- Boss`/`- Prize` on the SHUFFLED boss's
   // kill predicate. Computed from the BASE seed (NOT the per-attempt seed) so it
@@ -1818,7 +1827,8 @@ bool Place_AssumedFill(const RandoSettings *settings,
     // single-seed determinism holds when the first attempt succeeds.
     uint64 attempt_seed = placement_attempt_seed(seed_u64, (uint8)attempt);
     uint16 fallback_count = 0;
-    if (!place_assumed_fill_attempt(settings, seed_u64, attempt_seed,
+    if (!place_assumed_fill_attempt(settings, base_pool, base_pool_n,
+                                    key_rings.selected_mask, attempt_seed,
                                     out, &fallback_count)) {
       // A customizer pin error is deterministic (the pins don't depend on the
       // per-attempt seed), so retrying is futile — fail now and let the caller
@@ -2180,11 +2190,6 @@ static bool customizer_validate_item_caps(const CustomizerManifest *cm,
   return true;
 }
 
-static bool key_item_cardinality_protected(uint16 item) {
-  return Rando_IsSmallKeyItem(item) || Rando_IsKeyRingItem(item) ||
-         item == ITEM_SkeletonKey;
-}
-
 static bool customizer_validate_key_cardinality(const CustomizerManifest *cm,
                                                 const uint16 *progression,
                                                 uint16 prog_n,
@@ -2193,14 +2198,14 @@ static bool customizer_validate_key_cardinality(const CustomizerManifest *cm,
   // Parse-time validation handles ordinary manifests, but keep the generation
   // boundary fail-closed for programmatically constructed manifests/selftests.
   for (uint16 i = 0; i < cm->pool_remove_count; i++) {
-    if (key_item_cardinality_protected(cm->pool_remove[i])) {
+    if (Rando_IsFixedKeyCardinalityItem(cm->pool_remove[i])) {
       Customizer__SetError(
           "pool_overrides cannot remove small keys, Key Rings, or Skeleton Key");
       return false;
     }
   }
   for (uint16 i = 0; i < cm->pool_add_count; i++) {
-    if (key_item_cardinality_protected(cm->pool_add[i])) {
+    if (Rando_IsFixedKeyCardinalityItem(cm->pool_add[i])) {
       Customizer__SetError(
           "pool_overrides cannot add small keys, Key Rings, or Skeleton Key");
       return false;
@@ -2217,13 +2222,13 @@ static bool customizer_validate_key_cardinality(const CustomizerManifest *cm,
       pool_count[junk[i]]++;
   for (uint16 i = 0; i < cm->pin_count; i++) {
     uint16 item = cm->pins[i].item_id;
-    if (item < 256 && key_item_cardinality_protected(item) &&
+    if (item < 256 && Rando_IsFixedKeyCardinalityItem(item) &&
         pin_count[item] != 0xFFFFu)
       pin_count[item]++;
   }
 
   for (uint16 item = 0; item < 256; item++) {
-    if (!key_item_cardinality_protected(item) || pin_count[item] == 0) continue;
+    if (!Rando_IsFixedKeyCardinalityItem(item) || pin_count[item] == 0) continue;
     if (pin_count[item] > pool_count[item]) {
       char msg[160];
       snprintf(msg, sizeof msg,
@@ -2341,22 +2346,18 @@ static const RandoReachability *compute_reachability_collecting_placed(
 }
 
 static bool place_assumed_fill_attempt(const RandoSettings *settings,
-                                       uint64 base_seed_u64,
+                                       const uint16 *pool,
+                                       uint16 pool_n,
+                                       uint16 selected_key_rings_mask,
                                        uint64 seed_u64,
                                        RandoPlacementTable *out,
                                        uint16 *out_fallback_count) {
-  if (settings == NULL || out == NULL || out->entries == NULL) return false;
+  if (settings == NULL || pool == NULL || pool_n == 0 || out == NULL ||
+      out->entries == NULL)
+    return false;
   if (out_fallback_count) *out_fallback_count = 0;
 
-  // ----- 1. Build pool + shuffle-assignment tables -----
-  uint16 pool[kRandoLocationCapacity];
-  uint16 pool_n = BuildItemPool(settings, base_seed_u64, pool,
-                                kRandoLocationCapacity);
-  if (pool_n == 0) return false;
-  uint16 selected_key_rings_mask = 0;
-  if (!KeyRings_Select(settings, base_seed_u64, &selected_key_rings_mask))
-    return false;  // BuildItemPool already emitted the specific diagnostic.
-
+  // ----- 1. Install attempt-specific shuffle-assignment tables -----
   // Run prize + medallion shuffles. Their outputs are installed into owned
   // reachability state by Rando_SetDungeonPrizeAssignment /
   // Rando_SetMedallionAssignment. The placer needs these BEFORE running
@@ -3047,8 +3048,9 @@ void PlacementTable_ComputeDigest(const RandoPlacementTable *t, uint8 out_digest
 static void apply_vanilla_dungeon_item_grants(const RandoSettings *s, RandoCounts *out) {
   if (s == NULL || out == NULL) return;
   if (Settings_EffectiveSmallKeysMode(s) == kDungeonItemMode_Vanilla) {
-    for (uint8 i = 0; i < (uint8)(sizeof(kVanillaSmallKeyCounts) / sizeof(kVanillaSmallKeyCounts[0])); i++) {
-      out->by_item_id[kVanillaSmallKeyCounts[i].item_id] = kVanillaSmallKeyCounts[i].count;
+    for (uint8 d = 0; d < kRandoDungeon_Count; d++) {
+      out->by_item_id[Rando_SmallKeyItemForRandoDungeon(d)] =
+          Rando_BaseSmallKeyCount(d);
     }
   }
   if (Settings_EffectiveBigKeysMode(s) == kDungeonItemMode_Vanilla) {
@@ -3659,10 +3661,7 @@ void Placement_SelfCheck(void) {
     sources.pot_shuffle = kPotShuffle_Keys;
     sources.enemy_drop_checks = kEnemyDropChecks_Keys;
     for (uint8 d = 0; d < kRandoDungeon_Count; d++) {
-      if (kVanillaSmallKeyCounts[d].item_id !=
-              Rando_SmallKeyItemForRandoDungeon(d) ||
-          kVanillaSmallKeyCounts[d].count != Rando_BaseSmallKeyCount(d) ||
-          Rando_KeyRingGrantCount(d) !=
+      if (Rando_KeyRingGrantCount(d) !=
               (uint8)(Rando_BaseSmallKeyCount(d) +
                       Rando_DropSmallKeyCount(d)))
         selfcheck_die("Key Ring base/drop/grant metadata drift");
@@ -3791,16 +3790,19 @@ void Placement_SelfCheck(void) {
     random.key_rings = kKeyRings_Random;
     skeleton = off;
     skeleton.skeleton_key = 1;
-    uint16 eligible = KeyRings_EligibleMask(&all);
-    uint16 all_mask = 0, random_a = 0, random_b = 0;
-    if (!KeyRings_Select(&all, 0x4B455952494E4753ull, &all_mask) ||
-        all_mask != eligible)
+    KeyRingSelection all_selection, random_a, random_b;
+    if (!KeyRings_Resolve(&all, 0x4B455952494E4753ull, &all_selection) ||
+        all_selection.selected_mask != all_selection.eligible_mask)
       selfcheck_die("Key Rings All selector must return every eligible family");
-    if (!KeyRings_Select(&random, 0x4B455952494E4753ull, &random_a) ||
-        !KeyRings_Select(&random, 0x4B455952494E4753ull, &random_b) ||
-        random_a != random_b || random_a == 0 || random_a == eligible)
+    if (!KeyRings_Resolve(&random, 0x4B455952494E4753ull, &random_a) ||
+        !KeyRings_Resolve(&random, 0x4B455952494E4753ull, &random_b) ||
+        random_a.selected_mask != random_b.selected_mask ||
+        random_a.selected_mask == 0 ||
+        random_a.selected_mask == random_a.eligible_mask)
       selfcheck_die("Key Rings Random selector must be deterministic proper subset");
-    if (eligible != 0x1FFDu || random_a != 0x1229u)
+    uint16 eligible = all_selection.eligible_mask;
+    uint16 random_mask = random_a.selected_mask;
+    if (eligible != 0x1FFDu || random_mask != 0x1229u)
       selfcheck_die("Key Rings fixed-seed selector mask drifted");
 
     uint16 pool_off[kRandoLocationCapacity];
@@ -3871,7 +3873,7 @@ void Placement_SelfCheck(void) {
       } else if (all_rings != 0) {
         selfcheck_die("ineligible family must not gain a Key Ring");
       }
-      if (random_a & bit) {
+      if (random_mask & bit) {
         if (random_keys != 0 || random_rings != 1)
           selfcheck_die("selected Random family collapse is not one-check exact");
       } else if (random_rings != 0) {
@@ -3884,13 +3886,14 @@ void Placement_SelfCheck(void) {
     RandoSettings normalized;
     Settings_SetDefaults(&normalized);
     normalized.key_rings = kKeyRings_Random;
-    uint16 normalized_mask = 0xFFFFu;
-    if (!KeyRings_Select(&normalized, 1, &normalized_mask) || normalized_mask != 0)
+    KeyRingSelection normalized_selection;
+    if (!KeyRings_Resolve(&normalized, 1, &normalized_selection) ||
+        normalized_selection.selected_mask != 0)
       selfcheck_die("Vanilla requested Random Key Rings must resolve Off");
     normalized.world_state = kWorldState_Retro;
     normalized.dungeon_small_keys_mode = kDungeonItemMode_Wild;
-    normalized_mask = 0xFFFFu;
-    if (!KeyRings_Select(&normalized, 1, &normalized_mask) || normalized_mask != 0)
+    if (!KeyRings_Resolve(&normalized, 1, &normalized_selection) ||
+        normalized_selection.selected_mask != 0)
       selfcheck_die("Retro requested Random Key Rings must resolve Off");
 
     // Source matrix: independently and jointly enable itemized key pots and
@@ -4005,7 +4008,7 @@ void Placement_SelfCheck(void) {
       memset(&seeded, 0, sizeof(seeded));
       seed_dungeon_free_key_drops(&seeded, &spd);
       for (uint8 d = 0; d < 13; d++) {
-        uint16 key = kVanillaSmallKeyCounts[d].item_id;
+        uint16 key = Rando_SmallKeyItemForRandoDungeon(d);
         uint8 npots = 0;
         for (uint32 i = 0; i < kRandoLocationsCount; i++)
           if (kRandoLocations[i].type == LOCTYPE_Pot &&
@@ -4335,7 +4338,7 @@ void Placement_SelfCheck(void) {
       memset(&seeded, 0, sizeof(seeded));
       seed_dungeon_free_key_drops(&seeded, &sdun);
       for (uint8 d = 0; d < 13; d++) {
-        uint16 key = kVanillaSmallKeyCounts[d].item_id;
+        uint16 key = Rando_SmallKeyItemForRandoDungeon(d);
         uint16 enemies = 0;
         for (uint32 i = 0; i < kRandoLocationsCount; i++)
           if (kRandoLocations[i].type == LOCTYPE_EnemyDrop &&
@@ -4355,7 +4358,7 @@ void Placement_SelfCheck(void) {
       memset(&seeded, 0, sizeof(seeded));
       seed_dungeon_free_key_drops(&seeded, &sboth);
       for (uint8 d = 0; d < 13; d++) {
-        uint16 key = kVanillaSmallKeyCounts[d].item_id;
+        uint16 key = Rando_SmallKeyItemForRandoDungeon(d);
         uint16 itemized = 0;
         for (uint32 i = 0; i < kRandoLocationsCount; i++) {
           const RandoLocationDef *loc = &kRandoLocations[i];

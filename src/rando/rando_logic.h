@@ -3,8 +3,9 @@
 // The predicate VM evaluates the bytecode emitted by assets/rando_logic_gen.py
 // from logic.yaml. Two evaluation entry points:
 //   - Predicate_Evaluate(bc, len, counts, settings) for can_reach
-//   - Predicate_EvaluatePlacement(bc, len, counts, settings, candidate_item)
-//     for can_place (only context where OP_ITEM_IS may appear)
+//   - Predicate_EvaluatePlacement(bc, len, counts, settings, candidate_item,
+//     selected_key_rings_mask) for can_place (only context where OP_ITEM_IS may
+//     appear)
 //
 // Logic_ComputeReachability runs the fixed-point expansion over the static
 // EdgeDef[] graph (consulting the RegionRemap overlay for Phase C entrance
@@ -210,15 +211,13 @@ bool Predicate_Evaluate(const uint8 *bytecode, uint16 length,
                         const RandoSettings *settings);
 
 // Convenience for can_place predicates (candidate_item register populated).
+// The selected Key Ring mask is required because OP_ITEM_IS aliases the chosen
+// families' SmallKey and KeyRing identities during placement.
 bool Predicate_EvaluatePlacement(const uint8 *bytecode, uint16 length,
                                  const RandoCounts *counts,
                                  const RandoSettings *settings,
-                                 uint16 candidate_item);
-bool Predicate_EvaluatePlacementWithKeyRings(const uint8 *bytecode, uint16 length,
-                                             const RandoCounts *counts,
-                                             const RandoSettings *settings,
-                                             uint16 candidate_item,
-                                             uint16 selected_key_rings_mask);
+                                 uint16 candidate_item,
+                                 uint16 selected_key_rings_mask);
 
 // Self-check (per Rng_SelfCheck / Share_SelfCheck / Settings_SelfCheck
 // pattern). Builds a minimal in-memory bytecode stream exercising each op,
