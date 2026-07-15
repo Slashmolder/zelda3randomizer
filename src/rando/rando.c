@@ -5416,6 +5416,17 @@ void Rando_BuildRuntimeCounts(RandoCounts *out) {
   // DefeatAgahnim: the Agahnim-1 location is checked when he is defeated.
   if (Rando_IsLocationChecked(LOC_Agahnim)) out->by_item_id[ITEM_DefeatAgahnim] = 1;
 
+  // Enemy, boss, and NPC souls live in a process-static ownership bitfield,
+  // not g_ram. Materialize the contiguous soul item block into the same
+  // logical inventory used by the live location tracker; otherwise every
+  // NeedsEnemySoul/NeedsNpcSoul predicate remains false after the pickup even
+  // though the item tracker and spawn gates see the soul as owned.
+  for (uint16 item = ITEM_Soul_ArmosKnights;
+       item < ITEM__COUNT && Souls_ItemIsSoul(item); item++) {
+    uint8 soul_index = (uint8)(item - ITEM_Soul_ArmosKnights);
+    if (Souls_OwnedIndex(soul_index)) out->by_item_id[item] = 1;
+  }
+
   // Dungeon items. The placer assumes vanilla-mode keys/maps/compasses are
   // logically in-place, but the live tracker must answer "what can the player
   // get right now" from RAM. Read the actual per-dungeon counters/bitfields for
@@ -7791,6 +7802,29 @@ void Rando_TrackerSelfCheck(void) {
   tsc_expect_check_visibility(LOC_Ganon, false);
   tsc_expect_check_visibility(LOC_Bomb_Merchant, false);
   tsc_expect_check_visibility(LOC_Hyrule_Castle_Zelda_s_Cell, true);
+
+  // Soul ownership is process-static rather than g_ram-backed. The runtime
+  // count bridge must expose both enemy and NPC souls to live reachability
+  // without inventing adjacent/unowned souls. This directly guards the Mini
+  // Moldorm Cave tracker regression and the same failure class for NPC gates.
+  uint8 saved_runtime_souls[kSoulFlagsBytes];
+  memcpy(saved_runtime_souls, Souls_Flags(), sizeof(saved_runtime_souls));
+  memset(Souls_Flags(), 0, kSoulFlagsBytes);
+  RandoCounts soul_counts;
+  Rando_BuildRuntimeCounts(&soul_counts);
+  if (soul_counts.by_item_id[ITEM_Soul_MiniMoldorm] != 0 ||
+      soul_counts.by_item_id[ITEM_Soul_Npc_Kiki] != 0)
+    tsc_die("runtime counts invented soul ownership");
+  Souls_GrantItem(ITEM_Soul_MiniMoldorm);
+  Souls_GrantItem(ITEM_Soul_Npc_Kiki);
+  Rando_BuildRuntimeCounts(&soul_counts);
+  if (soul_counts.by_item_id[ITEM_Soul_MiniMoldorm] != 1)
+    tsc_die("runtime counts missed Mini Moldorm soul");
+  if (soul_counts.by_item_id[ITEM_Soul_Npc_Kiki] != 1)
+    tsc_die("runtime counts missed NPC soul");
+  if (soul_counts.by_item_id[ITEM_Soul_Soldier] != 0)
+    tsc_die("runtime counts invented an unowned soul");
+  memcpy(Souls_Flags(), saved_runtime_souls, sizeof(saved_runtime_souls));
 
   // Runtime counts must feed CanKillEscapeThings's explicit bomb-refill branch
   // from either live ammo or durable checked-placement history.
