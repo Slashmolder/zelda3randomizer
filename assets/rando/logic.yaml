@@ -85,10 +85,11 @@ locations:
   # Hyrule Castle Escape — predicates from HyruleCastleEscape.php:65-122
   # ===========================================================================
 
-  # Sewers locations are 100% dark — vanilla zelda3 effectively gates them
-  # on the Lamp because the player can't navigate without light. ALTTPR
-  # treats `darkRoomNavigation` as a trick that bypasses the Lamp; future
-  # trick-logic should do the same here. For now Lamp is a hard requirement.
+  # The forward sewer route is dark, so vanilla zelda3 effectively gates it
+  # on the Lamp because the player can't navigate without light. ALTTPR treats
+  # `darkRoomNavigation` as a trick that bypasses the Lamp; future trick-logic
+  # should do the same here. Open/Retro's graveyard drop reaches the Secret
+  # Room from behind and bypasses that dark route, so it is Lamp-free below.
 
   # `Sanctuary` (php:67-69): canKillEscapeThings AND has(KeyH2).
   - id: "Sanctuary"
@@ -96,20 +97,25 @@ locations:
     can_reach: "CanKillEscapeThings(world) AND HAS_ITEM(SmallKey_HyruleCastleEscape) AND HAS_ITEM(Lamp)"
     source: "app/Region/Standard/HyruleCastleEscape.php:67-69 — Lamp added for dark-sewer navigation"
 
+  # Open/Retro can approach from the graveyard: lift the rock, open the grave,
+  # drop into the back passage, then bomb/dash the cracked wall. General bomb
+  # access is renewable (CanBombThings=TRUE), so the alternate route reduces to
+  # CanLiftRocks. The forward sewer route retains Standard's stricter escape-
+  # weapon requirement; Open/Retro use upstream's CanKillMostThings predicate.
   - id: "Sewers - Secret Room - Left"
     region: HyruleCastleEscape
-    can_reach: "CanKillEscapeThings(world) AND HAS_ITEM(SmallKey_HyruleCastleEscape) AND HAS_ITEM(Lamp)"
-    source: "app/Region/Standard/HyruleCastleEscape.php:71-73 — Lamp added for dark-sewer navigation"
+    can_reach: "((WORLDSTATE_EQ(open) OR WORLDSTATE_EQ(retro)) AND CanLiftRocks()) OR (HAS_ITEM(SmallKey_HyruleCastleEscape) AND HAS_ITEM(Lamp) AND (((WORLDSTATE_EQ(open) OR WORLDSTATE_EQ(retro)) AND CanKillMostThings(world, 5)) OR (WORLDSTATE_EQ(standard) AND CanKillEscapeThings(world))))"
+    source: "app/Region/Open/HyruleCastleEscape.php:23-32 (graveyard or forward route); app/Region/Standard/HyruleCastleEscape.php:71-73"
 
   - id: "Sewers - Secret Room - Middle"
     region: HyruleCastleEscape
-    can_reach: "CanKillEscapeThings(world) AND HAS_ITEM(SmallKey_HyruleCastleEscape) AND HAS_ITEM(Lamp)"
-    source: "app/Region/Standard/HyruleCastleEscape.php:75-77 — Lamp added for dark-sewer navigation"
+    can_reach: "((WORLDSTATE_EQ(open) OR WORLDSTATE_EQ(retro)) AND CanLiftRocks()) OR (HAS_ITEM(SmallKey_HyruleCastleEscape) AND HAS_ITEM(Lamp) AND (((WORLDSTATE_EQ(open) OR WORLDSTATE_EQ(retro)) AND CanKillMostThings(world, 5)) OR (WORLDSTATE_EQ(standard) AND CanKillEscapeThings(world))))"
+    source: "app/Region/Open/HyruleCastleEscape.php:34-43 (graveyard or forward route); app/Region/Standard/HyruleCastleEscape.php:75-77"
 
   - id: "Sewers - Secret Room - Right"
     region: HyruleCastleEscape
-    can_reach: "CanKillEscapeThings(world) AND HAS_ITEM(SmallKey_HyruleCastleEscape) AND HAS_ITEM(Lamp)"
-    source: "app/Region/Standard/HyruleCastleEscape.php:79-81 — Lamp added for dark-sewer navigation"
+    can_reach: "((WORLDSTATE_EQ(open) OR WORLDSTATE_EQ(retro)) AND CanLiftRocks()) OR (HAS_ITEM(SmallKey_HyruleCastleEscape) AND HAS_ITEM(Lamp) AND (((WORLDSTATE_EQ(open) OR WORLDSTATE_EQ(retro)) AND CanKillMostThings(world, 5)) OR (WORLDSTATE_EQ(standard) AND CanKillEscapeThings(world))))"
+    source: "app/Region/Open/HyruleCastleEscape.php:45-54 (graveyard or forward route); app/Region/Standard/HyruleCastleEscape.php:79-81"
 
   - id: "Sewers - Dark Cross"
     region: HyruleCastleEscape

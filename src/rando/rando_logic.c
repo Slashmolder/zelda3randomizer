@@ -2725,6 +2725,55 @@ void Logic_SelfCheck(void) {
                "Standard escape: a bomb refill should satisfy the weapon gate");
   }
 
+  // Open/Retro sewer back entrance: lift the graveyard rock, drop through the
+  // grave, then bomb/dash the cracked wall. Ordinary bomb access is renewable,
+  // so Power Glove alone is the inventory gate. Standard must not inherit this
+  // overworld shortcut and still needs its key + Lamp + escape weapon route.
+  {
+    static const uint16 kSewerSecretRoomLocations[] = {
+      LOC_Sewers_Secret_Room_Left,
+      LOC_Sewers_Secret_Room_Middle,
+      LOC_Sewers_Secret_Room_Right,
+    };
+    RandoSettings sewer;
+    Settings_SetDefaults(&sewer);  // Open
+    RandoCounts sewer_counts;
+    memset(&sewer_counts, 0, sizeof(sewer_counts));
+    sewer_counts.by_item_id[ITEM_StartingHeart] = 3;
+
+    const RandoReachability *sewer_reach =
+        Logic_ComputeReachability(&sewer_counts, &sewer);
+    for (uint32 i = 0; i < sizeof(kSewerSecretRoomLocations) /
+                                sizeof(kSewerSecretRoomLocations[0]); i++) {
+      LSC_ASSERT(!Reachability_HasLocation(sewer_reach, kSewerSecretRoomLocations[i]),
+                 "Open sewers: back entrance must require lifting the graveyard rock");
+    }
+
+    sewer_counts.by_item_id[ITEM_ProgressiveGlove] = 1;
+    sewer_reach = Logic_ComputeReachability(&sewer_counts, &sewer);
+    for (uint32 i = 0; i < sizeof(kSewerSecretRoomLocations) /
+                                sizeof(kSewerSecretRoomLocations[0]); i++) {
+      LSC_ASSERT(Reachability_HasLocation(sewer_reach, kSewerSecretRoomLocations[i]),
+                 "Open sewers: Power Glove should open the graveyard back route");
+    }
+
+    sewer.world_state = kWorldState_Retro;
+    sewer_reach = Logic_ComputeReachability(&sewer_counts, &sewer);
+    for (uint32 i = 0; i < sizeof(kSewerSecretRoomLocations) /
+                                sizeof(kSewerSecretRoomLocations[0]); i++) {
+      LSC_ASSERT(Reachability_HasLocation(sewer_reach, kSewerSecretRoomLocations[i]),
+                 "Retro sewers: Power Glove should open the graveyard back route");
+    }
+
+    sewer.world_state = kWorldState_Standard;
+    sewer_reach = Logic_ComputeReachability(&sewer_counts, &sewer);
+    for (uint32 i = 0; i < sizeof(kSewerSecretRoomLocations) /
+                                sizeof(kSewerSecretRoomLocations[0]); i++) {
+      LSC_ASSERT(!Reachability_HasLocation(sewer_reach, kSewerSecretRoomLocations[i]),
+                 "Standard sewers: Power Glove must not waive the forward escape route");
+    }
+  }
+
   // add-enemy-souls — kill-gated-room soul wraps (soul_rooms.gen.yaml ->
   // NeedsEnemySoul terms). Mini Moldorm Cave is the isolated probe: entry
   // is generally accessible, and its chests sit behind the shutter the Mini
