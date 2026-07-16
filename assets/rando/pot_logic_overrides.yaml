@@ -82,16 +82,16 @@ room_can_reach:
   "02a": "CanShootArrowsL1()"                          # PoD Arena Ledge
   # --- HCE sewers (gate-only: these rooms flood to HyruleCastleEscape fine, but
   # are chest-LESS so they defaulted to TRUE; the dark-flag Lamp gate alone misses
-  # CanKillEscapeThings (the escape guards) and the SmallKey-locked sewer door).
+  # the world-state HCE combat rule and the SmallKey-locked sewer door).
   # Grounded in the door graph + base predicates (logic.yaml): the locked doors sit
   # at the key-room entrances (Secret Rooms 011, Sanctuary 012); the Dark Cross
-  # (032) is the no-key floor `CanKill AND Lamp`. 002 is a dead-end reached only
+  # (032) is the no-key floor `HCE combat AND Lamp`. 002 is a dead-end reached only
   # THROUGH the key-locked Sanctuary -> needs the key; 021 sits on the Dark-Cross
-  # side, before the locked door -> CanKill+Lamp (021 was already Lamp-gated by
-  # the dark flag but missing CanKill). Room 031's liftable pots are ToH, not HCE.
+  # side, before the locked door -> HCE combat+Lamp (021 was already Lamp-gated
+  # by the dark flag but missing combat). Room 031's liftable pots are ToH, not HCE.
   # ---
-  "002": "CanKillEscapeThings(world) AND HAS_ITEM(SmallKey_HyruleCastleEscape) AND HAS_ITEM(Lamp)"
-  "021": "CanKillEscapeThings(world) AND HAS_ITEM(Lamp)"
+  "002": "CanKillHceThings(world) AND HAS_ITEM(SmallKey_HyruleCastleEscape) AND HAS_ITEM(Lamp)"
+  "021": "CanKillHceThings(world) AND HAS_ITEM(Lamp)"
   # --- Eastern Palace: room 0x099 (Eastern Darkness / Eastern Rupees) is
   # entered from room 0x0A9 through Eastern Courtyard N, the vanilla big-key
   # door. The dark-room flag supplied only Lamp navigation, so pot sanity could
@@ -227,7 +227,7 @@ room_can_reach:
   "09b": "HAS_ITEM(Hammer) AND HAS_ITEM(Hookshot) AND HAS_AMOUNT(SmallKey_GanonsTower, 1)"   # GT Hookshot wing key-pot room
   # --- HCE: room 0x82 is Hyrule Dungeon South Abyss. The HCE key-depth table
   # carries the small-key layer; the room floor still needs the escape combat gate.
-  "082": "CanKillEscapeThings(world)"
+  "082": "CanKillHceThings(world)"
   # --- Mire deep rooms: 0x91-0x93 are the Falling Foes / Crystal / Dark Shooters
   # cluster, not Desert. Use the Big-Key/Compass-side torch + 3-key threshold.
   "091": "CanLightTorches() AND HAS_AMOUNT(SmallKey_MiseryMire, 3)"

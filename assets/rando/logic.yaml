@@ -100,32 +100,43 @@ locations:
   # Open/Retro can approach from the graveyard: lift the rock, open the grave,
   # drop into the back passage, then bomb/dash the cracked wall. General bomb
   # access is renewable (CanBombThings=TRUE), so the alternate route reduces to
-  # CanLiftRocks. The forward sewer route retains Standard's stricter escape-
-  # weapon requirement; Open/Retro use upstream's CanKillMostThings predicate.
+  # CanLiftRocks. Inverted's authoritative override has the same rock branch;
+  # retaining it in this base also gives chest-anchored generated pots the right
+  # Inverted predicate. The forward sewer route retains Standard's stricter
+  # escape-weapon requirement; other modes use ordinary combat.
   - id: "Sewers - Secret Room - Left"
     region: HyruleCastleEscape
-    can_reach: "((WORLDSTATE_EQ(open) OR WORLDSTATE_EQ(retro)) AND CanLiftRocks()) OR (HAS_ITEM(SmallKey_HyruleCastleEscape) AND HAS_ITEM(Lamp) AND (((WORLDSTATE_EQ(open) OR WORLDSTATE_EQ(retro)) AND CanKillMostThings(world, 5)) OR (WORLDSTATE_EQ(standard) AND CanKillEscapeThings(world))))"
+    can_reach: "((WORLDSTATE_EQ(open) OR WORLDSTATE_EQ(retro) OR WORLDSTATE_EQ(inverted)) AND CanLiftRocks()) OR (HAS_ITEM(SmallKey_HyruleCastleEscape) AND HAS_ITEM(Lamp) AND CanKillHceThings(world))"
     source: "app/Region/Open/HyruleCastleEscape.php:23-32 (graveyard or forward route); app/Region/Standard/HyruleCastleEscape.php:71-73"
 
   - id: "Sewers - Secret Room - Middle"
     region: HyruleCastleEscape
-    can_reach: "((WORLDSTATE_EQ(open) OR WORLDSTATE_EQ(retro)) AND CanLiftRocks()) OR (HAS_ITEM(SmallKey_HyruleCastleEscape) AND HAS_ITEM(Lamp) AND (((WORLDSTATE_EQ(open) OR WORLDSTATE_EQ(retro)) AND CanKillMostThings(world, 5)) OR (WORLDSTATE_EQ(standard) AND CanKillEscapeThings(world))))"
+    can_reach: "((WORLDSTATE_EQ(open) OR WORLDSTATE_EQ(retro) OR WORLDSTATE_EQ(inverted)) AND CanLiftRocks()) OR (HAS_ITEM(SmallKey_HyruleCastleEscape) AND HAS_ITEM(Lamp) AND CanKillHceThings(world))"
     source: "app/Region/Open/HyruleCastleEscape.php:34-43 (graveyard or forward route); app/Region/Standard/HyruleCastleEscape.php:75-77"
 
   - id: "Sewers - Secret Room - Right"
     region: HyruleCastleEscape
-    can_reach: "((WORLDSTATE_EQ(open) OR WORLDSTATE_EQ(retro)) AND CanLiftRocks()) OR (HAS_ITEM(SmallKey_HyruleCastleEscape) AND HAS_ITEM(Lamp) AND (((WORLDSTATE_EQ(open) OR WORLDSTATE_EQ(retro)) AND CanKillMostThings(world, 5)) OR (WORLDSTATE_EQ(standard) AND CanKillEscapeThings(world))))"
+    can_reach: "((WORLDSTATE_EQ(open) OR WORLDSTATE_EQ(retro) OR WORLDSTATE_EQ(inverted)) AND CanLiftRocks()) OR (HAS_ITEM(SmallKey_HyruleCastleEscape) AND HAS_ITEM(Lamp) AND CanKillHceThings(world))"
     source: "app/Region/Open/HyruleCastleEscape.php:45-54 (graveyard or forward route); app/Region/Standard/HyruleCastleEscape.php:79-81"
 
   - id: "Sewers - Dark Cross"
     region: HyruleCastleEscape
-    can_reach: "CanKillEscapeThings(world) AND HAS_ITEM(Lamp)"
-    source: "app/Region/Standard/HyruleCastleEscape.php:83-85 — Lamp added for dark-sewer navigation"
+    # Open/Retro/Inverted inherit the Open parent override: ordinary logic needs
+    # only the Lamp. Standard retains its escape-weapon requirement in addition
+    # to the fork's explicit dark-room Lamp gate. Keeping Inverted explicit here
+    # also makes chest-anchored generated pots inherit the same parent rule.
+    can_reach: "HAS_ITEM(Lamp) AND ((WORLDSTATE_EQ(open) OR WORLDSTATE_EQ(retro) OR WORLDSTATE_EQ(inverted)) OR (WORLDSTATE_EQ(standard) AND CanKillEscapeThings(world)))"
+    source: "app/Region/Open/HyruleCastleEscape.php:45-48; app/Region/Standard/HyruleCastleEscape.php:83-85 — Lamp added to Standard for dark-sewer navigation"
 
   - id: "Hyrule Castle - Boomerang Chest"
     region: HyruleCastleEscape
-    can_reach: "CanKillEscapeThings(world)"
-    source: "app/Region/Standard/HyruleCastleEscape.php:87-89"
+    # Open/Retro use the Open parent's general combat predicate; Standard uses
+    # the stricter escape predicate. The Open KeyH2 term is intentionally not
+    # duplicated here: forced guard keys are free when enemy-drop checks are
+    # off, while rando_logic_gen.py adds the appropriate itemized key-depth
+    # requirement when those drops are shuffled.
+    can_reach: "CanKillHceThings(world)"
+    source: "app/Region/Open/HyruleCastleEscape.php:50-52; app/Region/Standard/HyruleCastleEscape.php:87-89"
 
   - id: "Hyrule Castle - Map Chest"
     region: HyruleCastleEscape
@@ -141,14 +152,18 @@ locations:
     region: HyruleCastleEscape
     # The 2 small-key doors between Uncle's death and Zelda's cell are gated
     # by 2 pinned (non-randomized) small keys that drop from specific
-    # soldiers — neither has pots available, so killing them needs a real
-    # weapon. The rando-pool small key is reserved for the sewers section
-    # (Sanctuary / Secret Rooms), not for this path.
+    # soldiers. Standard's opening escape requires a concrete weapon/refill;
+    # Open/Retro use ordinary renewable-bomb combat. The rando-pool small key
+    # is reserved for the sewers section (Sanctuary / Secret Rooms), not for
+    # this path.
     # gen_soul_room_tables.py adds the reviewed room-0x071 Soul_Soldier wrap
     # to this base predicate and every world-state override. It is a static
     # inventory gate; guard kill state never changes reachability.
-    can_reach: "CanKillEscapeThings(world)"
-    source: "app/Region/Standard/HyruleCastleEscape.php:95-97"
+    # As with Boomerang Chest, generated enemy-drop depth/big-key terms model
+    # itemized forced drops, and the generated Soldier-soul wrap composes after
+    # this world-state-specific combat predicate.
+    can_reach: "CanKillHceThings(world)"
+    source: "app/Region/Open/HyruleCastleEscape.php:54-56; app/Region/Standard/HyruleCastleEscape.php:95-97"
 
   # `Secret Passage` (php:99-106) — adds a setFillRules dungeon-item ban.
   # Phase B `region.wild*` config flags are pinned false, so the can_place

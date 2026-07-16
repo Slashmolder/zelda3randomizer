@@ -44,6 +44,13 @@ SMALL_KEY_ITEMS = {
 }
 ENEMY_DROP_ASSET_KEYS = ("kDungeonSprites", "kDungeonSpriteOffs")
 
+# Hyrule Castle Escape uses Standard's stricter opening-escape combat rule only
+# while the world is actually Standard. Open/Retro bypass that sequence, and
+# Inverted enters from its own overworld, so their generated enemy checks use
+# ordinary renewable-bomb combat. Keep this shared with gen_enemy_check_tables.py
+# so forced drops and ordinary HCE enemies cannot drift apart again.
+HCE_ENEMY_KILL_PREDICATE = "CanKillHceThings(world)"
+
 
 SMALL_KEY_BINDINGS = {
     0x00E: {
@@ -68,7 +75,7 @@ SMALL_KEY_BINDINGS = {
         "door_region": 28,
         "region": "HyruleCastleEscape",
         "vanilla_item": "SmallKey_HyruleCastleEscape",
-        "can_reach": "CanKillEscapeThings(world) AND HAS_ITEM(Lamp)",
+        "can_reach": f"({HCE_ENEMY_KILL_PREDICATE}) AND HAS_ITEM(Lamp)",
     },
     0x039: {
         "drop_name": "Skull Woods - Spike Corner Key Drop",
@@ -100,7 +107,7 @@ SMALL_KEY_BINDINGS = {
         "door_region": 11,
         "region": "HyruleCastleEscape",
         "vanilla_item": "SmallKey_HyruleCastleEscape",
-        "can_reach": "CanKillEscapeThings(world)",
+        "can_reach": HCE_ENEMY_KILL_PREDICATE,
     },
     0x072: {
         "drop_name": "Hyrule Castle - Map Guard Key Drop",
@@ -108,7 +115,7 @@ SMALL_KEY_BINDINGS = {
         "door_region": 17,
         "region": "HyruleCastleEscape",
         "vanilla_item": "SmallKey_HyruleCastleEscape",
-        "can_reach": "CanKillEscapeThings(world)",
+        "can_reach": HCE_ENEMY_KILL_PREDICATE,
     },
     0x099: {
         "drop_name": "Eastern Palace - Dark Eyegore Key Drop",
@@ -170,7 +177,7 @@ BIG_KEY_BINDINGS = {
         # big key remains a free runtime grant because no modeled HCE/HCT big-key
         # item exists in item_registry.yaml.
         "vanilla_item": "Nothing",
-        "can_reach": "CanKillEscapeThings(world)",
+        "can_reach": HCE_ENEMY_KILL_PREDICATE,
         "big_key_policy": "one_shot_preserve_vanilla_big_key",
     },
 }

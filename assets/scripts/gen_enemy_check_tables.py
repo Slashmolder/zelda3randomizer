@@ -44,6 +44,7 @@ from gen_enemy_drop_tables import (  # noqa: E402
     BIG_KEY_BINDINGS,
     DEFAULT_ASSETS,
     DEFAULT_KEY_DEPTH,
+    HCE_ENEMY_KILL_PREDICATE,
     SMALL_KEY_BINDINGS,
     SMALL_KEY_ITEMS,
     asset_payload_sha256,
@@ -204,7 +205,7 @@ def reviewed_hce_castle_guard_binding(predicate_source: str) -> dict:
         "region": "HyruleCastleEscape",
         "base_can_reach": ALL_TIER_HCE_SECRET_PASSAGE_ACCESS,
         "predicate_source": predicate_source,
-        "inventory_kill_predicate": "CanKillEscapeThings(world)",
+        "inventory_kill_predicate": HCE_ENEMY_KILL_PREDICATE,
         "inventory_kill_source": "hce_castle_guard",
         "allow_throwable_pots": False,
         "use_key_depth": True,
@@ -218,21 +219,21 @@ ALL_TIER_UNDERWORLD_BINDINGS = {
     # terms and door shuffle still use the normal bridge.
     **reviewed_key_depth_room_bindings(
         0x022, range(7), "HyruleCastleEscape",
-        "CanKillEscapeThings(world) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav())",
+        f"({HCE_ENEMY_KILL_PREDICATE}) AND (HAS_ITEM(Lamp) OR CanDarkRoomNav())",
         "all_tier_underworld_reviewed_hce_sewers_water",
-        inventory_kill_predicate="CanKillEscapeThings(world)",
+        inventory_kill_predicate=HCE_ENEMY_KILL_PREDICATE,
         inventory_kill_source="hce_sewers"),
     **reviewed_key_depth_room_bindings(
         0x042, range(6), "HyruleCastleEscape",
-        "CanKillEscapeThings(world)",
+        HCE_ENEMY_KILL_PREDICATE,
         "all_tier_underworld_reviewed_hce_sewers_rope_room",
-        inventory_kill_predicate="CanKillEscapeThings(world)",
+        inventory_kill_predicate=HCE_ENEMY_KILL_PREDICATE,
         inventory_kill_source="hce_sewers"),
     **reviewed_key_depth_room_bindings(
         0x081, range(2), "HyruleCastleEscape",
-        "CanKillEscapeThings(world)",
+        HCE_ENEMY_KILL_PREDICATE,
         "all_tier_underworld_reviewed_hce_guardroom",
-        inventory_kill_predicate="CanKillEscapeThings(world)",
+        inventory_kill_predicate=HCE_ENEMY_KILL_PREDICATE,
         inventory_kill_source="hce_guardroom"),
 
     **reviewed_key_depth_room_bindings(
@@ -421,7 +422,7 @@ ALL_TIER_UNDERWORLD_BINDINGS = {
         "region": "HyruleCastleEscape",
         "base_can_reach": ALL_TIER_HCE_SECRET_PASSAGE_ACCESS,
         "predicate_source": "all_tier_underworld_reviewed_hce_secret_passage",
-        "inventory_kill_predicate": "CanKillEscapeThings(world)",
+        "inventory_kill_predicate": HCE_ENEMY_KILL_PREDICATE,
         "inventory_kill_source": "hce_secret_passage",
         "throwable_pots_can_reach": "HAS_ITEM(Lamp) OR CanDarkRoomNav()",
     },
@@ -429,7 +430,7 @@ ALL_TIER_UNDERWORLD_BINDINGS = {
         "region": "HyruleCastleEscape",
         "base_can_reach": ALL_TIER_HCE_SECRET_PASSAGE_ACCESS,
         "predicate_source": "all_tier_underworld_reviewed_hce_secret_passage",
-        "inventory_kill_predicate": "CanKillEscapeThings(world)",
+        "inventory_kill_predicate": HCE_ENEMY_KILL_PREDICATE,
         "inventory_kill_source": "hce_secret_passage",
         "throwable_pots_can_reach": "HAS_ITEM(Lamp) OR CanDarkRoomNav()",
     },
@@ -807,7 +808,7 @@ def best_room_key_depth(room_rows: list[dict]) -> dict:
 
 def kill_predicate_for_dungeon(dungeon: int) -> str:
     if dungeon == 0:
-        return "CanKillEscapeThings(world)"
+        return HCE_ENEMY_KILL_PREDICATE
     if dungeon == 4:
         return "CanKillMostThings(world, 8)"
     return "CanKillMostThings(world, 5)"
@@ -815,7 +816,7 @@ def kill_predicate_for_dungeon(dungeon: int) -> str:
 
 def kill_predicate_for_overworld(region: str) -> str:
     if region == "HyruleCastleEscape":
-        return "CanKillEscapeThings(world)"
+        return HCE_ENEMY_KILL_PREDICATE
     return "CanKillMostThings(world, 5)"
 
 
@@ -922,6 +923,7 @@ def strip_throwable_combat_terms(expr: str) -> str:
     terms = [
         r"CanKillMostThings\(\s*world\s*,\s*\d+\s*\)",
         r"CanKillEscapeThings\(\s*world\s*\)",
+        r"CanKillHceThings\(\s*world\s*\)",
     ]
     for term in terms:
         out = re.sub(rf"\s+AND\s+{term}", "", out)

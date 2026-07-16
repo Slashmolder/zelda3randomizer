@@ -381,6 +381,20 @@ macros:
       to TRUE()).
 
   # ===========================================================================
+  # canKillHceThings — world-state-aware Hyrule Castle enemy combat.
+  # ===========================================================================
+  - name: CanKillHceThings
+    parameters: [world]
+    body: "(WORLDSTATE_EQ(standard) AND CanKillEscapeThings(world)) OR ((WORLDSTATE_EQ(open) OR WORLDSTATE_EQ(retro) OR WORLDSTATE_EQ(inverted)) AND CanKillMostThings(world, 5))"
+    source: "app/Region/Open/HyruleCastleEscape.php:24-56; app/Region/Standard/HyruleCastleEscape.php:65-97"
+    notes: |
+      Standard's opening escape needs a concrete weapon or bomb refill. Open
+      and Retro bypass that sequence, while Inverted enters from its own
+      overworld, so generated HCE enemy/drop/pot checks use ordinary renewable-
+      bomb combat in those modes. Static Inverted locations may still install
+      their own authoritative per-location overrides.
+
+  # ===========================================================================
   # CanKillBoss — boss-shuffle runtime dispatch (add-rando-shuffles-and-minigames).
   # Resolves the boss CURRENTLY ASSIGNED to <dungeon> (boss-shuffle) and evaluates
   # that boss's kill predicate. boss_shuffle OFF ⇒ the assignment is the vanilla

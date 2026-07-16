@@ -2001,6 +2001,16 @@ void Logic_SelfCheck(void) {
   RandoSettings settings;
   Settings_SetDefaults(&settings);
 
+#if defined(LOC_Eastern_Palace_Dark_Eyegore_Key_Drop) && \
+    defined(LOC_Enemy_Check_Room_0x099_Slot_02_Green_Eyegore) && \
+    defined(LOC_Enemy_Check_Room_0x099_Slot_04_Popo) && \
+    defined(LOC_Enemy_Check_Room_0x099_Slot_05_Popo) && \
+    defined(LOC_Enemy_Check_Room_0x099_Slot_06_Popo2) && \
+    defined(LOC_Enemy_Check_Room_0x099_Slot_07_Popo2) && \
+    defined(LOC_Enemy_Check_Room_0x099_Slot_08_Popo2) && \
+    defined(LOC_Enemy_Check_Room_0x099_Slot_09_Popo2) && \
+    defined(LOC_EasternPalace_Lobby_Pot_R099_P1428) && \
+    defined(LOC_EasternPalace_Lobby_Pot_R099_P1454)
   // Eastern room 0x099 is entered through the vanilla big-key door from
   // room 0x0A9. Pin the generated predicates for every check domain that can
   // occupy that room: the forced Eyegore key drop, seven ordinary enemies,
@@ -2048,6 +2058,7 @@ void Logic_SelfCheck(void) {
                  "Eastern Darkness location stayed closed with Eastern big key");
     }
   }
+#endif
 
   // HAS_ITEM(5) when count[5] == 0 -> false
   {
@@ -2661,18 +2672,47 @@ void Logic_SelfCheck(void) {
   if (kRandoEnemyDropHceBigKeyLocId != 0xFFFF) {
     RandoSettings hce;
     Settings_SetDefaults(&hce);
-    hce.world_state = kWorldState_Standard;
     hce.enemy_drop_checks = kEnemyDropChecks_Keys;
     hce.dungeon_small_keys_mode = kDungeonItemMode_Dungeon;
 
     RandoCounts hc;
     memset(&hc, 0, sizeof(hc));
     hc.by_item_id[ITEM_StartingHeart] = 3;
+    hc.by_item_id[ITEM_SmallKey_HyruleCastleEscape] = 2;
+
+    // Generated forced-drop predicates must follow the same Open parent as the
+    // static chests. Ordinary renewable bombs are enough to collect the guard
+    // keys and defeat Ball-and-chain in Open, which then derives HCE's virtual
+    // big key for Zelda's Cell.
+    const RandoReachability *hr = Logic_ComputeReachability(&hc, &hce);
+    LSC_ASSERT(hr != NULL, "HCE enemy-drop chain reachability returned NULL");
+#ifdef LOC_Hyrule_Castle_Map_Guard_Key_Drop
+    LSC_ASSERT(Reachability_HasLocation(hr, LOC_Hyrule_Castle_Map_Guard_Key_Drop),
+               "Open HCE enemy-drop: renewable bombs should reach Map Guard");
+#endif
+    LSC_ASSERT(Reachability_HasLocation(hr, kRandoEnemyDropHceBigKeyLocId),
+               "Open HCE enemy-drop: two keys should reach Ball-n-chain weaponless");
+    LSC_ASSERT(Reachability_HasLocation(hr, LOC_Hyrule_Castle_Zelda_s_Cell),
+               "Open HCE enemy-drop: virtual big key should open Zelda's Cell");
+
+    // Standard deliberately remains stricter: general renewable-bomb access
+    // does not satisfy the opening escape's concrete weapon/refill contract.
+    hce.world_state = kWorldState_Standard;
+    hr = Logic_ComputeReachability(&hc, &hce);
+#ifdef LOC_Hyrule_Castle_Map_Guard_Key_Drop
+    LSC_ASSERT(!Reachability_HasLocation(hr, LOC_Hyrule_Castle_Map_Guard_Key_Drop),
+               "Standard HCE enemy-drop: Map Guard must require an escape weapon");
+#endif
+    LSC_ASSERT(!Reachability_HasLocation(hr, kRandoEnemyDropHceBigKeyLocId),
+               "Standard HCE enemy-drop: Ball-n-chain must require an escape weapon");
+    LSC_ASSERT(!Reachability_HasLocation(hr, LOC_Hyrule_Castle_Zelda_s_Cell),
+               "Standard HCE enemy-drop: Zelda's Cell must require an escape weapon");
+
+    hc.by_item_id[ITEM_SmallKey_HyruleCastleEscape] = 0;
     hc.by_item_id[ITEM_ProgressiveSword] = 1;
     hc.by_item_id[ITEM_Lamp] = 1;
 
-    const RandoReachability *hr = Logic_ComputeReachability(&hc, &hce);
-    LSC_ASSERT(hr != NULL, "HCE enemy-drop chain reachability returned NULL");
+    hr = Logic_ComputeReachability(&hc, &hce);
     LSC_ASSERT(!Reachability_HasLocation(hr, LOC_Hyrule_Castle_Boomerang_Chest),
                "HCE enemy-drop: Boomerang Chest must require the first HCE key");
     LSC_ASSERT(!Reachability_HasLocation(hr, kRandoEnemyDropHceBigKeyLocId),
@@ -2724,6 +2764,180 @@ void Logic_SelfCheck(void) {
     LSC_ASSERT(Reachability_HasLocation(er, LOC_Hyrule_Castle_Boomerang_Chest),
                "Standard escape: a bomb refill should satisfy the weapon gate");
   }
+
+  // Open/Retro inherit HCE overrides from ALTTPR's Open parent. Dark Cross only
+  // needs the Lamp, while Boomerang Chest and Zelda's Cell use the ordinary
+  // renewable-bomb combat predicate instead of Standard's stricter escape
+  // predicate. Generated key-depth, HCE-big-key, and soul terms compose after
+  // these base predicates when their settings are active.
+  {
+    RandoSettings hce_parent;
+    Settings_SetDefaults(&hce_parent);  // Open, enemy drops/souls off
+    RandoCounts hce_counts;
+    memset(&hce_counts, 0, sizeof(hce_counts));
+    hce_counts.by_item_id[ITEM_StartingHeart] = 3;
+
+    const RandoReachability *hce_reach =
+        Logic_ComputeReachability(&hce_counts, &hce_parent);
+    LSC_ASSERT(!Reachability_HasLocation(hce_reach, LOC_Sewers_Dark_Cross),
+               "Open HCE: Dark Cross must still require the Lamp");
+    LSC_ASSERT(Reachability_HasLocation(hce_reach, LOC_Hyrule_Castle_Boomerang_Chest),
+               "Open HCE: renewable bombs should satisfy Boomerang Chest combat");
+    LSC_ASSERT(Reachability_HasLocation(hce_reach, LOC_Hyrule_Castle_Zelda_s_Cell),
+               "Open HCE: renewable bombs should satisfy Zelda's Cell combat");
+
+    hce_counts.by_item_id[ITEM_Lamp] = 1;
+    hce_reach = Logic_ComputeReachability(&hce_counts, &hce_parent);
+    LSC_ASSERT(Reachability_HasLocation(hce_reach, LOC_Sewers_Dark_Cross),
+               "Open HCE: Lamp alone should open Dark Cross");
+
+    hce_parent.world_state = kWorldState_Retro;
+    hce_counts.by_item_id[ITEM_Lamp] = 0;
+    hce_reach = Logic_ComputeReachability(&hce_counts, &hce_parent);
+    LSC_ASSERT(!Reachability_HasLocation(hce_reach, LOC_Sewers_Dark_Cross),
+               "Retro HCE: Dark Cross must still require the Lamp");
+    LSC_ASSERT(Reachability_HasLocation(hce_reach, LOC_Hyrule_Castle_Boomerang_Chest),
+               "Retro HCE: renewable bombs should satisfy Boomerang Chest combat");
+    LSC_ASSERT(Reachability_HasLocation(hce_reach, LOC_Hyrule_Castle_Zelda_s_Cell),
+               "Retro HCE: renewable bombs should satisfy Zelda's Cell combat");
+    hce_counts.by_item_id[ITEM_Lamp] = 1;
+    hce_reach = Logic_ComputeReachability(&hce_counts, &hce_parent);
+    LSC_ASSERT(Reachability_HasLocation(hce_reach, LOC_Sewers_Dark_Cross),
+               "Retro HCE: Lamp alone should open Dark Cross");
+
+    hce_parent.world_state = kWorldState_Standard;
+    hce_reach = Logic_ComputeReachability(&hce_counts, &hce_parent);
+    LSC_ASSERT(!Reachability_HasLocation(hce_reach, LOC_Sewers_Dark_Cross),
+               "Standard HCE: Lamp must not waive the escape-weapon gate");
+    LSC_ASSERT(!Reachability_HasLocation(hce_reach, LOC_Hyrule_Castle_Boomerang_Chest),
+               "Standard HCE: renewable bombs must not waive Boomerang combat");
+    LSC_ASSERT(!Reachability_HasLocation(hce_reach, LOC_Hyrule_Castle_Zelda_s_Cell),
+               "Standard HCE: renewable bombs must not waive Zelda's Cell combat");
+
+    hce_counts.by_item_id[ITEM_Bombs1] = 1;
+    hce_counts.by_item_id[ITEM_Lamp] = 0;
+    hce_reach = Logic_ComputeReachability(&hce_counts, &hce_parent);
+    LSC_ASSERT(!Reachability_HasLocation(hce_reach, LOC_Sewers_Dark_Cross),
+               "Standard HCE: a bomb refill must not waive Dark Cross's Lamp");
+    LSC_ASSERT(Reachability_HasLocation(hce_reach, LOC_Hyrule_Castle_Boomerang_Chest),
+               "Standard HCE: a bomb refill should satisfy Boomerang combat");
+    LSC_ASSERT(Reachability_HasLocation(hce_reach, LOC_Hyrule_Castle_Zelda_s_Cell),
+               "Standard HCE: a bomb refill should satisfy Zelda's Cell combat");
+    hce_counts.by_item_id[ITEM_Lamp] = 1;
+    hce_reach = Logic_ComputeReachability(&hce_counts, &hce_parent);
+    LSC_ASSERT(Reachability_HasLocation(hce_reach, LOC_Sewers_Dark_Cross),
+               "Standard HCE: Lamp plus a bomb refill should open Dark Cross");
+
+    hce_parent.world_state = kWorldState_Inverted;
+    hce_counts.by_item_id[ITEM_Bombs1] = 0;
+    hce_counts.by_item_id[ITEM_MoonPearl] = 1;
+    hce_counts.by_item_id[ITEM_Flippers] = 1;
+    hce_counts.by_item_id[ITEM_DefeatAgahnim] = 1;
+    hce_reach = Logic_ComputeReachability(&hce_counts, &hce_parent);
+    LSC_ASSERT(Reachability_HasLocation(hce_reach, LOC_Sewers_Dark_Cross),
+               "Inverted HCE: inherited Open Dark Cross should need only Lamp");
+    LSC_ASSERT(!Reachability_HasLocation(hce_reach, LOC_Hyrule_Castle_Boomerang_Chest),
+               "Inverted HCE: Boomerang Chest must retain its key override");
+    LSC_ASSERT(!Reachability_HasLocation(hce_reach, LOC_Hyrule_Castle_Zelda_s_Cell),
+               "Inverted HCE: Zelda's Cell must retain its key override");
+    hce_counts.by_item_id[ITEM_SmallKey_HyruleCastleEscape] = 1;
+    hce_reach = Logic_ComputeReachability(&hce_counts, &hce_parent);
+    LSC_ASSERT(Reachability_HasLocation(hce_reach, LOC_Hyrule_Castle_Boomerang_Chest),
+               "Inverted HCE: one HCE key should open Boomerang Chest");
+    LSC_ASSERT(Reachability_HasLocation(hce_reach, LOC_Hyrule_Castle_Zelda_s_Cell),
+               "Inverted HCE: one HCE key should open Zelda's Cell");
+  }
+
+#if defined(LOC_Enemy_Check_Room_0x071_Slot_00_Green_sword_soldier) && \
+    defined(LOC_HyruleCastleEscape_Pot_R011_P0F90) && \
+    defined(LOC_HyruleCastleEscape_Pot_R021_P14A0) && \
+    defined(LOC_HyruleCastleEscape_Pot_R032_P0D1C)
+  // Generated ordinary-enemy and pot checks must not regress independently of
+  // the static/forced-drop predicates above. Exercise one reviewed HCE guard
+  // (no throwable-pot escape hatch) and one explicit HCE pot-room override in
+  // every non-Standard world state, then prove Standard remains strict.
+  {
+    RandoSettings hce_generated;
+    Settings_SetDefaults(&hce_generated);
+    hce_generated.enemy_drop_checks = kEnemyDropChecks_All;
+    hce_generated.pot_shuffle = kPotShuffle_All;
+    hce_generated.dungeon_small_keys_mode = kDungeonItemMode_Dungeon;
+
+    RandoCounts hce_generated_counts;
+    memset(&hce_generated_counts, 0, sizeof(hce_generated_counts));
+    hce_generated_counts.by_item_id[ITEM_StartingHeart] = 3;
+    hce_generated_counts.by_item_id[ITEM_Lamp] = 1;
+    hce_generated_counts.by_item_id[ITEM_SmallKey_HyruleCastleEscape] = 4;
+    hce_generated_counts.by_item_id[ITEM_GenericKey] = 4;
+
+    const RandoReachability *hce_generated_reach =
+        Logic_ComputeReachability(&hce_generated_counts, &hce_generated);
+    LSC_ASSERT(Reachability_HasLocation(
+                   hce_generated_reach,
+                   LOC_Enemy_Check_Room_0x071_Slot_00_Green_sword_soldier),
+               "Open HCE enemy check: renewable bombs should satisfy combat");
+    LSC_ASSERT(Reachability_HasLocation(
+                   hce_generated_reach, LOC_HyruleCastleEscape_Pot_R021_P14A0),
+               "Open HCE pot check: renewable bombs should satisfy room combat");
+
+    hce_generated.world_state = kWorldState_Retro;
+    hce_generated_reach =
+        Logic_ComputeReachability(&hce_generated_counts, &hce_generated);
+    LSC_ASSERT(Reachability_HasLocation(
+                   hce_generated_reach,
+                   LOC_Enemy_Check_Room_0x071_Slot_00_Green_sword_soldier),
+               "Retro HCE enemy check: renewable bombs should satisfy combat");
+    LSC_ASSERT(Reachability_HasLocation(
+                   hce_generated_reach, LOC_HyruleCastleEscape_Pot_R021_P14A0),
+               "Retro HCE pot check: renewable bombs should satisfy room combat");
+
+    hce_generated.world_state = kWorldState_Inverted;
+    hce_generated_counts.by_item_id[ITEM_MoonPearl] = 1;
+    hce_generated_counts.by_item_id[ITEM_Flippers] = 1;
+    hce_generated_counts.by_item_id[ITEM_DefeatAgahnim] = 1;
+    hce_generated_reach =
+        Logic_ComputeReachability(&hce_generated_counts, &hce_generated);
+    LSC_ASSERT(Reachability_HasLocation(
+                   hce_generated_reach,
+                   LOC_Enemy_Check_Room_0x071_Slot_00_Green_sword_soldier),
+               "Inverted HCE enemy check: renewable bombs should satisfy combat");
+    LSC_ASSERT(Reachability_HasLocation(
+                   hce_generated_reach, LOC_HyruleCastleEscape_Pot_R021_P14A0),
+               "Inverted HCE pot check: renewable bombs should satisfy room combat");
+    LSC_ASSERT(Reachability_HasLocation(
+                   hce_generated_reach, LOC_HyruleCastleEscape_Pot_R032_P0D1C),
+               "Inverted HCE Dark Cross pot: Lamp should satisfy the parent override");
+
+    // The Inverted Secret Room override also inherits into its room's generated
+    // pots: the graveyard approach needs lifting strength, not the forward-route
+    // key and Lamp. This guards the other world-state-specific chest anchor.
+    hce_generated_counts.by_item_id[ITEM_Lamp] = 0;
+    hce_generated_counts.by_item_id[ITEM_SmallKey_HyruleCastleEscape] = 0;
+    hce_generated_counts.by_item_id[ITEM_PowerGlove] = 1;
+    hce_generated_reach =
+        Logic_ComputeReachability(&hce_generated_counts, &hce_generated);
+    LSC_ASSERT(Reachability_HasLocation(
+                   hce_generated_reach, LOC_HyruleCastleEscape_Pot_R011_P0F90),
+               "Inverted HCE Secret Room pot: lifting strength should open back route");
+
+    hce_generated.world_state = kWorldState_Standard;
+    hce_generated_counts.by_item_id[ITEM_MoonPearl] = 0;
+    hce_generated_counts.by_item_id[ITEM_Flippers] = 0;
+    hce_generated_counts.by_item_id[ITEM_DefeatAgahnim] = 0;
+    hce_generated_counts.by_item_id[ITEM_PowerGlove] = 0;
+    hce_generated_counts.by_item_id[ITEM_Lamp] = 1;
+    hce_generated_counts.by_item_id[ITEM_SmallKey_HyruleCastleEscape] = 4;
+    hce_generated_reach =
+        Logic_ComputeReachability(&hce_generated_counts, &hce_generated);
+    LSC_ASSERT(!Reachability_HasLocation(
+                   hce_generated_reach,
+                   LOC_Enemy_Check_Room_0x071_Slot_00_Green_sword_soldier),
+               "Standard HCE enemy check: combat must require an escape weapon");
+    LSC_ASSERT(!Reachability_HasLocation(
+                   hce_generated_reach, LOC_HyruleCastleEscape_Pot_R021_P14A0),
+               "Standard HCE pot check: room combat must require an escape weapon");
+  }
+#endif
 
   // Open/Retro sewer back entrance: lift the graveyard rock, drop through the
   // grave, then bomb/dash the cracked wall. Ordinary bomb access is renewable,
