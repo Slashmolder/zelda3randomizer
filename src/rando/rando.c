@@ -54,7 +54,9 @@
 #include "../overworld.h"  // ForceNonbunnyStatus
 #include "../dungeon.h"    // RandoPot_OverlayOamSelfCheck
 #include "../misc.h"       // §7.6 Link_CalculateSfxPan
+#include "../messaging.h"  // dynamic-hint story fast-forward policy selfcheck
 #include "../sprite.h"     // Sprite_ShowMessageUnconditional (trap dialogue)
+#include "../zelda_rtl.h"  // g_zenv.dialogue_flags locale gate selfcheck
 #include "../hud.h"        // §7.6 Hud_RefreshIcon
 #include "../player.h"     // §7.6 Link_ReceiveItem
 #include "../load_gfx.h"   // Palette_Load_LinkArmorAndGloves
@@ -8637,6 +8639,43 @@ static void Rando_CrystalGateSelfCheck(void) {
   fprintf(stderr, "[Rando_CrystalGateSelfCheck] OK\n");
 }
 
+static void Rando_DynamicHintFastForwardSelfCheck(void) {
+  uint8 saved_slot_active = g_rando_slot_active;
+  bool saved_settings_valid = g_rando_active_settings_valid;
+  RandoSettings saved_settings = g_rando_active_settings;
+  uint8 saved_dialogue_flags = g_zenv.dialogue_flags;
+  const RandoPlacementTable *saved_placement = Placement_GetActive();
+
+  RandoPlacement pearl_entry = {LOC_Ice_Palace_Prize, ITEM_MoonPearl};
+  RandoPlacementTable pearl_table = {&pearl_entry, 1};
+  g_rando_slot_active = 1;
+  g_rando_active_settings_valid = true;
+  Settings_SetDefaults(&g_rando_active_settings);
+  g_rando_active_settings.hints = kHintsMode_On;
+  g_zenv.dialogue_flags = 0;
+  Placement_Install(&pearl_table);
+
+  uint8 encoded[241];
+  if (!Rando_IsDynamicHintMessage(0x36) ||
+      !Rando_RenderHintMessage(0x36, encoded))
+    tsc_die("DynamicHint: post-Agahnim redirect did not activate");
+  if (Text_ShouldFastForwardStoryMessage(0x36))
+    tsc_die("DynamicHint: active post-Agahnim hint was fast-forwarded");
+
+  g_rando_active_settings.hints = kHintsMode_Off;
+  if (Rando_IsDynamicHintMessage(0x36))
+    tsc_die("DynamicHint: hints-off post-Agahnim redirect stayed active");
+  if (!Text_ShouldFastForwardStoryMessage(0x36))
+    tsc_die("DynamicHint: hints-off post-Agahnim story fast-forward changed");
+
+  Placement_Install(saved_placement);
+  g_zenv.dialogue_flags = saved_dialogue_flags;
+  g_rando_active_settings = saved_settings;
+  g_rando_active_settings_valid = saved_settings_valid;
+  g_rando_slot_active = saved_slot_active;
+  fprintf(stderr, "[Rando_DynamicHintFastForwardSelfCheck] OK\n");
+}
+
 // Cross-TU capacity ABI selfcheck (add-rando-grass-rock-shuffle D5; the
 // enemy-drop review lesson made concrete): the Makefile has no header
 // dependency tracking, so a kRandoLocationCapacity bump + incremental `make`
@@ -8681,6 +8720,7 @@ static void Rando_SelfCheckCapacityABI(void) {
 void Rando_RunAllSelfChecks(void) {
   Rando_SelfCheckCapacityABI();
   Rando_CrystalGateSelfCheck();
+  Rando_DynamicHintFastForwardSelfCheck();
   Rando_SelfCheck();
   ItemReceipt_FastFanfareSelfCheck();
   if (RandoPot_OverlayOamSelfCheck()) {

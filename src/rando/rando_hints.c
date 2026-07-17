@@ -7,6 +7,8 @@
 //     placement from the active seed.
 //   - 1 Murahdahla hint, populated only when goal ∈ {TriforceHunt,
 //     GanonHunt}, listing the regions that hold Triforce pieces.
+//   - Confirmed vanilla NPC fixed-item location claims, redirected at dialogue
+//     load time to the active placement without consuming a generated slot.
 //
 // What this generator does NOT do (deferred to follow-up commits):
 //
@@ -35,12 +37,14 @@
 #include "rando_hints.h"
 #include "item_ids.h"     // ITEM_* symbols (codegen from item_registry.yaml)
 #include "location_ids.h" // LOC_* symbols (codegen from location_registry.yaml)
+#include "rando.h"        // Rando_GetActiveSettings
 #include "rando_logic.h"  // Rando_GetLocationName, Rando_GetItemName
 #include "rando_rng.h"
 #include "rando_settings.h"  // Settings_SetDefaults for Hints_SelfCheck
 #include "../types.h"
 #include "../variables.h"    // g_ram (backs the g_rando_slot_active macro)
 #include "../features.h"     // g_rando_slot_active (g_ram macro)
+#include "../zelda_rtl.h"    // g_zenv.dialogue_flags
 #include "third_party/sha256/sha256.h"
 
 #include <stdio.h>
@@ -82,6 +86,9 @@ static const char *kRandoHintStringIds[kRandoHintNpc__Count - 1] = {
 // Per-NPC hint storage. Sized exactly for the enum; index 0 (_None)
 // is unused but kept so RandoHintNpc literals map directly.
 #define kRandoHintTextMax 160
+#define kHintMaxCharsPerLine 13  // VWF is variable-width; 13 is a safe cap that
+                                 // avoids overrun on the 256-px message box for
+                                 // worst-case wide glyphs.
 
 typedef struct HintEntry {
   uint8 active;
@@ -91,6 +98,117 @@ typedef struct HintEntry {
 } HintEntry;
 
 static HintEntry g_hint_table[kRandoHintNpc__Count];
+
+// Fixed-item vanilla NPC lines whose location claim becomes false when that item
+// moves. These are runtime dialogue_message_index values, NOT the one-based row
+// numbers printed in assets/dialogue.txt (see the OpenSpec audit for the mapping).
+typedef struct RandoNpcHintRedirect {
+  uint16 message_id;
+  uint16 item_id;
+  const char *source_name;
+  uint8 flags;
+} RandoNpcHintRedirect;
+
+enum {
+  kNpcHintRedirectFlag_None = 0,
+};
+
+static const RandoNpcHintRedirect kNpcHintRedirects[] = {
+  {0x033, ITEM_Prize_GreenPendant, "Sahasrahla", kNpcHintRedirectFlag_None},
+  {0x036, ITEM_MoonPearl, "Post-Agahnim Sahasrahla", kNpcHintRedirectFlag_None},
+  {0x09E, ITEM_MoonPearl, "Old mountain man", kNpcHintRedirectFlag_None},
+  {0x125, ITEM_BookOfMudora, "Aginah", kNpcHintRedirectFlag_None},
+  {0x15D, ITEM_MoonPearl, "Dark-World bully", kNpcHintRedirectFlag_None},
+};
+
+typedef enum RandoNpcHintRedirectStatus {
+  kNpcHintRedirect_NotRecognized = 0,
+  kNpcHintRedirect_SlotInactive,
+  kNpcHintRedirect_UnsupportedLocale,
+  kNpcHintRedirect_SettingsUnavailable,
+  kNpcHintRedirect_HintsOff,
+  kNpcHintRedirect_DiscriminatorMismatch,
+  kNpcHintRedirect_PlacementUnavailable,
+  kNpcHintRedirect_ItemAbsent,
+  kNpcHintRedirect_Active,
+} RandoNpcHintRedirectStatus;
+
+typedef struct RandoNpcHintResolution {
+  const RandoNpcHintRedirect *redirect;
+  RandoNpcHintRedirectStatus status;
+  uint16 location_id;
+} RandoNpcHintResolution;
+
+static const RandoNpcHintRedirect *npc_hint_redirect_for_msg(uint16 msg_id) {
+  for (size_t i = 0; i < sizeof(kNpcHintRedirects) / sizeof(kNpcHintRedirects[0]); i++) {
+    if (kNpcHintRedirects[i].message_id == msg_id) return &kNpcHintRedirects[i];
+  }
+  return NULL;
+}
+
+static bool npc_hint_redirect_discriminator_matches(const RandoNpcHintRedirect *redirect) {
+  // The current table contains only collision-audited globally-safe IDs. Keep
+  // unknown flag bits fail-closed so adding a shared ID requires an explicit
+  // room/sprite/world predicate instead of accidentally widening interception.
+  return redirect != NULL && redirect->flags == kNpcHintRedirectFlag_None;
+}
+
+static RandoNpcHintResolution resolve_npc_hint_for_context(
+    uint16 msg_id, bool slot_active, uint8 dialogue_flags,
+    const RandoSettings *settings, const RandoPlacementTable *placements) {
+  RandoNpcHintResolution out = {npc_hint_redirect_for_msg(msg_id),
+                                kNpcHintRedirect_NotRecognized, 0xFFFFu};
+  if (out.redirect == NULL) return out;
+  if (!slot_active) {
+    out.status = kNpcHintRedirect_SlotInactive;
+    return out;
+  }
+  if (dialogue_flags != 0) {
+    out.status = kNpcHintRedirect_UnsupportedLocale;
+    return out;
+  }
+  if (settings == NULL) {
+    out.status = kNpcHintRedirect_SettingsUnavailable;
+    return out;
+  }
+  if (settings->hints != kHintsMode_On) {
+    out.status = kNpcHintRedirect_HintsOff;
+    return out;
+  }
+  if (!npc_hint_redirect_discriminator_matches(out.redirect)) {
+    out.status = kNpcHintRedirect_DiscriminatorMismatch;
+    return out;
+  }
+  if (placements == NULL || placements->entries == NULL) {
+    out.status = kNpcHintRedirect_PlacementUnavailable;
+    return out;
+  }
+
+  // Customizers may deliberately produce duplicates. Pick the lowest location
+  // ID, not merely the first table row, so the policy is deterministic even if
+  // a synthetic/future producer supplies an unsorted placement table.
+  for (uint16 i = 0; i < placements->count; i++) {
+    if (placements->entries[i].item_id == out.redirect->item_id &&
+        (out.location_id == 0xFFFFu ||
+         placements->entries[i].location_id < out.location_id)) {
+      out.location_id = placements->entries[i].location_id;
+    }
+  }
+  out.status = out.location_id == 0xFFFFu ? kNpcHintRedirect_ItemAbsent
+                                          : kNpcHintRedirect_Active;
+  return out;
+}
+
+static RandoNpcHintResolution resolve_active_npc_hint(uint16 msg_id) {
+  if (!g_rando_slot_active) {
+    return resolve_npc_hint_for_context(msg_id, false, g_zenv.dialogue_flags,
+                                        NULL, NULL);
+  }
+  return resolve_npc_hint_for_context(msg_id, g_rando_slot_active != 0,
+                                      g_zenv.dialogue_flags,
+                                      Rando_GetActiveSettings(),
+                                      Placement_GetActive());
+}
 
 // Junk-item ids the generator filters out of the hintable pool.
 // Item ids are sourced from `src/rando/item_ids.h` (codegen from
@@ -209,6 +327,120 @@ static void hint_friendly_loc(const char *in, char *out, int outsz) {
   if (n > outsz - 1) n = outsz - 1;
   memcpy(out, in, (size_t)n);
   out[n] = '\0';
+}
+
+typedef struct HintLocationAlias {
+  const char *long_name;
+  const char *short_name;
+} HintLocationAlias;
+
+// Player-facing short forms for common long base-location names. Generated
+// pot/enemy/terrain rows are handled by the deterministic acronym fallback
+// below; these overrides keep prominent vanilla locations recognizable.
+static const HintLocationAlias kHintLocationAliases[] = {
+  {"Sahasrahla's Hut", "Sahasrahla"},
+  {"Master Sword Pedestal", "MS Pedestal"},
+  {"Checkerboard Cave", "Checker Cave"},
+  {"Dark World Village of Outcasts", "DW Outcasts"},
+  {"Dark World Lumberjack Hut", "DW Lumber Hut"},
+  {"Dark World Lake Hylia Shop", "DW Hylia Shop"},
+  {"Light World Lake Hylia Shop", "LW Hylia Shop"},
+  {"Dark World Death Mountain Shop", "DW DM Shop"},
+  {"Light World Death Mountain Shop", "LW DM Shop"},
+  {"Dark Lake Hylia Ledge Spike Cave", "DW Spike Cave"},
+  {"Dark Lake Hylia Ledge Fairy", "DW Ledge Fairy"},
+  {"Lake Hylia Fortune Teller", "Hylia Fortune"},
+  {"Fortune Teller (Light)", "LW Fortune"},
+  {"Archery Game (Take-Any)", "Archery Game"},
+  {"Good Bee Cave (Take-Any)", "Good Bee Cave"},
+  {"Hookshot Fairy (Take-Any)", "Hookshot Fairy"},
+};
+
+static bool hint_is_separator(char c) {
+  return c == ' ' || c == '_' || c == '(' || c == ')' || c == '/' || c == '-';
+}
+
+static char hint_ascii_upper(char c) {
+  return (c >= 'a' && c <= 'z') ? (char)(c - 'a' + 'A') : c;
+}
+
+// Compact an arbitrary registry location without silently chopping off its
+// distinguishing tail. The result keeps uppercase/CamelCase initials from all
+// prefix tokens plus the final token in full. Examples:
+//   HyruleCastleEscape Pot R002 P2650 -> HCEPR P2650
+//   LightWorld_NorthWest Bush S00 P0338 -> LWNWBS P0338
+static void hint_compact_loc(const char *in, char *out, int outsz) {
+  char base[128];
+  hint_friendly_loc(in, base, sizeof(base));
+  for (size_t i = 0; i < sizeof(kHintLocationAliases) / sizeof(kHintLocationAliases[0]); i++) {
+    if (strcmp(base, kHintLocationAliases[i].long_name) == 0) {
+      snprintf(out, (size_t)outsz, "%s", kHintLocationAliases[i].short_name);
+      return;
+    }
+  }
+
+  const char *token_start[24];
+  int token_len[24];
+  int tokens = 0;
+  for (int i = 0; base[i] != '\0' && tokens < 24;) {
+    while (base[i] != '\0' && hint_is_separator(base[i])) i++;
+    if (base[i] == '\0') break;
+    int start = i;
+    while (base[i] != '\0' && !hint_is_separator(base[i])) i++;
+    token_start[tokens] = &base[start];
+    token_len[tokens] = i - start;
+    tokens++;
+  }
+  if (tokens == 0) {
+    out[0] = '\0';
+    return;
+  }
+
+  int w = 0;
+  for (int i = 0; i < tokens - 1 && w < outsz - 2; i++) {
+    bool emitted = false;
+    for (int j = 0; j < token_len[i] && w < outsz - 2; j++) {
+      char c = token_start[i][j];
+      if (c >= 'A' && c <= 'Z') {
+        out[w++] = c;
+        emitted = true;
+      }
+    }
+    if (!emitted) out[w++] = hint_ascii_upper(token_start[i][0]);
+  }
+  if (tokens > 1 && w < outsz - 1) out[w++] = ' ';
+
+  const char *last = token_start[tokens - 1];
+  int last_len = token_len[tokens - 1];
+  if (last_len <= kHintMaxCharsPerLine) {
+    for (int j = 0; j < last_len && w < outsz - 1; j++) out[w++] = last[j];
+  } else {
+    bool emitted = false;
+    for (int j = 0; j < last_len && w < outsz - 1; j++) {
+      if (last[j] >= 'A' && last[j] <= 'Z') {
+        out[w++] = last[j];
+        emitted = true;
+      }
+    }
+    if (!emitted) {
+      for (int j = 0; j < last_len && j < kHintMaxCharsPerLine && w < outsz - 1; j++)
+        out[w++] = last[j];
+    }
+  }
+  out[w] = '\0';
+}
+
+static bool npc_hint_item_name(uint16 item_id, char *out, int outsz) {
+  if (out == NULL || outsz <= 0) return false;
+  // BookOfMudora's generic friendly form is one row too wide once a location is
+  // added. Keep the player-facing short form used by the motivating report;
+  // every other target flows through the shared registry-name helper.
+  if (item_id == ITEM_BookOfMudora) {
+    snprintf(out, (size_t)outsz, "Book");
+  } else {
+    hint_friendly_item(Rando_GetItemName(item_id), out, outsz);
+  }
+  return out[0] != '\0';
 }
 
 // Populate one item-location hint slot from placement index `pick`. Shared by
@@ -452,10 +684,7 @@ static uint8 ascii_to_font(char ch) {
 // does not survive the engine's page-advance. Friendly short hint text (see
 // hint_friendly_item/loc) is sized to fit, so overflow should not occur.
 // Returns bytes written (excluding the 0x7f terminator the caller appends).
-#define kHintMaxCharsPerLine 13  // VWF is variable-width; 13 is a safe cap that
-                                 // avoids overrun on the 256-px message box for
-                                 // worst-case wide glyphs.
-static int encode_hint_text(const char *text, uint8 *out) {
+static int encode_hint_text(const char *text, uint8 *out, bool *out_complete) {
   int w = 0;            // write cursor into out
   int col = 0;          // glyph count on the current row
   int row = 0;          // 0..2 (the 3 box rows)
@@ -469,7 +698,10 @@ static int encode_hint_text(const char *text, uint8 *out) {
 
     // Wrap if the word won't fit on the current row (and the row isn't empty).
     if (col != 0 && col + 1 + word_len > kHintMaxCharsPerLine) {
-      if (row >= 2) break;  // box full — stop (no paging)
+      if (row >= 2) {
+        if (out_complete != NULL) *out_complete = false;
+        return w;  // box full — stop (no paging)
+      }
       row++;
       col = 0;
       out[w++] = (row == 1) ? kHintFontCmdLine1 : kHintFontCmdLine2;
@@ -486,7 +718,10 @@ static int encode_hint_text(const char *text, uint8 *out) {
     // pathological >240-byte string, which could push w to 241.)
     for (const char *q = p; q < word_end && w < 239; q++) {
       if (col >= kHintMaxCharsPerLine) {
-        if (row >= 2) return w;  // box full mid-word — stop
+        if (row >= 2) {
+          if (out_complete != NULL) *out_complete = false;
+          return w;  // box full mid-word — stop
+        }
         row++;
         col = 0;
         out[w++] = (row == 1) ? kHintFontCmdLine1 : kHintFontCmdLine2;
@@ -498,7 +733,49 @@ static int encode_hint_text(const char *text, uint8 *out) {
     }
     p = word_end;
   }
+  if (out_complete != NULL) *out_complete = (*p == '\0');
   return w;
+}
+
+static bool encode_npc_hint(const RandoNpcHintResolution *resolution,
+                            uint8 *out_buffer, bool *out_used_id_fallback) {
+  char item[32];
+  const char *raw_loc = Rando_GetLocationName(resolution->location_id);
+  if (!npc_hint_item_name(resolution->redirect->item_id, item, sizeof(item)) ||
+      raw_loc == NULL) return false;
+
+  char loc[96], compact_loc[64], text[192];
+  uint8 encoded[240];
+  bool complete = false;
+  hint_friendly_loc(raw_loc, loc, sizeof(loc));
+
+  snprintf(text, sizeof(text), "%s is in %s", item, loc);
+  int w = encode_hint_text(text, encoded, &complete);
+  if (!complete) {
+    snprintf(text, sizeof(text), "%s at %s", item, loc);
+    w = encode_hint_text(text, encoded, &complete);
+  }
+  if (!complete) {
+    hint_compact_loc(raw_loc, compact_loc, sizeof(compact_loc));
+    snprintf(text, sizeof(text), "%s at %s", item, compact_loc);
+    w = encode_hint_text(text, encoded, &complete);
+  }
+
+  bool used_id_fallback = false;
+  if (!complete) {
+    // This is deliberately explicit rather than returning a partially encoded
+    // location. The all-location self-check rejects any current registry row
+    // that reaches it, so it is only a forward-compatible fail-safe.
+    snprintf(text, sizeof(text), "%s at Loc %u", item,
+             (unsigned)resolution->location_id);
+    w = encode_hint_text(text, encoded, &complete);
+    used_id_fallback = true;
+  }
+  if (!complete) return false;
+  memcpy(out_buffer, encoded, (size_t)w);
+  out_buffer[w] = kHintFontCmdEnd;
+  if (out_used_id_fallback != NULL) *out_used_id_fallback = used_id_fallback;
+  return true;
 }
 
 // Fortune Teller reading-message id range (kFortuneTeller_Readings in
@@ -536,18 +813,65 @@ static RandoHintNpc hint_npc_for_msg(uint16 msg_id) {
 
 bool Rando_RenderHintMessage(uint16 msg_id, uint8 *out_buffer) {
   if (out_buffer == NULL) return false;
+  // This pre-decoded renderer implements only the US/original command grammar
+  // and font alphabet. Preserve every non-US locale buffer for vanilla decode.
+  if (g_zenv.dialogue_flags != 0) return false;
   // Slot-active gate: g_rando_slot_active is a g_ram macro (features.h).
   if (!g_rando_slot_active) return false;
 
   RandoHintNpc npc = hint_npc_for_msg(msg_id);
-  if (npc == kRandoHintNpc_None) return false;
+  if (npc != kRandoHintNpc_None) {
+    const char *text = Rando_GetHintString(npc);
+    if (text == NULL) return false;  // hints disabled / no hint -> vanilla decode.
 
-  const char *text = Rando_GetHintString(npc);
-  if (text == NULL) return false;  // hints disabled / no hint -> vanilla decode.
+    int w = encode_hint_text(text, out_buffer, NULL);
+    out_buffer[w] = kHintFontCmdEnd;  // 0x7f terminator (matches vanilla path).
+    return true;
+  }
 
-  int w = encode_hint_text(text, out_buffer);
-  out_buffer[w] = kHintFontCmdEnd;  // 0x7f terminator (matches vanilla path).
-  return true;
+  if (!Rando_IsDynamicHintMessage(msg_id)) return false;
+  RandoNpcHintResolution redirect = resolve_active_npc_hint(msg_id);
+  return encode_npc_hint(&redirect, out_buffer, NULL);
+}
+
+bool Rando_IsDynamicHintMessage(uint16 msg_id) {
+  return resolve_active_npc_hint(msg_id).status == kNpcHintRedirect_Active;
+}
+
+static const char *npc_hint_redirect_status_name(RandoNpcHintRedirectStatus status) {
+  switch (status) {
+  case kNpcHintRedirect_NotRecognized: return "not recognized";
+  case kNpcHintRedirect_SlotInactive: return "slot inactive";
+  case kNpcHintRedirect_UnsupportedLocale: return "unsupported locale";
+  case kNpcHintRedirect_SettingsUnavailable: return "settings unavailable";
+  case kNpcHintRedirect_HintsOff: return "hints off";
+  case kNpcHintRedirect_DiscriminatorMismatch: return "discriminator mismatch";
+  case kNpcHintRedirect_PlacementUnavailable: return "placement unavailable";
+  case kNpcHintRedirect_ItemAbsent: return "item absent";
+  case kNpcHintRedirect_Active: return "active";
+  default: return "unknown";
+  }
+}
+
+static void dump_npc_hint_resolution(FILE *f,
+                                     const RandoNpcHintResolution *redirect) {
+  if (f == NULL || redirect == NULL || redirect->redirect == NULL) return;
+  const char *item = Rando_GetItemName(redirect->redirect->item_id);
+  const char *loc = redirect->status == kNpcHintRedirect_Active
+                        ? Rando_GetLocationName(redirect->location_id)
+                        : NULL;
+  if (loc != NULL) {
+    fprintf(f, "redirect source=%s  target_item=%s  status=%s  "
+               "resolved_location=%s  location_id=%u\n",
+            redirect->redirect->source_name, item != NULL ? item : "(unknown)",
+            npc_hint_redirect_status_name(redirect->status), loc,
+            (unsigned)redirect->location_id);
+  } else {
+    fprintf(f, "redirect source=%s  target_item=%s  status=%s  "
+               "resolved_location=(none)  location_id=(none)\n",
+            redirect->redirect->source_name, item != NULL ? item : "(unknown)",
+            npc_hint_redirect_status_name(redirect->status));
+  }
 }
 
 // Dev diagnostic (F12 / ZeldaDumpDebugState): write the live hint-table state to
@@ -561,9 +885,19 @@ void Rando_DumpHintDebug(uint16 cur_msg_id) {
   int active = 0;
   for (int i = 1; i < kRandoHintNpc__Count; i++)
     if (g_hint_table[i].active) active++;
-  fprintf(f, "slot_active=%d  active_hints=%d/%d  cur_dialogue_msg=0x%02X  is_hint_tile=%d\n",
+  RandoHintNpc generated_npc = hint_npc_for_msg(cur_msg_id);
+  bool generated_active = g_rando_slot_active && g_zenv.dialogue_flags == 0 &&
+                          generated_npc != kRandoHintNpc_None &&
+                          Rando_GetHintString(generated_npc) != NULL;
+  RandoNpcHintResolution redirect = resolve_active_npc_hint(cur_msg_id);
+  const char *kind = generated_npc != kRandoHintNpc_None ? "generated hint" :
+                     redirect.redirect != NULL ? "vanilla-NPC redirect" : "none";
+  fprintf(f, "slot_active=%d  active_hints=%d/%d  cur_dialogue_msg=0x%02X  "
+             "is_hint_tile=%d  hint_kind=%s  generated_active=%d\n",
           (int)g_rando_slot_active, active, (int)kRandoHintNpc__Count - 1,
-          (unsigned)cur_msg_id, (int)Rando_IsHintTileMessage(cur_msg_id));
+          (unsigned)cur_msg_id, (int)Rando_IsHintTileMessage(cur_msg_id), kind,
+          (int)generated_active);
+  dump_npc_hint_resolution(f, &redirect);
   for (int i = 1; i < kRandoHintNpc__Count; i++) {
     fprintf(f, "  npc %2d active=%d text=%s\n", i, (int)g_hint_table[i].active,
             g_hint_table[i].text[0] ? g_hint_table[i].text : "(empty)");
@@ -583,6 +917,35 @@ void Rando_DumpHintDebug(uint16 cur_msg_id) {
 // Also exercises the kHintsMode_Off short-circuit and the NULL-args
 // defensive rejects so the corpus runner doesn't have to.
 // -----------------------------------------------------------------------------
+static void hints_selfcheck_die(const char *what) {
+  fprintf(stderr, "Hints_SelfCheck: %s\n", what);
+  abort();
+}
+
+static char hint_font_to_ascii(uint8 c) {
+  if (c < 26) return (char)('A' + c);
+  if (c < 52) return (char)('a' + c - 26);
+  if (c < 62) return (char)('0' + c - 52);
+  if (c == 64) return '-';
+  if (c == 81) return '\'';
+  return ' ';
+}
+
+static bool encoded_hint_contains(const uint8 *encoded, const char *needle) {
+  char ascii[256];
+  int w = 0;
+  for (int i = 0; i < 240 && encoded[i] != kHintFontCmdEnd && w < (int)sizeof(ascii) - 1; i++) {
+    uint8 c = encoded[i];
+    if (c == kHintFontCmdLine1 || c == kHintFontCmdLine2) {
+      if (w != 0 && ascii[w - 1] != ' ') ascii[w++] = ' ';
+    } else {
+      ascii[w++] = hint_font_to_ascii(c);
+    }
+  }
+  ascii[w] = '\0';
+  return strstr(ascii, needle) != NULL;
+}
+
 void Hints_SelfCheck(void) {
   // Synthetic placement table: 4 entries — 2 progression items (Hookshot,
   // Boots) + 2 junk (Rupee5, Bombs1). Item IDs sourced from item_ids.h so
@@ -684,6 +1047,172 @@ void Hints_SelfCheck(void) {
       if (g_hint_table[i].active) {
         fprintf(stderr, "Hints_SelfCheck: medallion config slot was hinted.\n");
         abort();
+      }
+    }
+  }
+
+  // Vanilla-NPC fixed-item redirects use a pure context resolver so every
+  // fallback gate and placement policy can be covered without fabricating a
+  // live sidecar slot. Library's Bottle is deliberately adjacent to a Book at
+  // Sick Kid: the lookup must reverse-search for Book, never inspect Library.
+  {
+    static RandoPlacement redirect_entries[] = {
+      {LOC_Library, ITEM_BottleEmpty},
+      {LOC_Sick_Kid, ITEM_BookOfMudora},
+      {LOC_Ice_Palace_Prize, ITEM_MoonPearl},
+      {LOC_Magic_Bat, ITEM_Prize_GreenPendant},
+    };
+    RandoPlacementTable redirect_table = {
+      redirect_entries,
+      (uint16)(sizeof(redirect_entries) / sizeof(redirect_entries[0])),
+    };
+    RandoSettings on;
+    Settings_SetDefaults(&on);
+    on.hints = kHintsMode_On;
+
+    RandoNpcHintResolution book =
+        resolve_npc_hint_for_context(0x125, true, 0, &on, &redirect_table);
+    if (book.status != kNpcHintRedirect_Active || book.location_id != LOC_Sick_Kid)
+      hints_selfcheck_die("Aginah must resolve Book at Sick Kid, not Library contents");
+    uint8 encoded[241];
+    bool used_fallback = false;
+    if (!encode_npc_hint(&book, encoded, &used_fallback) || used_fallback ||
+        !encoded_hint_contains(encoded, "Book") ||
+        !encoded_hint_contains(encoded, "Sick Kid"))
+      hints_selfcheck_die("Aginah Book redirect text");
+
+    const uint16 pearl_msgs[] = {0x15D, 0x09E, 0x036};
+    for (size_t i = 0; i < sizeof(pearl_msgs) / sizeof(pearl_msgs[0]); i++) {
+      RandoNpcHintResolution pearl =
+          resolve_npc_hint_for_context(pearl_msgs[i], true, 0, &on, &redirect_table);
+      if (pearl.status != kNpcHintRedirect_Active ||
+          pearl.location_id != LOC_Ice_Palace_Prize)
+        hints_selfcheck_die("Moon Pearl redirect mapping");
+      if (!encode_npc_hint(&pearl, encoded, &used_fallback) || used_fallback ||
+          !encoded_hint_contains(encoded, "Moon Pearl") ||
+          !encoded_hint_contains(encoded, "Ice Palace"))
+        hints_selfcheck_die("Moon Pearl redirect text");
+    }
+
+    RandoNpcHintResolution pendant =
+        resolve_npc_hint_for_context(0x033, true, 0, &on, &redirect_table);
+    if (pendant.status != kNpcHintRedirect_Active || pendant.location_id != LOC_Magic_Bat)
+      hints_selfcheck_die("Sahasrahla Green Pendant redirect mapping");
+
+    RandoSettings off = on;
+    off.hints = kHintsMode_Off;
+    if (resolve_npc_hint_for_context(0x125, true, 0, &off, &redirect_table).status !=
+        kNpcHintRedirect_HintsOff)
+      hints_selfcheck_die("redirect hints-off fallback");
+    if (resolve_npc_hint_for_context(0x125, false, 0, &on, &redirect_table).status !=
+        kNpcHintRedirect_SlotInactive)
+      hints_selfcheck_die("redirect inactive-slot fallback");
+    if (resolve_npc_hint_for_context(0x125, true, 0, NULL, &redirect_table).status !=
+        kNpcHintRedirect_SettingsUnavailable)
+      hints_selfcheck_die("redirect missing-settings fallback");
+    if (resolve_npc_hint_for_context(0x125, true, 1, &on, &redirect_table).status !=
+        kNpcHintRedirect_UnsupportedLocale)
+      hints_selfcheck_die("redirect non-US fallback");
+    if (resolve_npc_hint_for_context(0x125, true, 0, &on, NULL).status !=
+        kNpcHintRedirect_PlacementUnavailable)
+      hints_selfcheck_die("redirect missing-placement fallback");
+
+    RandoPlacement no_target_entry = {LOC_Library, ITEM_BottleEmpty};
+    RandoPlacementTable no_target = {&no_target_entry, 1};
+    if (resolve_npc_hint_for_context(0x125, true, 0, &on, &no_target).status !=
+        kNpcHintRedirect_ItemAbsent)
+      hints_selfcheck_die("redirect missing-item fallback");
+
+    const uint16 adjacent[] = {
+      0x032, 0x034, 0x035, 0x037, 0x09D, 0x09F,
+      0x124, 0x126, 0x15C, 0x15E,
+    };
+    for (size_t i = 0; i < sizeof(adjacent) / sizeof(adjacent[0]); i++) {
+      if (resolve_npc_hint_for_context(adjacent[i], true, 0, &on, &redirect_table).status !=
+          kNpcHintRedirect_NotRecognized)
+        hints_selfcheck_die("adjacent dialogue ID was intercepted");
+    }
+
+    RandoNpcHintRedirect flagged = {0x777, ITEM_MoonPearl, "test", 0x80};
+    if (npc_hint_redirect_discriminator_matches(&flagged))
+      hints_selfcheck_die("unknown redirect discriminator flags must fail closed");
+
+    // Duplicate target policy is lowest location ID even when the rows arrive in
+    // descending order.
+    RandoPlacement duplicate_entries[] = {
+      {LOC_Library, ITEM_MoonPearl},
+      {LOC_Sick_Kid, ITEM_MoonPearl},
+    };
+    RandoPlacementTable duplicates = {duplicate_entries, 2};
+    if (resolve_npc_hint_for_context(0x15D, true, 0, &on, &duplicates).location_id !=
+        LOC_Sick_Kid)
+      hints_selfcheck_die("duplicate item policy must choose lowest location ID");
+
+    // F12 uses this exact formatter. Pin the identifying source, target, status,
+    // and resolved location rather than merely testing the resolver fields.
+    FILE *diag = tmpfile();
+    if (diag == NULL) hints_selfcheck_die("tmpfile for redirect diagnostic");
+    dump_npc_hint_resolution(diag, &book);
+    rewind(diag);
+    char diag_text[512];
+    size_t diag_len = fread(diag_text, 1, sizeof(diag_text) - 1, diag);
+    fclose(diag);
+    diag_text[diag_len] = '\0';
+    if (strstr(diag_text, "source=Aginah") == NULL ||
+        strstr(diag_text, "target_item=BookOfMudora") == NULL ||
+        strstr(diag_text, "status=active") == NULL ||
+        strstr(diag_text, "resolved_location=Sick Kid") == NULL)
+      hints_selfcheck_die("redirect diagnostic content");
+
+    // The 15 tile IDs and existing fork mappings are independent of the new
+    // redirect table. This catches an accidental overlap or range broadening.
+    static const uint16 expected_tiles[kHintTileCount] = {
+      0xB4, 0xB5, 0xB8, 0xB9, 0xBA, 0xBB, 0xBE, 0xBF,
+      0xC0, 0xC1, 0xC2, 0xC3, 0xC4, 0xC5, 0xC6,
+    };
+    if (memcmp(expected_tiles, kHintTileMsgIds, sizeof(expected_tiles)) != 0)
+      hints_selfcheck_die("telepathic tile ID mapping drift");
+    for (int i = 0; i < kHintTileCount; i++) {
+      if (hint_npc_for_msg(expected_tiles[i]) !=
+          (RandoHintNpc)(kRandoHintNpc_TeleEasternPalace + i))
+        hints_selfcheck_die("telepathic tile NPC mapping drift");
+    }
+    if (hint_npc_for_msg(0xFF) != kRandoHintNpc_ForkStoryteller ||
+        hint_npc_for_msg(0xEF) == kRandoHintNpc_None)
+      hints_selfcheck_die("fork NPC mapping drift");
+
+    // Deliberate locale improvement: generated hints now also preserve non-US
+    // buffers instead of injecting US glyph codes.
+    uint8 saved_slot_active = g_rando_slot_active;
+    uint8 saved_dialogue_flags = g_zenv.dialogue_flags;
+    g_rando_slot_active = 1;
+    if (!Rando_GenerateHints(&on, &table, NULL))
+      hints_selfcheck_die("generate hints for locale fallback");
+    for (uint8 locale_flags = 1; locale_flags <= 2; locale_flags++) {
+      g_zenv.dialogue_flags = locale_flags;
+      memset(encoded, 0x55, sizeof(encoded));
+      if (Rando_RenderHintMessage(0xB4, encoded) || encoded[0] != 0x55)
+        hints_selfcheck_die("non-US generated hint must preserve vanilla buffer");
+    }
+    g_rando_slot_active = saved_slot_active;
+    g_zenv.dialogue_flags = saved_dialogue_flags;
+
+    // Every current registry location must retain a readable name without the
+    // numeric forward-compatibility fallback, for every redirected item width.
+    for (size_t r = 0; r < sizeof(kNpcHintRedirects) / sizeof(kNpcHintRedirects[0]); r++) {
+      RandoNpcHintResolution format = {&kNpcHintRedirects[r],
+                                       kNpcHintRedirect_Active, 0xFFFFu};
+      for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+        format.location_id = kRandoLocations[i].id;
+        used_fallback = false;
+        if (!encode_npc_hint(&format, encoded, &used_fallback) || used_fallback) {
+          fprintf(stderr,
+                  "Hints_SelfCheck: dynamic hint format overflow item=%s loc=%u (%s)\n",
+                  Rando_GetItemName(format.redirect->item_id),
+                  (unsigned)format.location_id,
+                  Rando_GetLocationName(format.location_id));
+          abort();
+        }
       }
     }
   }

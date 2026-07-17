@@ -148,16 +148,15 @@ static bool Text_FastModeEnabled(void) {
   return g_config.text_speed == kTextSpeed_Fast && !ZeldaIsEmulatorAttached();
 }
 
-static bool Text_ShouldFastForwardStoryDialog(void) {
-  if (!CutsceneFastForwardEnabled())
-    return false;
-  if (Rando_IsHintTileMessage(dialogue_message_index))
+bool Text_ShouldFastForwardStoryMessage(uint16 msg_id) {
+  if (Rando_IsHintTileMessage(msg_id) ||
+      Rando_IsDynamicHintMessage(msg_id))
     return false;
 
   // Non-interactive Standard/escape/Aga story text. Randomizer hints stay manual.
   // Keep these ids grounded at their Sprite_Show* call sites: nearby dialogue
   // rows include ordinary NPC conversations that must remain player-controlled.
-  switch (dialogue_message_index) {
+  switch (msg_id) {
   case 0x0d:  // Uncle leaves Link's house.
   case 0x0e:  // Uncle's gift.
   case 0x17:  // Priest greets rescued Zelda.
@@ -182,6 +181,11 @@ static bool Text_ShouldFastForwardStoryDialog(void) {
   default:
     return false;
   }
+}
+
+static bool Text_ShouldFastForwardStoryDialog(void) {
+  return CutsceneFastForwardEnabled() &&
+         Text_ShouldFastForwardStoryMessage(dialogue_message_index);
 }
 
 static uint8 Text_EffectiveLineSpeed(uint8 speed) {
@@ -2517,11 +2521,11 @@ void Text_LoadCharacterBuffer() {  // 8ec4e2
     dialogue_msg_read_pos = 0;
     return;
   }
-  // Phase B hints: telepathic-tile interception. When the randomizer slot is
-  // active, hints are enabled, and the requested dialogue id is one of the 15
-  // ALTTPR telepathic-tile ids, render a generated hint directly into the
-  // character buffer (font-encoded, 0x7f-terminated) and skip the vanilla
-  // dialogue decode. Returns false (and is a no-op) in every other case.
+  // Randomizer hints: generated tile/fork surfaces and confirmed vanilla-NPC
+  // fixed-item location redirects share this pre-decode renderer. Successful
+  // hints are written directly into the character buffer (font-encoded,
+  // 0x7f-terminated); every failed applicability gate leaves vanilla decoding
+  // untouched.
   // See src/rando/rando_hints.c::Rando_RenderHintMessage.
   if (Rando_RenderHintMessage(dialogue_message_index, messaging_text_buffer)) {
     dialogue_msg_read_pos = 0;

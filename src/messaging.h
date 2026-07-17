@@ -98,6 +98,9 @@ void RenderText_PostDeathSaveOptions();
 void Text_Initialize();
 void Text_Initialize_initModuleStateLoop();
 void Text_InitVwfState();
+// True when this runtime message is an eligible story fast-forward surface.
+// Active generated/dynamic randomizer hints are always excluded.
+bool Text_ShouldFastForwardStoryMessage(uint16 msg_id);
 void Text_LoadCharacterBuffer();
 uint8 *Text_WritePlayerName(uint8 *p);
 uint8 Text_FilterPlayerNameCharacters(uint8 a);
