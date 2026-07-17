@@ -1,38 +1,54 @@
-# Design: vanilla NPC randomized-item hint redirects
+# Design: vanilla dialogue randomized-item hint redirects
 
-## D1. Stay in the pre-decode hint path
+## D1. Stay in the hint subsystem at two text-buffer stages
 
-`Text_LoadCharacterBuffer()` already gives `Rando_RenderHintMessage()` first
-refusal before vanilla dialogue decoding. The new layer extends that subsystem;
-it does not use `Rando_RewriteRewardDialogue()`, which is for post-decode reward
-and choice text.
+`Text_LoadCharacterBuffer()` gives `Rando_RenderHintMessage()` first refusal
+before vanilla decoding. Generated hints and every noninteractive redirect use
+that existing one-box path.
 
-Generated telepathic-tile and fork-NPC lookup runs unchanged. A fixed redirect is
-checked separately and does not read, advance, or regenerate `g_hint_table`.
+Stumpy's runtime `0xE5` is different: the message's `Choose` command controls
+whether `Sprite_FluteKid_Stumpy` advances to its independently randomized
+`LOC_Stumpy` grant. The pre-decode renderer therefore returns false for this row,
+vanilla decoding preserves the command grammar, and
+`Rando_RewriteInteractiveHintMessage()` replaces the finished US buffer with one
+item-location page plus one choice page. This function remains in
+`rando_hints.c`; `Rando_RewriteRewardDialogue()` does not own hint selection or
+applicability.
 
-## D2. Correct ID model and redirect table
+Neither path reads, advances, or regenerates `g_hint_table`.
+
+## D2. Correct ID model and generalized redirect table
 
 `assets/dialogue.txt` prefixes each row with a one-based user-facing dialogue
 number. Runtime uses the zero-based index, so user row `N` maps to runtime
-`N - 1`. The redirect table stores only verified runtime indices.
+`N - 1`. The table stores only collision-audited runtime indices.
 
-Each row contains:
+Each row records its message, referenced item or location, source, discriminator,
+and one of three kinds:
 
 ```c
-typedef struct RandoNpcHintRedirect {
+typedef enum RandoDialogueHintRedirectKind {
+  kDialogueHintRedirect_ItemLocation,
+  kDialogueHintRedirect_LocationItem,
+  kDialogueHintRedirect_ItemLocationChoice,
+} RandoDialogueHintRedirectKind;
+
+typedef struct RandoDialogueHintRedirect {
   uint16 message_id;
   uint16 item_id;
+  uint16 location_id;
   const char *source_name;
   uint8 flags;
-} RandoNpcHintRedirect;
+  uint8 kind;
+} RandoDialogueHintRedirect;
 ```
 
-The current implemented rows are globally safe after the collision audit, so
-their discriminator flags are zero. The flags field and an explicit
-`discriminator mismatch` resolution state keep future shared IDs from being
-treated as globally safe without a room/sprite/world predicate.
+The original five rows and Stumpy are dialogue-ID exclusive. Bumper Cave is
+additionally gated on outdoors plus overworld screen `0x4A`, even though its
+`0xA8` sign mapping is currently unique, because the sign's physical placement
+provides the semantic location context. Unknown flags fail closed.
 
-## D3. Pure applicability and deterministic resolution
+## D3. Pure applicability and two placement directions
 
 A read-only resolver applies gates in this order:
 
@@ -42,49 +58,64 @@ A read-only resolver applies gates in this order:
 4. recovered active settings exist;
 5. `settings.hints == kHintsMode_On`;
 6. row discriminator matches;
-7. active placement table exists and contains the referenced item.
+7. an active placement table contains the referenced item or location.
 
-The placement lookup scans all active rows and chooses the lowest numeric
-`location_id`. This pins duplicate-item customizer behavior independently of
-table iteration order. A missing item or malformed active table falls through to
-byte-identical vanilla decoding; it never dereferences a missing row or invents a
-location.
+Item-to-location rows scan every active placement and choose the lowest numeric
+location ID containing the target item. This pins duplicate-item customizer
+behavior independently of table order. Bumper Cave instead finds the exact
+`LOC_Bumper_Cave` row and uses its placed item; it never reverse-searches the
+duplicated `ITEM_PieceOfHeart`. The location must exist before its item is used,
+so `Placement_Lookup()`'s vanilla fallback cannot fabricate a false Heart Piece.
 
-`Rando_IsDynamicHintMessage(msg_id)` calls the same resolver without encoding or
-mutating any buffer. `Text_ShouldFastForwardStoryDialog()` exempts a message only
-when that predicate says it is actively serving a redirect, so hints-off and
-vanilla `0x36` retain their prior fast-forward behavior.
+Missing items, missing locations, malformed tables, or failed gates preserve
+vanilla decoding without dereferencing a missing row. `Rando_IsDynamicHintMessage`
+uses this same resolver without rendering or mutating buffers.
 
-## D4. Text and truncation safety
+## D4. Text, choice, and truncation safety
 
-The renderer reuses the existing friendly item/location and US-font encoder
-helpers. Dynamic text is accepted only if the complete string fits the three
-safe pre-decoded rows. Location formatting first tries the existing friendly
-area name, then explicit aliases for prominent long names, then a deterministic
-initials-plus-final-token form for generated registry names (for example,
-`LightWorld_DeathMountain_West RockL S03 P1970` becomes `LWDMWRLS P1970`). A
-numeric location ID exists only as a forward-compatibility fail-safe; the
-current-registry self-check rejects any row that reaches it.
+Noninteractive output uses the shared friendly item/location names and US-font
+encoder. Item-to-location text is accepted only if the complete location fits
+the three safe rows; aliases, deterministic compact names, and finally the
+explicit numeric compatibility fallback prevent silent loss of the location.
+The current-registry self-check rejects any row that needs that numeric fallback.
 
-The existing encoder's no-paging contract remains: at most three rows and one
-terminator. Self-check coverage walks every current location for every redirected
-item and asserts complete encoding without the numeric fallback.
+Bumper Cave first tries `Cape prize is <item>`, then `Prize is <item>`, then the
+item name alone. Wild dungeon-item modes can place dungeon-specific keys, maps,
+and compasses there, so this path uses qualified short names such as `Eastern
+Small Key` and `PoD Small Key` instead of the generic labels used by generated
+item-location hints. Self-check coverage walks every registry item, requires one
+complete form, and pins distinct dungeon identities so the useful placed item is
+never silently clipped or made ambiguous.
+
+Stumpy composes:
+
+```text
+Flute is in <location>
+
+Can you help?
+> Yes
+  No way
+```
+
+The first box uses the same all-location-safe encoder. A single `Waitkey` +
+`Scroll` transition and explicit `0x74` top-row command precede the fixed
+three-row choice page (Scroll otherwise leaves the VWF cursor on the bottom
+row), which ends in the US `0x68` Choose command. The ordinary early hint
+renderer refuses `0xE5`, so it cannot accidentally replace the prompt with a
+noninteractive one-box message.
 
 ## D5. Non-US behavior
 
-The pre-decoded hint encoder implements the US glyph/command set. This change
-deliberately aligns generated and dynamic hint interception with the existing
-reward-dialogue safety policy: when `g_zenv.dialogue_flags != 0`, the hint renderer
-returns false and preserves the selected locale's vanilla buffer. This is a
-safety improvement over emitting US font codes into an incompatible buffer and is
-covered by self-checks.
+Both redirect stages implement only the US glyph/command set. When
+`g_zenv.dialogue_flags != 0`, the shared resolver rejects the redirect and leaves
+the selected locale's vanilla buffer byte-for-byte unchanged. This matches the
+existing generated-hint and reward-dialogue support envelope.
 
 ## D6. Diagnostics
 
-F12 keeps the generated hint-table dump and adds one redirect line for the
-current runtime message. It reports whether the message is a generated hint, a
-vanilla-NPC redirect, or neither. For a recognized redirect it includes source,
-target registry item, resolved location, and one stable status string:
+F12 keeps the generated hint-table dump and identifies a recognized surface as
+`vanilla-dialogue redirect`. Its redirect line reports source, surface kind,
+target item, resolved location, and one stable status:
 
 - `active`
 - `slot inactive`
@@ -94,13 +125,14 @@ target registry item, resolved location, and one stable status string:
 - `discriminator mismatch`
 - `placement unavailable`
 - `item absent`
+- `location absent`
 
-The diagnostic uses the same read-only resolver as rendering and fast-forward
-classification, preventing report/runtime drift.
+For an unresolved location-to-item sign the target is explicitly reported as
+unresolved rather than repeating its vanilla item claim. Rendering,
+fast-forward classification, and diagnostics share the same resolver.
 
 ## D7. Restored-slot behavior
 
-No redirect result is cached. Every render and F12 dump reads
-`Rando_GetActiveSettings()` and `Placement_GetActive()`, so save activation and
-snapshot restoration resolve against the currently installed settings and
-placement table.
+No result is cached. Every render, interactive rewrite, predicate, and F12 dump
+reads `Rando_GetActiveSettings()` and `Placement_GetActive()`, so save activation
+and snapshot restoration resolve against the currently installed slot state.

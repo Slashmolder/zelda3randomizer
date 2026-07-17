@@ -1,4 +1,4 @@
-# Vanilla NPC randomized-item hint redirects — tasks
+# Vanilla dialogue randomized-item hint redirects — tasks
 
 ## 1. Spec and audit
 
@@ -19,6 +19,10 @@
   (including `0x36`) from story-dialogue fast-forward.
 - [x] 2.4 Extend F12 diagnostics with redirect classification, source, item,
   resolved location, and skip reason.
+- [x] 2.5 Add the Bumper Cave location-to-item sign redirect, gated on outdoors
+  screen `0x4A`, without reverse-searching duplicated Heart Pieces.
+- [x] 2.6 Add Stumpy's post-decode item-location rewrite with a preserved Yes/No
+  command and unchanged `LOC_Stumpy` reward flow.
 
 ## 3. Automated coverage and versioning
 
@@ -29,6 +33,11 @@
 - [x] 3.3 Cover complete three-row formatting across every active location and the
   deliberate non-US fallback.
 - [x] 3.4 Bump `kGeneratorVersion` and corpus manifest version 145 to 146.
+- [x] 3.5 Cover Bumper's direct-location lookup, discriminator, missing-location
+  fallback, every registry item name, dungeon-qualified wild items, and F12
+  diagnostic.
+- [x] 3.6 Cover Stumpy's randomized Flute location, early-render refusal,
+  post-decode page/choice commands, hints-off preservation, and adjacent IDs.
 
 ## 4. Validation
 
@@ -49,7 +58,12 @@
   and post-Agahnim warning without Pearl.
 - [ ] 5.2 Repeat an applicable case with hints off and confirm vanilla mode is
   unchanged.
-- [ ] 5.3 Press F12 on each surface and confirm source, target item, resolved
+- [ ] 5.3 Put a non-Heart-Piece item at Bumper Cave, read its sign on screen
+  `0x4A`, and confirm it names that placed item; repeat with hints off.
+- [ ] 5.4 Put the Flute outside Haunted Grove, talk to Stumpy, and exercise both
+  No and Yes. Confirm the hint names the Flute location, Yes grants the separate
+  `LOC_Stumpy` item exactly once, and the flow also works when Flute is already owned.
+- [ ] 5.5 Press F12 on each surface and confirm source, surface kind, target item, resolved
   placement, and active/skip status.
-- [ ] 5.4 Archive the OpenSpec change, squash/merge, and push only after owner
+- [ ] 5.6 Archive the OpenSpec change, squash/merge, and push only after owner
   playtest approval.

@@ -2574,6 +2574,12 @@ void Text_LoadCharacterBuffer() {  // 8ec4e2
     src += TEXTCMD_MULTIBYTE(cmd);
   }
   *dst = 0x7f;
+  // Interactive randomizer hints need the decoded US command buffer so their
+  // replacement can retain a live Choose command. Stumpy/Flute Boy (0xE5) is
+  // the only current surface; failed gates leave the vanilla prompt byte-for-
+  // byte intact. The resolver/encoder remains owned by the hint subsystem.
+  Rando_RewriteInteractiveHintMessage(dialogue_message_index,
+                                      messaging_text_buffer);
   // add-rando-inverted-dark-chapel-spawn: for an Inverted slot, rename the
   // post-Agahnim spawn-select options in the FINISHED buffer — "Sanctuary" ->
   // "Dark Chapel", "The Mountain Cave" -> "Dark Mountain" (ALTTPR labels). Done

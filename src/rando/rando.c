@@ -8645,6 +8645,8 @@ static void Rando_DynamicHintFastForwardSelfCheck(void) {
   RandoSettings saved_settings = g_rando_active_settings;
   uint8 saved_dialogue_flags = g_zenv.dialogue_flags;
   const RandoPlacementTable *saved_placement = Placement_GetActive();
+  uint8 saved_player_is_indoors = player_is_indoors;
+  uint16 saved_overworld_screen = overworld_screen_index;
 
   RandoPlacement pearl_entry = {LOC_Ice_Palace_Prize, ITEM_MoonPearl};
   RandoPlacementTable pearl_table = {&pearl_entry, 1};
@@ -8662,13 +8664,53 @@ static void Rando_DynamicHintFastForwardSelfCheck(void) {
   if (Text_ShouldFastForwardStoryMessage(0x36))
     tsc_die("DynamicHint: active post-Agahnim hint was fast-forwarded");
 
+  RandoPlacement surface_entries[] = {
+    {LOC_Desert_Ledge, ITEM_OcarinaInactive},
+    {LOC_Bumper_Cave, ITEM_Hookshot},
+  };
+  RandoPlacementTable surface_table = {surface_entries, 2};
+  Placement_Install(&surface_table);
+
+  player_is_indoors = 0;
+  overworld_screen_index = 0x4A;
+  memset(encoded, 0x55, sizeof(encoded));
+  if (!Rando_IsDynamicHintMessage(0xA8) ||
+      !Rando_RenderHintMessage(0xA8, encoded))
+    tsc_die("DynamicHint: Bumper Cave sign did not activate");
+  overworld_screen_index = 0x49;
+  memset(encoded, 0x55, sizeof(encoded));
+  if (Rando_IsDynamicHintMessage(0xA8) ||
+      Rando_RenderHintMessage(0xA8, encoded) || encoded[0] != 0x55)
+    tsc_die("DynamicHint: Bumper Cave sign escaped its screen discriminator");
+
+  memset(encoded, 0x55, sizeof(encoded));
+  if (!Rando_IsDynamicHintMessage(0xE5) ||
+      Rando_RenderHintMessage(0xE5, encoded) ||
+      !Rando_RewriteInteractiveHintMessage(0xE5, encoded))
+    tsc_die("DynamicHint: Stumpy interactive redirect did not activate safely");
+  bool has_choose = false, has_page_reset = false;
+  for (int i = 0; i < 240 && encoded[i] != 0x7F; i++) {
+    if (encoded[i] == 0x68) has_choose = true;
+    if (i < 237 && encoded[i] == 0x7E && encoded[i + 1] == 0x73 &&
+        encoded[i + 2] == 0x74)
+      has_page_reset = true;
+  }
+  if (!has_choose || !has_page_reset)
+    tsc_die("DynamicHint: Stumpy redirect lost choice/page commands");
+
   g_rando_active_settings.hints = kHintsMode_Off;
   if (Rando_IsDynamicHintMessage(0x36))
     tsc_die("DynamicHint: hints-off post-Agahnim redirect stayed active");
   if (!Text_ShouldFastForwardStoryMessage(0x36))
     tsc_die("DynamicHint: hints-off post-Agahnim story fast-forward changed");
+  memset(encoded, 0x55, sizeof(encoded));
+  if (Rando_RewriteInteractiveHintMessage(0xE5, encoded) ||
+      encoded[0] != 0x55)
+    tsc_die("DynamicHint: hints-off Stumpy prompt was modified");
 
   Placement_Install(saved_placement);
+  overworld_screen_index = saved_overworld_screen;
+  player_is_indoors = saved_player_is_indoors;
   g_zenv.dialogue_flags = saved_dialogue_flags;
   g_rando_active_settings = saved_settings;
   g_rando_active_settings_valid = saved_settings_valid;

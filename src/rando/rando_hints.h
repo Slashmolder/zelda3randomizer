@@ -192,7 +192,7 @@ void Rando_ClearHints(void);
 // NOT consult the active hint table or rando-active state.
 bool Rando_IsHintTileMessage(uint16 msg_id);
 
-// Generated-hint and fixed-item vanilla-NPC dialogue interception. Called at
+// Generated-hint and non-interactive vanilla-dialogue interception. Called at
 // the very top of Text_LoadCharacterBuffer. Returns true (and fills
 // `out_buffer`) only when the selected surface passes every live gate. On true,
 // writes the hint's font-encoded character codes into `out_buffer`
@@ -202,10 +202,17 @@ bool Rando_IsHintTileMessage(uint16 msg_id);
 // every other case so the vanilla dialogue decode proceeds unchanged.
 bool Rando_RenderHintMessage(uint16 msg_id, uint8 *out_buffer);
 
-// True only when `msg_id` is a confirmed vanilla-NPC fixed-item redirect AND
-// every live applicability gate currently passes (active slot, supported locale,
-// recovered hints-on settings, discriminator, and target item in the installed
-// placement). Pure/read-only: it never renders or mutates the hint table/buffer.
+// Post-decode companion for the Stumpy/Flute Boy Yes/No surface. It uses the
+// same resolver/gates as Rando_RenderHintMessage, but writes one explicit hint
+// page followed by a choice page so the 0x68 Choose command and quest flow are
+// preserved. Returns false without modifying the buffer for every other message
+// or failed gate.
+bool Rando_RewriteInteractiveHintMessage(uint16 msg_id, uint8 *out_buffer);
+
+// True only when `msg_id` is a confirmed vanilla-dialogue redirect AND every
+// live applicability gate currently passes (active slot, supported locale,
+// recovered hints-on settings, discriminator, and referenced placement).
+// Pure/read-only: it never renders or mutates the hint table/buffer.
 // Used by both Rando_RenderHintMessage and story-dialogue fast-forward policy.
 bool Rando_IsDynamicHintMessage(uint16 msg_id);
 

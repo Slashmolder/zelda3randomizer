@@ -47,16 +47,73 @@ The hint-text format SHALL be the stable form `"<item> is in <location>"` (Murah
 - **WHEN** a seed is generated with `settings.hints == on` and the player talks to the Storyteller or reads the Kakariko / Dark-World Fortune Teller
 - **THEN** the NPC's vanilla dialogue is replaced with that fork NPC's generated `"<item> is in <location>"` hint (the Lake-Hylia Fortune Teller surfaces the Kakariko hint by shared-room fallback)
 
-### Requirement: Vanilla NPC hint redirects (DEFERRED — not implemented)
+### Requirement: Vanilla dialogue hint redirects
 
-A subset of vanilla NPC dialogue spoils the vanilla *location* of a specific named item (e.g. Aginah, dialogue ID 294, points at the Book of Mudora's vanilla Library slot). Under randomization the referenced item is shuffled, so the vanilla line becomes misleading. The randomizer SHALL eventually, when `kFeatures1_RandomizerActive` is set and `settings.hints == on`, replace the location-referencing portion of each such NPC's dialogue with a hint that names the *randomized* `LOC_*` of the referenced item.
+A reviewed subset of vanilla dialogue that makes a concrete item/location claim
+SHALL be replaced with placement-correct text. The implemented runtime messages
+are Sahasrahla's Green Pendant direction (`0x33`), post-Agahnim Moon Pearl
+telepathy (`0x36`), the old mountain man's Moon Pearl advice (`0x9E`), the Bumper
+Cave sign (`0xA8`), Stumpy's Flute prompt (`0xE5`), Aginah's Book advice
+(`0x125`), and the Dark-World bully's Moon Pearl advice (`0x15D`).
 
-> **Deferred status (2026-05-29)**: NOT implemented. The shipped runtime intercept (`Rando_RenderHintMessage` / `Rando_IsHintTileMessage`) acts on the 15 telepathic-tile message ids ONLY (`0xB5,0xB8..0xC7`); it does NOT touch dialogue ID 294 or any other vanilla NPC line. No Aginah redirect exists in code (verified: `rando_hints.c` mentions Aginah only in an example comment). This requirement is retained as a forward-looking design target; the scenarios below describe the intended (unbuilt) behavior. The vanilla-NPC audit of `assets/dialogue.txt` (dwarven smiths, Library NPCs, desert hint NPC, etc.) remains open.
+A redirect SHALL apply only when a randomizer slot is active, recovered settings
+exist with `hints == on`, the dialogue buffer uses the supported US grammar/font,
+the row discriminator matches, and the referenced item or location exists in
+the currently installed placement table. Item-to-location duplicate copies SHALL
+choose the lowest numeric location ID. Failed gates SHALL preserve vanilla text.
 
-#### Scenario: Aginah redirects to randomized Book location (deferred)
-- **WHEN** the redirect is implemented, a seed is generated with `kFeatures1_RandomizerActive` set and `settings.hints == on`
-- **THEN** dialogue ID 294 (Aginah) is served from the hint path; the rendered text references the randomized `LOC_*` of `ITEM_BookOfMudora` instead of the vanilla Library
+Noninteractive rows SHALL use the one-box pre-decode renderer. Stumpy SHALL use a
+hint-owned post-decode rewrite with one item-location page followed by a Yes/No
+page ending in the original `0x68` Choose command. No redirect SHALL consume or
+alter generated hint slots, hint RNG, spoilers, telepathic-tile assignments, or
+fork-NPC assignments.
+
+#### Scenario: Aginah redirects to randomized Book location
+- **WHEN** runtime `0x125` is shown with hints on and `ITEM_BookOfMudora` is at Sick Kid
+- **THEN** the rendered text names Book and Sick Kid instead of the Library
+
+#### Scenario: Moon Pearl advice follows its active placement
+- **WHEN** runtime `0x36`, `0x9E`, or `0x15D` is shown under the redirect gates
+- **THEN** all three surfaces name the lowest-location active Moon Pearl copy
+
+#### Scenario: Green Pendant direction follows prize placement
+- **WHEN** runtime `0x33` is shown and the Green Pendant is outside Eastern Palace
+- **THEN** Sahasrahla names its active placement
+
+#### Scenario: Bumper Cave sign resolves location to item
+- **WHEN** `0xA8` is read outdoors on screen `0x4A`
+- **THEN** it names the item at `LOC_Bumper_Cave`, not an unrelated Piece of Heart
+
+#### Scenario: Bumper Cave context fails closed
+- **WHEN** `0xA8` is requested indoors or on another overworld screen
+- **THEN** the discriminator fails and vanilla decoding is preserved
+
+#### Scenario: Stumpy preserves the interactive quest flow
+- **WHEN** `0xE5` is shown and the Flute is outside Haunted Grove
+- **THEN** the first page names the Flute's placement and the second page retains
+  Yes/No plus the Choose command that advances to the separate `LOC_Stumpy` reward
+
+#### Scenario: Inapplicable redirects preserve vanilla dialogue
+- **WHEN** no slot is active, settings are unavailable, hints are off, placement
+  is unavailable, the target item or location is absent, the locale is unsupported,
+  or a discriminator mismatches
+- **THEN** the original dialogue buffer remains unchanged without crashing
+
+#### Scenario: Existing generated hints remain independent
+- **WHEN** a vanilla-dialogue redirect is rendered
+- **THEN** the 15 telepathic tiles and fork-NPC mappings, pool cursor, RNG,
+  spoiler output, and selected hint text remain unchanged
+
+#### Scenario: Dynamic story hints remain readable
+- **WHEN** cutscene fast-forward is enabled and a story message such as `0x36`
+  actively resolves as a redirect
+- **THEN** story fast-forward does not auto-advance it
+
+#### Scenario: F12 reports redirect resolution
+- **WHEN** F12 is pressed on a recognized surface
+- **THEN** the dump reports vanilla-dialogue redirect, source, surface kind,
+  target item, resolved location, or the exact skip reason
 
 #### Scenario: Vanilla mode preserves byte-identical dialogue
-- **WHEN** `kFeatures1_RandomizerActive` is clear
-- **THEN** dialogue dispatch for all NPCs is byte-identical to upstream zelda3; no hint interception occurs (this holds today — only tele-tile ids are ever intercepted, and only when a slot is active)
+- **WHEN** no randomizer slot is active
+- **THEN** all reviewed dialogue, including Stumpy's choice flow, remains vanilla
