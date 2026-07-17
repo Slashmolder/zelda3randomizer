@@ -154,19 +154,29 @@
 
 ## 9. Owner playtests and closeout
 
-- [ ] 9.1 Play a Random-mix seed and confirm at least one ring family and one
+Closeout decision (2026-07-16): the owner completed an extended live playtest,
+reported no further feature bugs after the fixes landed, and authorized archive
+and merge. The exact standalone permutations below are accepted as residual
+coverage backed by the full selftest/corpus/assetless validation matrix and two
+clean fresh-eyes reviews; checking them records that acceptance, not a claim that
+each permutation was separately replayed by hand.
+
+- [x] 9.1 Play a Random-mix seed and confirm at least one ring family and one
   regular-key family, correct names/art, and one ring check per selected family.
-- [ ] 9.2 Play an All seed with pot and enemy key checks; verify every randomized
+- [x] 9.2 Play an All seed with pot and enemy key checks; verify every randomized
   family key source collapsed and released checks contain ordinary junk.
-- [ ] 9.3 Collect rings inside and outside their home dungeon; verify saved/live
+- [x] 9.3 Collect rings inside and outside their home dungeon; verify saved/live
   counters, HUD, room transitions, save/reload, and no counter lowering.
-- [ ] 9.4 Collect Skeleton Key with zero and nonzero regular keys; open multiple
+- [x] 9.4 Collect Skeleton Key with zero and nonzero regular keys; open multiple
   vanilla and relocated small-key doors without decrement, then confirm a big-key
   door still requires its Big Key.
-- [ ] 9.5 Save/load and snapshot-replay after collecting and spending keys; confirm
+- [x] 9.5 Save/load and snapshot-replay after collecting and spending keys; confirm
   ring/Skeleton ownership, no duplicate grants, and tracker/autotracker state.
-- [ ] 9.6 Complete one door-shuffle or dungeon-chain dungeon with rings and Skeleton
+- [x] 9.6 Complete one door-shuffle or dungeon-chain dungeon with rings and Skeleton
   enabled, checking mirrored door-open persistence and exit behavior.
-- [ ] 9.7 Reconcile as-built spec/tasks/docs, archive the change, validate archived
+- [x] 9.7 Reconcile as-built spec/tasks/docs, archive the change, validate archived
   baselines, and complete the durable merge/push workflow requested for
   implementation.
+  <!-- Archived deltas and all 23 active/baseline items validate strictly. The
+  owner explicitly authorized the durable local-main fast-forward; no remote
+  push was requested. -->
