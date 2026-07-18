@@ -44,7 +44,7 @@ and Fortune Teller reading ranges remain outside this reviewed table.
   different location
 - **THEN** `0x125` names the Book's placement, not the item placed at the Library
 
-#### Scenario: Moon Pearl advice uses one fixed-item resolver
+#### Scenario: Moon Pearl advice follows its active placement
 - **WHEN** `ITEM_MoonPearl` is present in the active placement and runtime message
   `0x36`, `0x9E`, or `0x15D` is shown under the redirect gates
 - **THEN** each surface names the same resolved Moon Pearl location
@@ -54,7 +54,7 @@ and Fortune Teller reading ranges remain outside this reviewed table.
   `ITEM_Prize_GreenPendant` is placed outside Eastern Palace
 - **THEN** the redirect names the Green Pendant's active placement
 
-#### Scenario: Bumper Cave sign names its placed item
+#### Scenario: Bumper Cave sign resolves location to item
 - **WHEN** runtime `0xA8` is read outdoors on overworld screen `0x4A` and
   `LOC_Bumper_Cave` contains Hookshot
 - **THEN** the sign names Hookshot rather than Piece of Heart while retaining a
@@ -66,11 +66,11 @@ and Fortune Teller reading ranges remain outside this reviewed table.
 - **THEN** `0xA8` resolves the exact `LOC_Bumper_Cave` row and ignores the other
   Heart Piece placements
 
-#### Scenario: Bumper Cave discriminator fails closed
+#### Scenario: Bumper Cave context fails closed
 - **WHEN** `0xA8` is requested indoors or on an overworld screen other than `0x4A`
 - **THEN** the redirect reports a discriminator mismatch and preserves vanilla
 
-#### Scenario: Stumpy names the randomized Flute location and preserves choice
+#### Scenario: Stumpy preserves the interactive quest flow
 - **WHEN** runtime `0xE5` is shown and `ITEM_OcarinaInactive` is placed at Desert
   Ledge
 - **THEN** the completed buffer names Flute and Desert Ledge, presents Yes and No,
@@ -105,12 +105,12 @@ and Fortune Teller reading ranges remain outside this reviewed table.
 - **THEN** the vanilla-dialogue redirect table does not claim it; existing
   generated hint interception continues unchanged where applicable
 
-#### Scenario: Dynamic post-Agahnim hint remains readable
+#### Scenario: Dynamic story hints remain readable
 - **WHEN** cutscene fast-forward is enabled and `0x36` actively resolves as a
   dynamic Moon Pearl hint
 - **THEN** story-dialogue fast-forward does not auto-advance that message
 
-#### Scenario: F12 identifies every redirect shape
+#### Scenario: F12 reports redirect resolution
 - **WHEN** F12 is pressed while a recognized redirect message is current
 - **THEN** `dump_hints.txt` identifies it as a vanilla-dialogue redirect and
   reports source, surface kind, target item, resolved location when active, or
@@ -121,7 +121,12 @@ and Fortune Teller reading ranges remain outside this reviewed table.
 - **THEN** one complete three-row sign form contains the item name without silent
   truncation
 
-#### Scenario: Vanilla and hints-off dialogue are preserved
+#### Scenario: Vanilla mode preserves byte-identical dialogue
 - **WHEN** a vanilla slot is active or a randomizer slot has `hints == off`
 - **THEN** vanilla dialogue bytes and Stumpy's original choice flow are preserved,
   and no generated hint slot is consumed
+
+#### Scenario: Existing generated hints remain independent
+- **WHEN** a vanilla-dialogue redirect is rendered
+- **THEN** the 15 telepathic tiles and fork-NPC mappings, pool cursor, RNG,
+  spoiler output, and selected hint text remain unchanged

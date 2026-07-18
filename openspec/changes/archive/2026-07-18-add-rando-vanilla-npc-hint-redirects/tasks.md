@@ -53,6 +53,10 @@
 
 ## 5. Required owner playtest — do not merge first
 
+> Status at archive (2026-07-18): the feature merged to main at `b0af5843`
+> ahead of this sign-off; the owner directed the archive on 2026-07-18. Items
+> 5.1-5.5 remain outstanding and move to the standing rando playtest queue.
+
 - [ ] 5.1 Seed with Book and Moon Pearl outside vanilla locations: test Aginah
   before Book, Dark-World bully without Pearl, old mountain man without Pearl,
   and post-Agahnim warning without Pearl.
