@@ -66,12 +66,19 @@ edges:
   #   )
   #
   # Note: West-DM mirror-clip route is a cross-crystal-count BYPASS —
-  # the crystals.tower=7 gate sits only on the East-DM branch, matching
+  # the crystals.tower gate sits only on the East-DM branch, matching
   # PHP nesting at php:401-412. Do not factor the crystal gate above
   # the disjunction.
+  #
+  # add-rando-random-crystals (external-review round 2): the gate is
+  # OP_TOWER_CRYSTALS_MET — crystals held >= the seed's RESOLVED
+  # crystals.tower requirement — replacing the hardcoded
+  # HAS_ANY_COUNT(crystals, 7), which ignored non-7 and random tower
+  # counts entirely (generator spheres disagreed with the runtime door).
+  # Default tower=7 evaluates byte-identically.
   - from: DarkWorld_DeathMountain_East
     to: GanonsTower_Lobby
-    predicate: "HAS_ITEM(RescuedZelda) AND (((HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND ((HAS_ANY_COUNT([Prize_Crystal1, Prize_Crystal2, Prize_Crystal3, Prize_Crystal4, Prize_Crystal5, Prize_Crystal6, Prize_Crystal7], 7)) OR (CanBootsClip() AND OP_REGION_REACHABLE(DarkWorld_DeathMountain_West)))) OR (CanOneFrameClipOW() AND (HAS_ITEM(MoonPearl) OR CanPearlBypass())))"
+    predicate: "HAS_ITEM(RescuedZelda) AND (((HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND ((OP_TOWER_CRYSTALS_MET()) OR (CanBootsClip() AND OP_REGION_REACHABLE(DarkWorld_DeathMountain_West)))) OR (CanOneFrameClipOW() AND (HAS_ITEM(MoonPearl) OR CanPearlBypass())))"
     source: "app/Region/Standard/GanonsTower.php:396-415 (can_enter closure)"
 
   # Convenience edge from the standard DarkWorld_NorthEast region (the
@@ -82,7 +89,7 @@ edges:
   # disjunct factors West-DM reachability via OP_REGION_REACHABLE too.
   - from: DarkWorld_NorthEast
     to: GanonsTower_Lobby
-    predicate: "HAS_ITEM(RescuedZelda) AND (((HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND ((HAS_ANY_COUNT([Prize_Crystal1, Prize_Crystal2, Prize_Crystal3, Prize_Crystal4, Prize_Crystal5, Prize_Crystal6, Prize_Crystal7], 7) AND OP_REGION_REACHABLE(DarkWorld_DeathMountain_East)) OR (CanBootsClip() AND OP_REGION_REACHABLE(DarkWorld_DeathMountain_West)))) OR (CanOneFrameClipOW() AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND OP_REGION_REACHABLE(DarkWorld_DeathMountain_East)))"
+    predicate: "HAS_ITEM(RescuedZelda) AND (((HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND ((OP_TOWER_CRYSTALS_MET() AND OP_REGION_REACHABLE(DarkWorld_DeathMountain_East)) OR (CanBootsClip() AND OP_REGION_REACHABLE(DarkWorld_DeathMountain_West)))) OR (CanOneFrameClipOW() AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND OP_REGION_REACHABLE(DarkWorld_DeathMountain_East)))"
     source: "app/Region/Standard/GanonsTower.php:396-415 (can_enter via East DM reach)"
 
 locations:

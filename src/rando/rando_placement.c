@@ -1811,6 +1811,14 @@ bool Place_AssumedFill(const RandoSettings *settings,
   // Reset stats — caller reads via Placement_GetLastStats() after we return.
   memset(&g_last_placement_stats, 0, sizeof(g_last_placement_stats));
   if (settings == NULL || out == NULL || out->entries == NULL) return false;
+  // add-rando-random-crystals — install the resolved tower requirement for
+  // OP_TOWER_CRYSTALS_MET before any reachability flood. BASE seed, never an
+  // attempt seed (same rule as every other per-seed resolve).
+  {
+    uint8 eff_tower;
+    Crystals_Resolve(settings, seed_u64, NULL, &eff_tower);
+    Logic_SetResolvedTowerCrystals((uint8)(eff_tower + 1));
+  }
   // Customizer mode — clear any stale hard-error from a prior call. The
   // attempt function sets it on an illegal pin (see §3c).
   Customizer__ClearError();
@@ -3182,8 +3190,13 @@ bool Goal_IsCompletable(const RandoSettings *settings, uint64 seed_u64,
   // retry loop, the outer acceptance gate, the spoiler, and the runtime all
   // resolve from the base seed, same rule as the key-ring / boss-assignment
   // resolves (see the Place_AssumedFill base-seed comments).
-  uint8 eff_crystals_ganon;
-  Crystals_Resolve(settings, seed_u64, &eff_crystals_ganon, NULL);
+  uint8 eff_crystals_ganon, eff_crystals_tower;
+  Crystals_Resolve(settings, seed_u64, &eff_crystals_ganon, &eff_crystals_tower);
+  // Install the resolved tower requirement so the sphere walks below (and in
+  // Accessibility_SeedAcceptable, which calls this first with the same
+  // (settings, seed)) evaluate OP_TOWER_CRYSTALS_MET against the seed's
+  // actual gate, not the conservative fallback.
+  Logic_SetResolvedTowerCrystals((uint8)(eff_crystals_tower + 1));
 
   // Pure reachability predicate — does NOT consider accessibility=none.
   // For "should the generator refuse to ship this seed?", call

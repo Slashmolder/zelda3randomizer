@@ -26247,6 +26247,25 @@ void NiceThiefUnderRock(int k) {  // 9ef14f
 // restock at the vanilla price; Rando_ShopDispatch's checked branch keeps a
 // re-buy from re-granting the placed item). Rando_ShopSlotCheckInfo
 // re-verifies "unchecked" every frame, so a bought slot can't sell twice.
+// The purchase transaction charges rupees, despawns the slot, and marks the
+// location checked BEFORE Link_ReceiveItem's receipt ancilla exists — and the
+// inventory grant for non-direct-grant classes lives INSIDE that ancilla
+// (AncillaAdd_ItemReceipt silently returns when Ancilla_AllocInit finds no
+// free slot and nothing evictable — its rotation only reuses sparkle /
+// wall-arrow slots, never bombs or the boomerang). With all five slots held
+// by non-evictable ancillae the paid, consumed check would grant NOTHING and
+// leave Link holding up air: a permanent seed-killer (external-review P1).
+// Preflight the same free-or-evictable condition the allocator uses and
+// refuse the sale for those frames; it self-resolves when the bombs pop.
+static bool ShopItem_ReceiptSlotAvailable(void) {
+  for (int i = 0; i < 5; i++) {
+    uint8 t = ancilla_type[i];
+    if (t == 0 || t == 0x3c || t == 0x13 || t == 0x0a)
+      return true;
+  }
+  return false;
+}
+
 static bool ShopItem_ShopsanityCheckSlot(int k, uint8 vanilla_code) {
   uint16 price;
   if (!Rando_ShopSlotCheckInfo(BYTE(dungeon_room_index), which_entrance,
@@ -26257,7 +26276,9 @@ static bool ShopItem_ShopsanityCheckSlot(int k, uint8 vanilla_code) {
     return true;
   Sprite_BehaveAsBarrier(k);
   if (ShopItem_CheckForAPress(k)) {
-    if (ShopItem_HandleCost((int)price)) {
+    if (!ShopItem_ReceiptSlotAvailable()) {
+      ShopItem_PlayBeep(k);  // transient: retry once the projectiles clear
+    } else if (ShopItem_HandleCost((int)price)) {
       sprite_state[k] = 0;
       ShopItem_HandleReceipt(k, vanilla_code);
     } else {

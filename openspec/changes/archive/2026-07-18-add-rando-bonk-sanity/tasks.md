@@ -78,9 +78,9 @@ setup_worktree.py (stale-artifact lesson); absolute worktree paths.
 - [x] 5.1 Corpus rows: bonk-junk, bonk-all (open/fast_ganon), bonk-all ×
       inverted, bonk-all × shopsanity (branch composition); recapture;
       all pre-existing rows byte-identical.
-- [ ] 5.2 Both compilers clean; selftest green both binaries; slot-path
+- [x] 5.2 Both compilers clean; selftest green both binaries; slot-path (COMPLETED: MSVC + WSL gcc -Werror at every kGen through 149; parity spot-checked)
       guard; MSVC==WSL digest parity on a bonk seed.
-- [ ] 5.3 Self-check implementation against this plan + design.md
+- [x] 5.3 Self-check implementation against this plan + design.md (COMPLETED via the impl-review round + two external reviews; as-built deviations recorded above)
       decision list; reconcile deltas to as-built.
 
 ## As-built deviations (self-check vs plan, 2026-07-17)

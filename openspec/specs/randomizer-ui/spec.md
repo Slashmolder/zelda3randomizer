@@ -840,4 +840,3 @@ The native settings window SHALL expose a "Shopsanity" checkbox in the Shuffles 
 #### Scenario: Spoiler view includes prices
 - **WHEN** the user reveals or views the spoiler of a `shopsanity=true` seed
 - **THEN** every shop slot row shows the placed item and its rupee price, grouped per shop in the text form
-

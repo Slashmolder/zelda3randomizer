@@ -2934,6 +2934,23 @@ static bool Rando_OverlayPaletteApplyCustomItem(uint16 *dst, uint8 row, uint8 gf
   return false;
 }
 
+// External-review round 2 — reset the overlay-palette transient state on a
+// snapshot load: pending requests are from the pre-load scene, and the saved
+// pre-overlay rows would otherwise be "restored" INTO the freshly-loaded
+// scene's CGRAM on the next apply (a 16-color row from the old scene).
+void Rando_OverlayPaletteInvalidate(void) {
+  s_overlay_palette_request_count = 0;
+  s_overlay_palette_previous_count = 0;
+}
+
+// One-call reset of every process-local video ownership/arbitration cache a
+// snapshot load must not inherit (called from StateRecorder_Load next to the
+// recv-slot owner invalidation; see the umbrella comment there).
+void Rando_InvalidateTransientVideoState(void) {
+  Rando_OverlayPaletteInvalidate();
+  Rando_ShopIconSlotsInvalidate();
+}
+
 void Rando_OverlayPaletteApplyCgram(uint16 *cgram, bool cgram_rebuilt) {
   if (cgram == NULL)
     return;
@@ -4466,6 +4483,7 @@ bool Rando_SnapshotColdReplayRestore(const RandoSettings *s,
   Crystals_Resolve(&g_rando_active_settings, seed,
                    &g_rando_effective_crystals_ganon,
                    &g_rando_effective_crystals_tower);
+  Logic_SetResolvedTowerCrystals((uint8)(g_rando_effective_crystals_tower + 1));
   g_rando_active_share_string[0] = '\0';
   (void)Share_EncodeRaw(share_string_raw, g_rando_active_share_string,
                         (int)sizeof(g_rando_active_share_string));
@@ -4636,6 +4654,7 @@ static void rando_clear_snapshot_settings_replay_restore(void) {
   Rando_ClearDeferredPotConfirmation();
   g_rando_active_settings_valid = false;
   g_rando_active_seed_u64 = 0;
+  Logic_SetResolvedTowerCrystals(0);
   g_rando_settings_from_cold_replay = false;
   g_rando_active_world_state = kWorldState_Open;
   g_rando_active_door_logic = false;
@@ -5050,6 +5069,8 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
       Crystals_Resolve(&g_rando_active_settings, ss.seed_u64,
                        &g_rando_effective_crystals_ganon,
                        &g_rando_effective_crystals_tower);
+      Logic_SetResolvedTowerCrystals(
+          (uint8)(g_rando_effective_crystals_tower + 1));
       g_rando_active_settings_valid = true;
       g_rando_settings_from_cold_replay = false;  // a GENUINE slot activation.
     }
@@ -5380,6 +5401,7 @@ void Rando_DeactivateSlot(void) {
   // assignment table. (The VM treats NULL as "no prize/medallion reachable".)
   g_rando_active_settings_valid = false;
   g_rando_active_seed_u64 = 0;
+  Logic_SetResolvedTowerCrystals(0);
   g_rando_settings_from_cold_replay = false;  // reset the source flag.
   rando_restore_seed_qol_features0();
   Rando_ApplyActiveForcedFeatures0();
@@ -5770,6 +5792,11 @@ const RandoReachability *Rando_GetLiveReachability(void) {
   }
   RandoCounts counts;
   Rando_BuildRuntimeCounts(&counts);
+  // Re-install per call: a startup selfcheck generation may have left its own
+  // resolved tower count in the logic store; the live flood must always see
+  // the ACTIVE slot's cached effective value.
+  Logic_SetResolvedTowerCrystals(
+      (uint8)(g_rando_effective_crystals_tower + 1));
   const RandoReachability *r = Logic_ComputeReachability(&counts, &g_rando_active_settings);
   if (r == NULL) {
     g_live_reach_valid = false;

@@ -2632,6 +2632,9 @@ def _emit_operands(op_name: str, args, out: bytearray, items, regions):
     elif op_name == "NPC_SOULS_ACTIVE":
         if args:
             raise ParseError("OP_NPC_SOULS_ACTIVE takes no operands")
+    elif op_name == "TOWER_CRYSTALS_MET":
+        if args:
+            raise ParseError("OP_TOWER_CRYSTALS_MET takes no operands")
     elif op_name == "INSTANT_FLUTE":
         if args:
             raise ParseError("OP_INSTANT_FLUTE takes no operands")

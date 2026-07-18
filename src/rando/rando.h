@@ -26,7 +26,11 @@
 // only spawn post-escort; Standard could hardlock the Lamp onto one).
 // 149: CanBonk widens to Boots OR (sword AND Quake) — logic now matches the
 // runtime's two accepted wake origins (owner decision; canGetGoodBee shape).
-#define kGeneratorVersion 149u  // CanBonk = Boots OR (sword AND Quake)
+// 150: external-review round 2 — GT edges consume the RESOLVED crystals.tower
+// via OP_TOWER_CRYSTALS_MET (they hardcoded 7), and CanBonk/CanGetGoodBee
+// gain the swordless medallion-cast arm (the runtime allows sword-free casts
+// under swordless; the 149 widening wrongly excluded them).
+#define kGeneratorVersion 150u  // resolved tower crystals in logic + swordless quake arms
 // The share-string binary layout packs version into 1 byte
 // (rando_share.h: ShareString.version is uint8). Compile-time enforce
 // kGeneratorVersion ≤ 255 so silent truncation can't ship.
@@ -451,6 +455,14 @@ bool Rando_TryDrawHeldItemSprite(int k, uint16 location_id, uint16 vanilla_item_
 bool Rando_ShopIconSlotStage(uint8 pos, uint8 gfx);
 extern uint8 g_rando_shop_icon_tiles[2][0x80];
 extern uint8 g_rando_shop_icon_upload_frames;
+
+// External-review round 2 — snapshot-load invalidation of process-local video
+// state: overlay-palette request/previous stacks (rando.c), shop icon quad
+// owners + upload countdown and the glint countdown (sprite.c). Called from
+// StateRecorder_Load; individual resets below for targeted use.
+void Rando_InvalidateTransientVideoState(void);
+void Rando_OverlayPaletteInvalidate(void);
+void Rando_ShopIconSlotsInvalidate(void);
 
 // Shared OW check-glint private sparkle tile (sprite.c): 4 hand-authored
 // animation frames NMI_DoUpdates uploads into char 0x0E (the travel-bird

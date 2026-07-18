@@ -117,7 +117,16 @@ typedef enum {
   // Wraps NPC-check soul requirements: (NOT NPC_SOULS_ACTIVE) OR HAS_ITEM(X)
   // collapses to true when the toggle is off (placement byte-identical).
   OP_NPC_SOULS_ACTIVE = 29,
-  OP__COUNT = 30,
+  // TOWER_CRYSTALS_MET (no operands) — crystals held >= the seed's RESOLVED
+  // crystals.tower requirement (add-rando-random-crystals; external-review
+  // round-2: the GT edges hardcoded 7, so random/non-7 tower counts never
+  // reached generator reachability). Resolution comes from the context's
+  // tower_crystals_required_plus1 when a builder set it; otherwise falls
+  // back to min(settings->crystals_tower, 7) — the sentinel (8) resolves
+  // conservatively to 7 without a seed. Default tower=7 is byte-identical
+  // to the old hardcoded term.
+  OP_TOWER_CRYSTALS_MET = 30,
+  OP__COUNT = 31,
 } RandoOp;
 
 // ---------------------------------------------------------------------------
@@ -192,6 +201,13 @@ typedef struct PredicateContext {
   uint64 cleared_dungeons_bitmask;             // bit d = dungeon d cleared
   const uint8 *reachable_regions_bitset;       // bit array of region ids; NULL = none reachable
   uint16 reachable_regions_count;              // total region count (for bound check)
+
+  // add-rando-random-crystals (OP_TOWER_CRYSTALS_MET): the seed's RESOLVED
+  // crystals.tower requirement + 1, or 0 = "builder did not resolve" — the
+  // op then falls back to min(settings->crystals_tower, 7), which keeps
+  // zero-initialized contexts fail-CLOSED (the sentinel reads as 7, never
+  // as an open door).
+  uint8 tower_crystals_required_plus1;
 } PredicateContext;
 
 // ---------------------------------------------------------------------------
@@ -230,6 +246,13 @@ void Logic_SelfCheck(void);
 // Rando_BumpReachabilityCounter.
 // ---------------------------------------------------------------------------
 typedef struct RandoReachability RandoReachability;
+
+// add-rando-random-crystals — install the per-seed RESOLVED crystals.tower
+// requirement (+1; 0 clears) consumed by OP_TOWER_CRYSTALS_MET during the
+// reachability flood. Same installed-store pattern as the prize/medallion
+// assignments: generation entries and the runtime activation/tracker paths
+// install; deactivation clears.
+void Logic_SetResolvedTowerCrystals(uint8 count_plus1);
 
 const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
                                                    const RandoSettings *settings);

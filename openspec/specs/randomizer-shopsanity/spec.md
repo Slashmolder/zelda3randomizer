@@ -1,7 +1,10 @@
 # randomizer-shopsanity Specification
 
 ## Purpose
-TBD - created by archiving change add-rando-shopsanity. Update Purpose after archive.
+Shopsanity: the 27 regular shop slots become ordinary open fill locations in
+every world state behind a default-off axis, with real logic regions,
+deterministic seed-derived prices, buy-once-then-vanilla-restock commerce,
+and concurrent placed-item icon rendering.
 ## Requirements
 ### Requirement: Shopsanity axis opens the 27 regular shop slots as fill locations
 
@@ -21,7 +24,7 @@ The generator SHALL treat the 27 regular shop slot locations (ids 237–263, `ty
 
 ### Requirement: Shop locations carry real logic regions
 
-The logic graph SHALL bind each of the 9 regular shops to the overworld region containing its entrance door, with the region's standard world-state and Moon-Pearl gating, so shop slots participate truthfully in reachability, sphere computation, accessibility enforcement, hints, and the entrance-shuffle region-override seam. `Shop` SHALL be removed from the codegen's `REGION_OPTIONAL_TYPES` so a region-less shop row becomes a codegen error; `ShopUpgrade` and `TakeAny` remain region-optional. The binding is static (not conditional on the axis): under plain Retro with `shopsanity=false`, shop slots stop evaluating as always-reachable (`region_id=0xFFFF`) — an intended correctness fix whose output movement MUST be confined to Retro corpus rows. Inverted SHALL be covered by `logic_parts/inverted/**` overrides for the three shops whose upstream requirement callbacks are re-authored in Inverted (LW Death Mountain: `CanBombThings AND MoonPearl` — the fork's inverted graph reaches that region as a bunny; Village of Outcasts: `Hammer` only; DW Potion Shop: the Inverted traversal disjunction), with the generated logic diffed before/after to guard the last-wins merge.
+The logic graph SHALL bind each of the 9 regular shops to the overworld region containing its entrance door, with the region's standard world-state and Moon-Pearl gating, so shop slots participate truthfully in reachability, sphere computation, accessibility enforcement, hints, and the entrance-shuffle region-override seam. `Shop` SHALL be removed from the codegen's `REGION_OPTIONAL_TYPES` so a region-less shop row becomes a codegen error; `ShopUpgrade` and `TakeAny` remain region-optional. The binding is static (not conditional on the axis): under plain Retro with `shopsanity=false`, shop slots stop evaluating as always-reachable (`region_id=0xFFFF`) — an intended correctness fix whose output movement MUST be confined to Retro corpus rows. Inverted SHALL be covered by `logic_parts/inverted/**` overrides for the three shops whose upstream requirement callbacks are re-authored in Inverted (LW Death Mountain: `CanBombThings AND MoonPearl AND Hookshot` — the fork's inverted graph reaches that region as a bunny via the Mitt portal, which proves nothing about crossing the gap to the shop door; Village of Outcasts: `Hammer` only; DW Potion Shop: the Inverted traversal disjunction), with the generated logic diffed before/after to guard the last-wins merge.
 
 #### Scenario: Dark-world shop gated like its region
 - **WHEN** reachability is evaluated for a Dark World shop slot in an Open seed where the player lacks Moon Pearl and dark-world access
@@ -98,4 +101,3 @@ The axis SHALL compose without derived-rule normalization against every other ax
 #### Scenario: Customizer pin respects the axis
 - **WHEN** a customizer manifest pins location 240 (`Dark World Forest Shop - 0`) with `shopsanity=true`
 - **THEN** the pin is honored like any open location; the same manifest with `shopsanity=false` is refused with a clear error
-

@@ -2245,15 +2245,26 @@ static bool rando_shop_icon_decode(uint8 gfx, uint8 *dst) {
   return DecodeAnimatedSpriteTile_ToBuffer(gfx, dst);
 }
 
-// Custom-art palette guard (external-review P2): all non-Rupoor custom art
-// shares ONE overlay palette row, and Rupoor needs a DIFFERENT one — two
-// visible custom icons of different classes cannot both be truthful. The
-// first custom class to stage each frame owns the row; a conflicting later
-// column falls back to the sparkle cue.
+// Custom-art palette guard (external-review P2, extended in round 2): all
+// non-Rupoor custom art shares ONE overlay palette row, and Rupoor needs a
+// DIFFERENT one — two visible custom icons of different classes cannot both
+// be truthful. The first custom class to stage each frame owns the row; a
+// conflicting later column falls back to the sparkle cue. A LIVE RECEIPT
+// animation outranks everything: Ancilla_Main draws (and repaints its own
+// custom palette) BEFORE the shop sprites run, so a shop custom icon
+// re-applying the row afterward would miscolor the purchase receipt the
+// player is literally watching — while any receipt ancilla is alive, custom
+// shop icons defer to the sparkle cue (vanilla-bundle icons keep their own
+// stable rows and are unaffected).
 static bool rando_shop_icon_palette_ok(uint8 gfx) {
   static uint8 s_frame, s_class;
   if (!(gfx & 0x80))
     return true;  // vanilla bundles use their own stable rows
+  for (int i = 0; i < 5; i++) {
+    if (ancilla_type[i] == kAncillaType_ItemReceipt ||
+        ancilla_type[i] == kAncillaType_RandoIconReceipt)
+      return false;  // the receipt owns the custom row this frame
+  }
   uint8 cls = (gfx == kRandoCustomGfx_Rupoor) ? 1 : 2;
   if (s_frame != frame_counter) {
     s_frame = frame_counter;
@@ -2266,8 +2277,18 @@ static bool rando_shop_icon_palette_ok(uint8 gfx) {
   return true;
 }
 
+// External-review round 2 — snapshot-load invalidation for the quad owner
+// cache (the buffers may be restored/stale relative to VRAM after a load).
+static uint16 s_shop_icon_owner[2] = {0xFFFF, 0xFFFF};
+
+void Rando_ShopIconSlotsInvalidate(void) {
+  s_shop_icon_owner[0] = s_shop_icon_owner[1] = 0xFFFF;
+  g_rando_shop_icon_upload_frames = 0;
+  g_rando_glint_upload_frames = 0;
+}
+
 bool Rando_ShopIconSlotStage(uint8 pos, uint8 gfx) {
-  static uint16 s_owner[2] = {0xFFFF, 0xFFFF};
+  uint16 *s_owner = s_shop_icon_owner;
   if (pos >= 3)
     return false;
   if (!rando_shop_icon_palette_ok(gfx))

@@ -43,6 +43,8 @@ CODEGEN_OUTPUTS = [
     REPO / "src" / "rando" / "enemy_drop_lookup.h",
     REPO / "src" / "rando" / "enemy_check_lookup.h",
     POT_NONPOT_DROP_COUNTS,
+    REPO / "src" / "rando" / "terrain_lookup.h",
+    REPO / "src" / "rando" / "bonk_lookup.h",
     REPO / "src" / "rando" / "icon_atlas.h",
     REPO / "src" / "rando" / "direct_grant_icons.h",
 ]
@@ -136,6 +138,12 @@ def refresh_pot_codegen(binary: Path, tmp: Path) -> int:
         ("gen_enemy_check_tables --check",
          [sys.executable, "assets/scripts/gen_enemy_check_tables.py",
           "--key-depth", str(key_depth), "--check"]),
+        # add-rando-bonk-sanity (external-review round 2): regenerate the
+        # gitignored bonk registry BEFORE logic codegen — its digest ignores
+        # predicate content, so a stale pre-fix bonk.gen.yaml would compile
+        # superseded logic with the same count/digest and no warning.
+        ("gen_bonk_tables",
+         [sys.executable, "assets/scripts/gen_bonk_tables.py"]),
         ("rando_logic_gen --strict",
          [sys.executable, "assets/rando_logic_gen.py", "--strict"]),
         ("audit_enemy_check_candidates",

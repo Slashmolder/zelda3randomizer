@@ -624,6 +624,14 @@ void StateRecorder_Load(StateRecorder *sr, FILE *f, bool replay_mode) {
   // there.
   g_recv_item_slot_owner = 0xFFFFu;
 
+  // External-review round 2: the SAME class again for the newer process-local
+  // video state — the overlay-palette request/previous-row stacks, the shop
+  // icon quad owners/upload countdown, and the glint upload countdown. Left
+  // alone, a cross-scene snapshot load could restore a saved palette row from
+  // the OLD scene into the new one, or replay stale shop/glint tile uploads
+  // over chars the restored scene owns. One call resets all of it.
+  Rando_InvalidateTransientVideoState();
+
   // §8.8a ordering-invariant tripwire. assert() compiles out under NDEBUG
   // (Release builds), so we also do a runtime check under rando-active that
   // logs to stderr and skips the TLV reinstall's effect — preferable to

@@ -104,15 +104,17 @@ macros:
 
   # ===========================================================================
   # CanBonk — add-rando-bonk-sanity: wake a dormant bonk sprite. Boots dash,
-  # OR a field-cast Quake (needs any sword; swordless correctly excludes —
-  # field medallion casts are impossible without a sword). Runtime accepts
-  # both wake origins at the same choke point (owner decision 2026-07-18);
-  # the disjunction is the same shape upstream uses for canGetGoodBee
-  # (Boots OR (sword AND Quake)) — Quake has always been the other way to
-  # wake a hive.
+  # OR a field-cast Quake. The cast needs any sword EXCEPT under swordless,
+  # where the fork's runtime explicitly permits sword-free medallion casts
+  # (player.c LinkItem_Quake, Rando_IsSwordlessActive — external-review round
+  # 2 caught the omission; the first widening wrongly claimed swordless can't
+  # field-cast). Runtime accepts both wake origins at the same choke point
+  # (owner decision 2026-07-18); the sworded arm mirrors upstream
+  # canGetGoodBee, whose macro here carries the same swordless arm for the
+  # same reason.
   - name: CanBonk
     parameters: []
-    body: "HAS_ITEM(Boots) OR (HasSword(1) AND HAS_ITEM(Quake))"
+    body: "HAS_ITEM(Boots) OR (HAS_ITEM(Quake) AND (OP_MODEWEAPONS_EQ(swordless) OR HasSword(1)))"
     source: "fork: boots.asm dash bonk + Entity_ApplyRumbleToSprites quake wake; shape mirrors upstream ItemCollection::canGetGoodBee"
 
   # TerrainWorldGateLW / TerrainWorldGateDW — world-side bunny gates for
@@ -463,7 +465,7 @@ macros:
   # ===========================================================================
   - name: CanGetGoodBee
     parameters: []
-    body: "HAS_ITEM(BugCatchingNet) AND HasABottle() AND (HAS_ITEM(Boots) OR (HasSword(1) AND HAS_ITEM(Quake)))"
+    body: "HAS_ITEM(BugCatchingNet) AND HasABottle() AND (HAS_ITEM(Boots) OR (HAS_ITEM(Quake) AND (OP_MODEWEAPONS_EQ(swordless) OR HasSword(1))))"
     source: "app/Support/ItemCollection.php:612-618"
     notes: |
       ALTTPR's `PegasusBoots` maps to our `Boots`. The boots-or-sword+quake

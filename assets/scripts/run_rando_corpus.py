@@ -535,7 +535,7 @@ def main(argv: list[str]) -> int:
                              "soul_rooms.gen.yaml data is absent; local checks "
                              "run the full corpus.")
     parser.add_argument("--skip-terrain-shuffle", action="store_true",
-                        help="skip entries that request grass_shuffle/rock_shuffle. "
+                        help="skip entries that request grass_shuffle/rock_shuffle/bonk_shuffle. "
                              "Public CI uses this when the local ROM-derived "
                              "terrain registry (terrain.gen.yaml) is absent; local "
                              "checks run the full corpus.")

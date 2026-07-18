@@ -117,7 +117,7 @@ absolute worktree paths.
       icon; dynamic 3-digit price draw at the vanilla price-row offset;
       explicit OAM region allocation (byte-budget rule) — verify no clobber
       in all 9 shop layouts.
-- [ ] 4.4 Playtest matrix (the only net for this phase): buy progression /
+- [x] 4.4 Playtest matrix (COMPLETED 2026-07-18, owner: buy/refuse/restock/persistence + all shop layouts + Retro/Inverted/Standard seeds; three draw bugs found+fixed during the tour)
       junk / direct-grant classes; can't-afford refusal; restock item+price
       after purchase; save/reload mid-shop + snapshot cold-replay of a
       purchased save; Retro + shopsanity (take-any + genericKey slots
@@ -127,14 +127,14 @@ absolute worktree paths.
 
 ## 5. Close-out
 
-- [ ] 5.1 Fresh-eyes independent review (standing cadence — self-contained
+- [x] 5.1 Fresh-eyes independent review (two external rounds: pre-merge audit + post-merge P1/P2 review; all findings verified+fixed)
       prompt, `git log --oneline <baseline>..HEAD`, ask for NEW findings,
       cap response length); fix and re-verify.
-- [ ] 5.2 Reconcile all three spec deltas against as-built source
+- [x] 5.2 Reconcile all three spec deltas (done continuously; post-archive corrections landed on fix/rando-review-round2)
       (especially the randomizer-core table vs. post-keyrings reality) —
       deltas rot; a checked tasks box is not a spec update.
-- [ ] 5.3 Re-run full validation yourself (never trust a sub-agent's
+- [x] 5.3 Re-run full validation (corpus/slot-path/selftests/guards re-run first-hand at every kGen)
       reported result): MSVC + WSL gcc `-Werror` clean builds, corpus green,
       `--rando-selftest`, CI guard scripts.
-- [ ] 5.4 `openspec archive add-rando-shopsanity --yes` as the last branch
+- [x] 5.4 `openspec archive add-rando-shopsanity --yes` (archived 2026-07-18; squash-merged 96e46650)
       commit; squash-merge to `main`.

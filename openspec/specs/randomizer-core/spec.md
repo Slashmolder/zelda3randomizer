@@ -39,8 +39,8 @@ The `RandoSettings` struct SHALL be canonically serialized field-by-field in the
 |---:|---|---|
 | 0 | `mode_state` | uint8 (`open=0`, `standard=1`, `inverted=2`, `retro=3`). ALTTPR key: `mode.state`. |
 | 1 | `goal` | uint8 (`ganon=0`, `fast_ganon=1`, `dungeons=2`, `pedestal=3`, `triforce-hunt=4`, `ganonhunt=5`, `completionist=6`). |
-| 2 | `crystals_ganon` | uint8, 0..7. |
-| 3 | `crystals_tower` | uint8, 0..7. |
+| 2 | `crystals_ganon` | uint8, 0..8 (`8` = the requested `random` sentinel, add-rando-random-crystals; the effective 0..7 count resolves deterministically from the seed). |
+| 3 | `crystals_tower` | uint8, 0..8 (`8` = the requested `random` sentinel; the effective count also drives the GT logic edges via OP_TOWER_CRYSTALS_MET). |
 | 4 | `tricks` | uint8 bitmask; bit positions are stable across `generator_version` bumps. |
 | 5 | `item_pool` | uint8 (`easy=0`, `normal=1`, `hard=2`, `expert=3`). |
 | 6 | `logic` | uint8 (`NoGlitches=0`, `OverworldGlitches=1`, `MajorGlitches=2`, `HybridMajorGlitches=3`, `NoLogic=4`). |
@@ -66,7 +66,7 @@ The `RandoSettings` struct SHALL be canonically serialized field-by-field in the
 | 26 | misc axes | bit-packed: bit0 `enemy_shuffle`, bit1 `customizer_active`, `traps` is a **non-contiguous 3-bit field** — low 2 bits at bits2-3 + high bit at **bit5** (`off=0`, `low=1`, `medium=2`, `high=3`, `insanity=4`); bit4 `instant_flute` (inverse: `1` = manual activation; default on ⇒ `0`); bits6-7 carry the low 2 bits of `pot_shuffle`. |
 | 27 | door + trap-category axes | bit-packed: bits0-1 `door_shuffle` (`vanilla=0`, `basic=1`); bits2-6 `trap_categories` enable mask (bit2 HAZARD, bit3 IMPAIR, bit4 DRAIN, bit5 SCARE, bit6 DISPLACE; the mask is meaningful only when `traps > 0`, and a `0` mask while `traps > 0` means all categories enabled, so the default serializes all-zero); bit7 carries the high bit of `pot_shuffle`. |
 | 28 | drop-check + souls axes | bit-packed: bits0-1 `enemy_drop_checks` (`off=0`, `keys=1`, `dungeon=2`, `all=3`, after derived rules); bits2-3 `souls_shuffle` (`off=0`, `bosses=1`, `bosses_enemies=2`); bit4 `npc_souls` (boolean); bits5-7 refused-undefined. (Souls fields reconciled to as-built `kSoulsShuffleAxis_*` / `kNpcSoulsAxis_*`, `rando_settings.h` — the prior table text predated the souls merge.) |
-| 29 | terrain + shop axes | bit-packed: bits0-1 `grass_shuffle` (`off=0`, `junk=1`, `all=2`); bits2-3 `rock_shuffle` (`off=0`, `junk=1`, `all=2`); **bit4 `shopsanity` (boolean, added by add-rando-shopsanity — takes the first reserved bit; no length change, so a default-settings blob is bit-identical to the pre-shopsanity build)**; bits5-7 reserved. (Byte appended by add-rando-grass-rock-shuffle, `kSettingsCanonicalLen` 29→30; all fields default `0` so the byte serializes `0x00` at defaults.) |
+| 29 | terrain + shop axes | bit-packed: bits0-1 `grass_shuffle` (`off=0`, `junk=1`, `all=2`); bits2-3 `rock_shuffle` (`off=0`, `junk=1`, `all=2`); **bit4 `shopsanity` (boolean, added by add-rando-shopsanity — takes the first reserved bit; no length change, so a default-settings blob is bit-identical to the pre-shopsanity build)**; bits5-6 `bonk_shuffle` (`off=0`, `junk=1`, `all=2`, added by add-rando-bonk-sanity); bit7 refused-undefined. (Byte appended by add-rando-grass-rock-shuffle, `kSettingsCanonicalLen` 29→30; all fields default `0` so the byte serializes `0x00` at defaults.) |
 | 30 | key-item axes | bit-packed: bits0-1 `key_rings` (`off=0`, `random=1`, `all=2` — the REQUESTED policy, deliberately not normalized away under Vanilla or Retro/Generic Keys); bit2 `skeleton_key` (boolean); bits3-7 refused-undefined (`kKeyRingsAxis_DefinedMask`). Appended by add-rando-key-rings-skeleton-key (`kSettingsCanonicalLen` 30→31); defaults `0` so the byte serializes `0x00` at defaults. |
 
 Changing this order — or the field widths, or the enum value assignments — is a `generator_version` bump trigger (per `tasks.md §13.6`).
@@ -1249,4 +1249,3 @@ version and canonical-settings hash.
 - **WHEN** a v2 share string is encoded with 31-byte canonical settings
 - **THEN** its raw payload is 47 bytes and its base32 token is exactly 76
   characters
-

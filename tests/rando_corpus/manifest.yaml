@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 149  # bump_rando_corpus.py --apply
+generator_version: 150  # bump_rando_corpus.py --apply
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -138,7 +138,7 @@ entries:
     seed: "0x0000000000000018"
     label: "a1-open-fg-crystals-2-0"
     expected_digest: "4839a1a0ec17d375aaa9f86123856004620c64956b9d3c046de4765fcc91ec2f"
-    expected_sphere_digest: "77db399d6ec0a59f2ac897aa32ac606296a45936b2795c21fa1bd813cc292f71"
+    expected_sphere_digest: "1db5dd92a5be8b312b2f7f7b4bb49e47971521efeee6bde0c0a2c7cec821dcd3"
   # item_pool difficulty variations.
   - settings: { mode.state: open, goal: fast_ganon, item_pool: easy }
     seed: "0x0000000000000020"
@@ -253,12 +253,12 @@ entries:
     seed: "0x0000000000000042"
     label: "a1-open-fg-crystals-0-0"
     expected_digest: "c25fa41adc0d890e309d9268973125cd1df3a49a5ff372d978dbb750799d3519"
-    expected_sphere_digest: "2ef59b0fe09517876c244261e255246e1aa68a2c1c65f337977152961bf33704"
+    expected_sphere_digest: "08fce3203c2e566949011ba197fa3d0a4358f0e67e67aaf1e93278efc60b0989"
   - settings: { mode.state: open, goal: fast_ganon, crystals.ganon: 7, crystals.tower: 0 }
     seed: "0x0000000000000043"
     label: "a1-open-fg-crystals-7-0"
-    expected_digest: "19b963ccb37be52e5c6fa59d7f67105bf2321f536a75d863b4cee61a1d6f6ab0"
-    expected_sphere_digest: "abe5d48483c9b639227d27737583eb21a89423b48ff96a484ca706266912622b"
+    expected_digest: "39a182a5b3258d52f0cea9295c27f54cef1b0578ae7907b74f54c0585f5f1355"
+    expected_sphere_digest: "67fbb28565bd115402565288aaf4f2c49b4896132bbc152546b06c9e7292df6c"
   - settings: { mode.state: open, goal: fast_ganon, crystals.ganon: 3, crystals.tower: 3 }
     seed: "0x0000000000000044"
     label: "a1-open-fg-crystals-3-3"
@@ -1408,12 +1408,28 @@ entries:
     expected_digest: "ff16a891c9cb50dcba4222e907c9a7dd12c53f8b6b2b7a367f6630b35377270b"
     expected_sphere_digest: "5164c249f88961607696ea7e98be2a61757e08a13a5ab42d4b8e8286081e8b66"
   # --- add-rando-random-crystals — the requested `random` sentinel resolves
-  # deterministically from the seed. Random-TOWER rows are placement-byte-
-  # identical to fixed-tower twins BY DESIGN (crystals_tower has no
-  # generation reader; the GT logic edges hardcode 7) — they pin the
-  # settings-hash/share/spoiler-resolved surfaces. The retry row's seed
+  # deterministically from the seed. Since kGen 150 the GT edges consume the
+  # RESOLVED crystals.tower via OP_TOWER_CRYSTALS_MET (external-review
+  # round-2 fix; they previously hardcoded 7), so random/non-7 tower counts
+  # shape generated spheres — a random-tower row now matches its resolved
+  # fixed-count twin and DIFFERS from a fixed-7 twin. The retry row's seed
   # needs retry_attempts > 1 (measured: 2), pinning the D3 rule that the
   # crystal resolve uses the BASE seed, never the attempt-perturbed one.
+  # The tower-affects-logic pin: seed ...0002 resolves tower=3; its spheres
+  # must equal a crystals.tower=3 run and differ from crystals.tower=7.
+  - settings: { mode.state: open, goal: fast_ganon, crystals.tower: "3" }
+    seed: "0x4352595300000002"
+    label: "crystals-tower-3-gt-gate"
+    expected_digest: "5335aca41218031d93488602b5512c11908315351b31fc18019a1c8f54792c7d"
+    expected_sphere_digest: "c7bef2923b2330e1e9c8a1c6aa2e2cb0f723c3ba8af042650173f77faa55e182"
+  # Swordless + Quake wake arm (external-review round 2): CanBonk accepts a
+  # sword-free Quake cast under swordless, so bonk checks enter logic at the
+  # Quake sphere; this row pins that reachability.
+  - settings: { mode.state: open, goal: fast_ganon, mode.weapons: swordless, bonk_shuffle: all }
+    seed: "0x424F4E4B00000006"
+    label: "bonk-all-swordless-quake"
+    expected_digest: "7a319b4deffb7a0b869b8aa8a42b03ec85423cfd0ce868f1eaf4355ebee285c7"
+    expected_sphere_digest: "a99dd63d0dc40bcd360c69ef51503191372fcb5abb886568578877c905cea375"
   - settings: { mode.state: open, goal: fast_ganon, crystals.ganon: random }
     seed: "0x4352595300000001"
     label: "crystals-random-ganon"
@@ -1423,12 +1439,12 @@ entries:
     seed: "0x4352595300000002"
     label: "crystals-random-tower"
     expected_digest: "5335aca41218031d93488602b5512c11908315351b31fc18019a1c8f54792c7d"
-    expected_sphere_digest: "f3307bbf6038f176c57b5f068fd928602746ec384e623e8acc2ad92e7e5d4b62"
+    expected_sphere_digest: "c7bef2923b2330e1e9c8a1c6aa2e2cb0f723c3ba8af042650173f77faa55e182"
   - settings: { mode.state: open, goal: fast_ganon, crystals.ganon: random, crystals.tower: random }
     seed: "0x4352595300000003"
     label: "crystals-random-both"
     expected_digest: "70e2ae7d9d6349ff96715810395321f1882a4411213639f2228d75c980d476d9"
-    expected_sphere_digest: "0a48398b16d51c93653158e5d134f2cba1c7acedf819be7235aa672c7c0d7a0f"
+    expected_sphere_digest: "d048940c10270b704aaabe4e43858a6b164284692e129ded70296c64c9753d4f"
   - settings: { mode.state: open, goal: ganon, crystals.ganon: random, crystals.tower: random }
     seed: "0x4352595300000004"
     label: "crystals-random-both-ganon-goal"

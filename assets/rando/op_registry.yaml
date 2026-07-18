@@ -382,6 +382,23 @@ ops:
       byte-identical).
     contexts: [can_reach, can_place]
 
+  - id: 30
+    name: OP_TOWER_CRYSTALS_MET
+    phase: C
+    operands: []
+    semantics: |
+      Crystal count (Prize_Crystal1..7 held) >= the seed's RESOLVED
+      crystals.tower requirement (add-rando-random-crystals, external-review
+      round-2 fix: the GT entry edges previously hardcoded 7, so random /
+      non-7 tower counts never affected generator reachability). Context
+      builders resolve the requirement (Crystals_Resolve for the random
+      sentinel when the seed is available; the cached effective count on the
+      tracker path); an unresolved context falls back to
+      min(settings.crystals_tower, 7) - conservative 7 for the sentinel.
+      Default settings (tower=7) evaluate byte-identically to the old
+      hardcoded HAS_ANY_COUNT(...,7) term.
+    contexts: [can_reach, can_place]
+
 
 
 # ---------------------------------------------------------------------------

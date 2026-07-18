@@ -273,6 +273,7 @@ static void skip_pred(Cursor *c) {
     // no operands
     case OP_INSTANT_FLUTE:
     case OP_NPC_SOULS_ACTIVE:
+    case OP_TOWER_CRYSTALS_MET:
     case OP_POT_KEYS_ON:
     case OP_POT_KEYS_WILD:
     case OP_POT_KEYS_DUNGEON:
@@ -451,6 +452,7 @@ static bool predicate_reachability_monotone(Cursor *c, bool negated) {
     }
     case OP_INSTANT_FLUTE:
     case OP_NPC_SOULS_ACTIVE:
+    case OP_TOWER_CRYSTALS_MET:
     case OP_POT_KEYS_ON:
     case OP_POT_KEYS_WILD:
     case OP_POT_KEYS_DUNGEON:
@@ -565,6 +567,40 @@ static bool eval_instant_flute(Cursor *c, const PredicateContext *ctx) {
 static bool eval_npc_souls_active(Cursor *c, const PredicateContext *ctx) {
   (void)c;
   return ctx->settings != NULL && ctx->settings->npc_souls != 0;
+}
+
+// add-rando-random-crystals — the installed per-seed resolved tower count
+// (+1; 0 = none installed). Same installed-store pattern as the prize /
+// medallion / boss assignments: generation entries (Place_AssumedFill,
+// Goal_IsCompletable, the spoiler) and the runtime (activation, cold
+// replay, the tracker bridge) install it; deactivation clears it.
+static uint8 g_logic_resolved_tower_plus1;
+
+void Logic_SetResolvedTowerCrystals(uint8 count_plus1) {
+  g_logic_resolved_tower_plus1 = count_plus1;
+}
+
+// add-rando-random-crystals — crystals held >= the RESOLVED crystals.tower
+// requirement (no operands). Builders that know the seed set
+// tower_crystals_required_plus1; otherwise fall back to the settings value
+// clamped to 7 so the random sentinel (8) reads as the conservative 7 —
+// zero-initialized/standalone contexts therefore stay fail-CLOSED and the
+// default (tower=7) is byte-identical to the old hardcoded term.
+static bool eval_tower_crystals_met(Cursor *c, const PredicateContext *ctx) {
+  (void)c;
+  uint8 need;
+  if (ctx->tower_crystals_required_plus1 != 0) {
+    need = (uint8)(ctx->tower_crystals_required_plus1 - 1);
+  } else {
+    need = ctx->settings != NULL ? ctx->settings->crystals_tower : 7;
+    if (need > 7) need = 7;
+  }
+  if (need == 0) return true;
+  uint16 have = 0;
+  for (uint16 id = ITEM_Prize_Crystal1; id <= ITEM_Prize_Crystal7; id++) {
+    if (ctx->counts != NULL && ctx->counts->by_item_id[id] != 0) have++;
+  }
+  return have >= need;
 }
 
 static bool eval_pot_keys_on(Cursor *c, const PredicateContext *ctx) {
@@ -689,6 +725,7 @@ static bool eval(Cursor *c, const PredicateContext *ctx) {
     case OP_ENEMY_DROP_KEYS_WILD:   return eval_enemy_drop_keys_wild(c, ctx);
     case OP_SOULS_TIER_AT_LEAST:    return eval_souls_tier(c, ctx);
     case OP_NPC_SOULS_ACTIVE:       return eval_npc_souls_active(c, ctx);
+    case OP_TOWER_CRYSTALS_MET:     return eval_tower_crystals_met(c, ctx);
     default:
       assert(0 && "unknown predicate op");
       c->error = true;
@@ -1680,6 +1717,7 @@ static const RandoReachability *logic_compute_reachability_internal(
   ctx.cleared_dungeons_bitmask = g_reachability.cleared_dungeons_bitmask;
   ctx.reachable_regions_bitset = g_reachability.region_bitset;
   ctx.reachable_regions_count = kReachabilityMaxRegions;
+  ctx.tower_crystals_required_plus1 = g_logic_resolved_tower_plus1;
   // Per-seed shuffle assignments (NULL when the placer hasn't installed
   // them yet — OP_HAS_PRIZE and OP_MEDALLION_OPENS evaluate to false in
   // that case, which makes prize-gated / medallion-gated areas unreachable).

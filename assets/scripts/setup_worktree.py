@@ -272,6 +272,10 @@ def main() -> int:
     # ever runs, leaving souls_shuffle=all fail-closed with no attempt to
     # produce it. (npc_souls.yaml is COMMITTED, so it needs no mirroring.)
     have_souls = (cwd / SOUL_ROOMS_REL).is_file()
+    # add-rando-bonk-sanity: same early-exit-gating rationale as souls — the
+    # bonk mirror-else-regenerate block must stay reachable (external-review
+    # round 2: it was unreachable in otherwise-prepared worktrees).
+    have_bonk = (cwd / BONK_REGISTRY_REL).is_file()
     have_sdl2 = has_vendored_sdl2(cwd)
     need_sdl2 = SDL2_REQUIRED_ON_THIS_PLATFORM
     required_ready = (have_rom and assets_ok and have_chest and have_hash and
@@ -299,6 +303,10 @@ def main() -> int:
                 print(f"setup_worktree: {SOUL_ROOMS_REL} absent -- souls_shuffle=all "
                       f"fails closed; run this without --verify to produce it.",
                       file=sys.stderr)
+            if not have_bonk:
+                print(f"setup_worktree: {BONK_REGISTRY_REL} absent -- bonk_shuffle "
+                      f"fails closed; run this without --verify to produce it.",
+                      file=sys.stderr)
             return 0
         if not have_rom:
             print(f"setup_worktree: MISSING {ROM_NAMES} in {cwd}")
@@ -319,7 +327,7 @@ def main() -> int:
         return 1
 
     if (have_rom and assets_ok and have_ini and have_chest and have_hash and
-            have_pots and have_enemies and have_souls and
+            have_pots and have_enemies and have_souls and have_bonk and
             (have_sdl2 or not need_sdl2)):
         if need_sdl2:
             print("setup_worktree: nothing to do (rom + assets + hash + ini + "
@@ -396,6 +404,13 @@ def main() -> int:
                     required=args.require_enemy_artifacts)
                 if args.require_enemy_artifacts:
                     return 1
+            if not have_bonk:
+                gen = cwd / "assets" / "scripts" / "gen_bonk_tables.py"
+                rc = subprocess.call([sys.executable, str(gen)], cwd=str(cwd))
+                if rc or not (cwd / BONK_REGISTRY_REL).is_file():
+                    print(f"setup_worktree: WARNING could not produce "
+                          f"{BONK_REGISTRY_REL} -- bonk_shuffle seeds will fail "
+                          f"closed.", file=sys.stderr)
             print(f"setup_worktree: source == cwd ({source}); required inputs "
                   f"are present, nothing to mirror.")
             return 0

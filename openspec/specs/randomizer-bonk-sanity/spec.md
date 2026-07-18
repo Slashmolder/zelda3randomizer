@@ -1,7 +1,10 @@
 # randomizer-bonk-sanity Specification
 
 ## Purpose
-TBD - created by archiving change add-rando-bonk-sanity. Update Purpose after archive.
+Bonk-sanity: the stage-stable placed overworld bonk sprites (bee hives and
+apple trees) become one-time checks behind a default-off tiered axis, collected
+by either wake method (Boots dash or Quake rumble), glint-marked, and guarded
+by a fail-closed local registry.
 ## Requirements
 ### Requirement: Bonk objects as tiered check locations
 
@@ -58,4 +61,3 @@ Unchecked active bonk objects SHALL show the gold check glint: live DORMANT bonk
 #### Scenario: Glint marks unchecked bonk objects
 - **WHEN** the player stands on a screen with unchecked active bonk checks
 - **THEN** the nearest unchecked objects glint and checked ones do not
-

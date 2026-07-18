@@ -1,7 +1,10 @@
 # randomizer-random-crystals Specification
 
 ## Purpose
-TBD - created by archiving change add-rando-random-crystals. Update Purpose after archive.
+Random crystal counts: `crystals.ganon`/`crystals.tower` accept a requested
+`random` sentinel that rides the share string and settings hash while the
+effective 0..7 counts resolve deterministically from the seed and drive the
+runtime gates, generator logic, dialogue, spoiler, and trackers.
 ## Requirements
 ### Requirement: Random crystal-count sentinel
 
@@ -46,4 +49,3 @@ The native settings window SHALL present each crystal axis as its existing slide
 #### Scenario: Native round-trip
 - **WHEN** the user sets Crystals: Ganon to "Random" and generates a slot
 - **THEN** the slot's canonical settings carry the sentinel, and reopening the window shows "Random"
-
