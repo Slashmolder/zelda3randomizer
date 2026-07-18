@@ -118,6 +118,7 @@ static uint32 settings_blob_len_versioned(uint16 format_version) {
 }
 
 static uint32 slot_ext_len_versioned(uint16 format_version) {
+  if (format_version >= 11) return kRandoSidecar_SlotExtV11Size;
   if (format_version >= 9) return kRandoSidecar_SlotExtV9Size;
   if (format_version >= 8) return kRandoSidecar_SlotExtV8Size;
   if (format_version >= 7) return kRandoSidecar_SlotExtV7Size;
@@ -430,6 +431,12 @@ uint32 RandoSave_SerializeSlot(const RandoSidecarSlot *slot, uint8 *buf, uint32 
     put_u16le(p + 41, slot->header.terrain_registry_count);
     p[43] = 1;
   }
+  // format_version 11: bonk registry identity @51-57 (same guard shape).
+  if (slot->header.bonk_registry_present) {
+    put_u32le(p + 51, slot->header.bonk_registry_digest);
+    put_u16le(p + 55, slot->header.bonk_registry_count);
+    p[57] = 1;
+  }
   // format_version 9: enemy-check registry identity @44-50 (same guard shape).
   if (slot->header.enemy_check_registry_present) {
     put_u32le(p + 44, slot->header.enemy_check_registry_digest);
@@ -562,6 +569,19 @@ static uint32 deserialize_slot_versioned_ext(const uint8 *buf, uint32 buf_size,
       out->header.terrain_registry_count = 0;
       out->header.terrain_registry_present = 0;
     }
+    if (format_version >= 11 && ext_len >= kRandoSidecar_SlotExtV11Size) {
+      // bonk registry identity @51-57 (add-rando-bonk-sanity).
+      out->header.bonk_registry_digest = get_u32le(p + 51);
+      out->header.bonk_registry_count = get_u16le(p + 55);
+      out->header.bonk_registry_present = p[57] != 0;
+    } else {
+      // Pre-v11 file: no bonk identity. Safe — pre-bonk slots carry the axis
+      // off in the (zero-extended) settings blob, so the activation guard is
+      // never consulted for them.
+      out->header.bonk_registry_digest = 0;
+      out->header.bonk_registry_count = 0;
+      out->header.bonk_registry_present = 0;
+    }
     if (format_version >= 9 && ext_len >= kRandoSidecar_SlotExtV9Size) {
       // enemy-check registry identity @44-50.
       out->header.enemy_check_registry_digest = get_u32le(p + 44);
@@ -595,6 +615,9 @@ static uint32 deserialize_slot_versioned_ext(const uint8 *buf, uint32 buf_size,
     out->header.enemy_check_registry_digest = 0;
     out->header.enemy_check_registry_count = 0;
     out->header.enemy_check_registry_present = 0;
+    out->header.bonk_registry_digest = 0;
+    out->header.bonk_registry_count = 0;
+    out->header.bonk_registry_present = 0;
   }
   return total;
 }
@@ -1036,6 +1059,11 @@ void RandoSave_SelfCheck(void) {
   src.header.pot_registry_digest = 0x12345678u;
   src.header.pot_registry_count = 0x0456u;
   src.header.pot_registry_present = 1;
+  // add-rando-bonk-sanity (review F5): non-zero v11 fields so the @51-57
+  // round-trip assert below is not vacuous.
+  src.header.bonk_registry_digest = 0xB0BAF00Du;
+  src.header.bonk_registry_count = 10;
+  src.header.bonk_registry_present = 1;
   // dungeon-chains layout identity round-trip coverage (v5 extension block).
   src.header.chains_present = 1;
   src.header.chains_attempt = 0x09;
@@ -1356,6 +1384,20 @@ void RandoSave_SelfCheck(void) {
         v9dst.header.enemy_check_registry_count !=
             src.header.enemy_check_registry_count)
       selfcheck_die("v9 compat: registry extension round-trip");
+    // add-rando-bonk-sanity (review F5): the v11 bonk fields @51-57 must
+    // survive a CURRENT-version serialize/deserialize (the v9 slice above
+    // deliberately truncates them, so nothing else asserted the offsets).
+    {
+      uint8 cur2[512];
+      RandoSidecarSlot v11dst;
+      uint32 used2 = RandoSave_SerializeSlot(&src, cur2, sizeof(cur2));
+      if (used2 == 0 ||
+          RandoSave_DeserializeSlot(cur2, used2, &v11dst) != used2 ||
+          v11dst.header.bonk_registry_present != src.header.bonk_registry_present ||
+          v11dst.header.bonk_registry_digest != src.header.bonk_registry_digest ||
+          v11dst.header.bonk_registry_count != src.header.bonk_registry_count)
+        selfcheck_die("v11 bonk registry extension round-trip");
+    }
   }
 
   // -------------------------------------------------------------------------

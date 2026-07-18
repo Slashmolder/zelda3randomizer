@@ -48,6 +48,7 @@ EXPECTED_GENERATED = [
     "src/rando/chest_lookup.h",
     "src/rando/pot_lookup.h",
     "src/rando/terrain_lookup.h",  # add-rando-grass-rock-shuffle
+    "src/rando/bonk_lookup.h",  # add-rando-bonk-sanity
     "src/rando/enemy_drop_lookup.h",
     "src/rando/enemy_check_lookup.h",
     "src/rando/pot_nonpot_drop_counts.h",
@@ -91,6 +92,7 @@ MSBUILD_OPTIONAL_CODEGEN_INPUTS = {
     "assets/rando/pots.gen.yaml",
     "assets/rando/pot_key_depth.gen.yaml",
     "assets/rando/terrain.gen.yaml",
+    "assets/rando/bonk.gen.yaml",  # add-rando-bonk-sanity (review F1)
     "assets/rando/enemy_drops.gen.yaml",
     "assets/rando/enemy_checks.gen.yaml",
     "assets/rando/soul_rooms.gen.yaml",

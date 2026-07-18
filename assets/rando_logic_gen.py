@@ -450,6 +450,22 @@ def _terrain_registry_digest(rows: list[tuple[int, int, int, int]]) -> int:
     return h
 
 
+def _bonk_registry_digest(rows) -> int:
+    # add-rando-bonk-sanity: FNV over the sorted (area, block, loc_id) rows —
+    # the activation-guard value (kRandoBonkRegistryDigest), mirroring
+    # _terrain_registry_digest. Bonk rows are world-state-universal (the OW
+    # sprite tables are selected by sram_progress_indicator only), so there
+    # is no ws_mask component.
+    if not rows:
+        return 0
+    h = 0x811C9DC5
+    for area, block, locid in sorted(rows):
+        h = _fnv32_u16(h, area)
+        h = _fnv32_u16(h, block)
+        h = _fnv32_u16(h, locid)
+    return h
+
+
 def _enemy_check_registry_digest(dungeon_rows, overworld_rows, boss_rows,
                                  scripted_rows) -> int:
     # FNV over the four sorted enemy-check lookup domains, in emit order, each
@@ -1067,6 +1083,45 @@ def load_terrain(path: Path, logic_regions: dict[str, RegionDef] | None = None):
         # drift guard. The lookup TABLE still emits only (screen,pos,loc_id).
         rows.append((int(t["screen"]), int(t["pos"]), int(t["id"]),
                      _world_state_mask(list(wsf))))
+    return out, rows
+
+
+def load_bonk(path: Path, logic_regions: dict[str, RegionDef] | None = None):
+    """Load assets/rando/bonk.gen.yaml (local registry from
+    gen_bonk_tables.py — add-rando-bonk-sanity).
+
+    Returns (name -> LocationDef, [(area, block, loc_id)]). Mirrors
+    load_terrain: vanilla_item is always "Nothing" (a suppressed vanilla wake
+    is not a pool item), the region binding hard-fails on an unresolvable
+    name (a 0xFFFF region would UNDER-gate), and an absent artifact emits no
+    rows — active bonk generation then fails closed via the registry
+    digest/count guard (kRandoBonkRegistryDigest)."""
+    if not path.exists():
+        print(f"WARNING: {path} not found - emitting NO bonk locations. "
+              f"Run assets/scripts/gen_bonk_tables.py with ROM assets to "
+              f"enable bonk shuffle in this build.", file=sys.stderr)
+        return {}, []
+    doc = load_yaml(path)
+    out, rows = {}, []
+    valid_regions = set(logic_regions or {})
+    for t_ in doc.get("locations", []) or []:
+        region = t_.get("region", "")
+        if not region or (valid_regions and region not in valid_regions):
+            sys.exit(f"{path}: row id={t_.get('id')} ({t_.get('name')}) binds "
+                     f"to region {region!r} which is not a logic region — fix "
+                     f"OVERWORLD_REGIONS / bonk_logic_overrides (a 0xFFFF "
+                     f"region skips the reachability gate = under-gate).")
+        loc = LocationDef(
+            id=t_["id"], name=t_["name"], region=region,
+            type="Bonk",
+            vanilla_item="Nothing",
+            can_reach=t_.get("can_reach") or "TRUE()",
+            can_place="TRUE()", always_allow="FALSE()",
+            source="gen_bonk_tables.py",
+            world_state_filter=[],
+        )
+        out[loc.name] = loc
+        rows.append((int(t_["area"]), int(t_["block"]), int(t_["id"])))
     return out, rows
 
 
@@ -2934,6 +2989,54 @@ def emit_terrain_lookup(rows, path: Path) -> int:
     return len(rows)
 
 
+def emit_bonk_lookup(rows, path: Path) -> int:
+    """Emit src/rando/bonk_lookup.h — sorted (area, block) -> LOC_* for the
+    runtime bonk wake dispatch (add-rando-bonk-sanity). Mirrors
+    terrain_lookup.h; `rows` come from load_bonk() (bonk.gen.yaml). The FNV
+    digest doubles as the sidecar activation-guard value."""
+    rows = sorted(rows, key=lambda r: (r[0], r[1]))
+    digest = _bonk_registry_digest(rows)
+    lines = [
+        HEADER_BANNER, "",
+        "// bonk_lookup.h — sorted (overworld area, sprite block) -> LOC_* for",
+        "// the runtime bonk wake dispatch (Entity_ApplyRumbleToSprites hook).",
+        "// `block` is the engine key Overworld_LoadSprites stores sprites",
+        "// under (sprite_where_in_overworld[]) and sprite_N_word[k] recovers.",
+        "// Generated from local assets/rando/bonk.gen.yaml via",
+        "// assets/scripts/gen_bonk_tables.py.",
+        "",
+        "#ifndef ZELDA3_RANDO_BONK_LOOKUP_H_",
+        "#define ZELDA3_RANDO_BONK_LOOKUP_H_",
+        "",
+        "#include \"../types.h\"",
+        "",
+        "typedef struct RandoBonkLookupEntry {",
+        "  uint16 area;    // 0x00..0x8F overworld area index",
+        "  uint16 block;   // sprite_where_in_overworld index (r5|r6<<8 packing)",
+        "  uint16 loc_id;  // LOC_*",
+        "} RandoBonkLookupEntry;",
+        "",
+    ]
+    if rows:
+        lines.append("static const RandoBonkLookupEntry kRandoBonkLookup[] = {")
+        for (area, block, locid) in rows:
+            lines.append(f"  {{ 0x{area:02x}, 0x{block:04x}, {locid} }},")
+        lines.append("};")
+    else:
+        lines.append("// EMPTY: bonk.gen.yaml absent. Active bonk generation fails closed.")
+        lines.append("static const RandoBonkLookupEntry kRandoBonkLookup[1] = { { 0, 0, 0 } };")
+    lines += [
+        "",
+        f"#define kRandoBonkLookup_COUNT {len(rows)}",
+        f"#define kRandoBonkRegistryCount {len(rows)}",
+        f"#define kRandoBonkRegistryDigest 0x{digest:08x}u",
+        "",
+        "#endif  // ZELDA3_RANDO_BONK_LOOKUP_H_",
+    ]
+    atomic_write_text(path, "\n".join(lines) + "\n")
+    return len(rows)
+
+
 def emit_enemy_drop_lookup(rows, items: dict[str, ItemDef], path: Path) -> int:
     """Emit src/rando/enemy_drop_lookup.h for forced enemy-key checks."""
     rows = sorted(rows, key=lambda r: (r["room"], r["source_slot"], r["drop_kind"]))
@@ -4250,9 +4353,14 @@ def _location_type_id(t: str) -> int:
              "EnemyDrop",    # 18 — add-rando-enemy-drop-sanity forced enemy key drop
              "Enemy",        # 19 — add-rando-dungeon-enemy-checks ordinary dungeon enemy check
              "Grass",        # 20 — add-rando-grass-rock-shuffle bush/thick-grass check
-             "Rock"]         # 21 — add-rando-grass-rock-shuffle light/heavy rock check
+             "Rock",         # 21 — add-rando-grass-rock-shuffle light/heavy rock check
+             "Bonk"]         # 22 — add-rando-bonk-sanity placed OW bonk-item sprite check
     if t not in types:
-        return 0
+        # HARD-FAIL (add-rando-bonk-sanity hardening): the old `return 0`
+        # silently emitted unknown types as Chest — exactly how the first
+        # Bonk build shipped rows invisible to every LOCTYPE_Bonk consumer.
+        sys.exit(f"rando_logic_gen: unknown location type {t!r} "
+                 f"(_location_type_id has no ordinal for it)")
     return types.index(t)
 
 
@@ -4371,6 +4479,16 @@ def main(argv=None):
         Path("assets/rando/terrain.gen.yaml"), logic_regions)
     locations.update(terrain_locs)
     logic_loc_preds.update(terrain_locs)
+
+    # add-rando-bonk-sanity — placed OW bonk-item sprite checks. Ids live in
+    # the free 2634..3071 gap BELOW terrain so terrain stays the id-sorted
+    # registry's contiguous suffix (the kRandoNonTerrainLocationsCount
+    # reachability fast-path). Inert until bonk_shuffle selects them
+    # (bonk_active(), same skip-triple discipline as terrain).
+    bonk_locs, bonk_lookup_rows = load_bonk(
+        Path("assets/rando/bonk.gen.yaml"), logic_regions)
+    locations.update(bonk_locs)
+    logic_loc_preds.update(bonk_locs)
 
     # Registry-wide duplicate-id hard-fail. Every generated family allocates
     # ids from its own base block, and a block overlap silently corrupts every
@@ -4546,7 +4664,11 @@ def main(argv=None):
     #     deferred to Slice 2 — does not yet; allowlisting Prize_Event lets
     #     the Bomb Merchant warning stay quiet until Inverted logic_parts
     #     land and its DarkWorld_South region binding is wired.
-    REGION_OPTIONAL_TYPES = {"Medallion", "Shop", "ShopUpgrade", "TakeAny", "Prize_Event"}
+    # add-rando-shopsanity removed "Shop": the 27 regular shop slots are real
+    # fill locations with logic_parts/50_shops.yaml region bindings, so a
+    # region-less Shop row is now a codegen error (ShopUpgrade/TakeAny stay
+    # config-slot-style and region-optional).
+    REGION_OPTIONAL_TYPES = {"Medallion", "ShopUpgrade", "TakeAny", "Prize_Event"}
     if logic_regions:
         region_ids = set(logic_regions.keys())
         for loc_name, loc in locations.items():
@@ -4876,6 +4998,10 @@ def main(argv=None):
     pot_lookup_count = emit_pot_lookup(pot_lookup_rows, out_headers / "pot_lookup.h")
     terrain_lookup_count = emit_terrain_lookup(
         terrain_lookup_rows, out_headers / "terrain_lookup.h")
+
+    bonk_lookup_count = emit_bonk_lookup(
+        bonk_lookup_rows, out_headers / "bonk_lookup.h")
+    print(f"  bonk_lookup.h: {bonk_lookup_count} rows")
     enemy_drop_lookup_count = emit_enemy_drop_lookup(
         enemy_drop_lookup_rows,
         items,

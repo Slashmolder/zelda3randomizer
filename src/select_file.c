@@ -2743,9 +2743,12 @@ static const char *RowValueText(int row, char *scratch, int scratch_len) {
     case kRow_Goal:
       return SelectFile_GoalAbbrev(s->goal);
     case kRow_CrystalsGanon:
+      // add-rando-random-crystals: 8 = the requested "random" sentinel.
+      if (s->crystals_ganon == kCrystalsRandom) return "RAND";
       snprintf(scratch, scratch_len, "%u OF 7", (unsigned)s->crystals_ganon);
       return scratch;
     case kRow_CrystalsTower:
+      if (s->crystals_tower == kCrystalsRandom) return "RAND";
       snprintf(scratch, scratch_len, "%u OF 7", (unsigned)s->crystals_tower);
       return scratch;
     case kRow_ItemPoolDifficulty:
@@ -2943,16 +2946,17 @@ static void CycleRow(int row, int delta) {
       break;
     }
     case kRow_CrystalsGanon: {
+      // add-rando-random-crystals: the cycle includes the RAND sentinel (8).
       int n = (int)s->crystals_ganon + delta;
-      if (n < 0) n = 7;
-      if (n > 7) n = 0;
+      if (n < 0) n = kCrystalsRandom;
+      if (n > kCrystalsRandom) n = 0;
       s->crystals_ganon = (uint8)n;
       break;
     }
     case kRow_CrystalsTower: {
       int n = (int)s->crystals_tower + delta;
-      if (n < 0) n = 7;
-      if (n > 7) n = 0;
+      if (n < 0) n = kCrystalsRandom;
+      if (n > kCrystalsRandom) n = 0;
       s->crystals_tower = (uint8)n;
       break;
     }

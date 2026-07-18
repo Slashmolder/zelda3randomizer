@@ -36,6 +36,7 @@
 #include "chest_lookup.h"  // (room, ordinal) -> LOC_*; §6.3 codegen
 #include "pot_lookup.h"    // (room, pos4) -> LOC_*; add-rando-pot-sanity runtime
 #include "terrain_lookup.h"  // (screen, pos) -> LOC_*; add-rando-grass-rock-shuffle
+#include "bonk_lookup.h"     // (area, block) -> LOC_*; add-rando-bonk-sanity
 #include "enemy_check_lookup.h"  // kRandoEnemyCheckRegistryDigest/Count (activation guard)
 #include "direct_grant_icons.h"  // kDirectGrantIcons[] (Phase B Slice 9)
 #include "rando_hints.h"  // Rando_ClearHints (Phase B Slice 5)
@@ -130,6 +131,24 @@ bool Rando_TerrainRegistryMatches(uint32 digest, uint16 count) {
          count == (uint16)kRandoTerrainRegistryCount;
 }
 
+// add-rando-bonk-sanity — bonk registry identity (same guard shape).
+uint32 Rando_CurrentBonkRegistryDigest(void) {
+  return kRandoBonkRegistryDigest;
+}
+
+uint16 Rando_CurrentBonkRegistryCount(void) {
+  return (uint16)kRandoBonkRegistryCount;
+}
+
+bool Rando_SettingsNeedBonkRegistry(const RandoSettings *settings) {
+  return settings != NULL && settings->bonk_shuffle != kTerrainShuffle_Off;
+}
+
+bool Rando_BonkRegistryMatches(uint32 digest, uint16 count) {
+  return digest == kRandoBonkRegistryDigest &&
+         count == (uint16)kRandoBonkRegistryCount;
+}
+
 // Enemy-check registry identity (same guard shape). Enemy-check location ids
 // bind to generated lookup rows (enemy_checks.gen.yaml), so generator_version
 // alone fail-opens on same-version registry drift — this digest closes that.
@@ -169,6 +188,9 @@ void Rando_StampSlotRegistries(RandoSlotHeader *h) {
   h->enemy_check_registry_digest = Rando_CurrentEnemyCheckRegistryDigest();
   h->enemy_check_registry_count = Rando_CurrentEnemyCheckRegistryCount();
   h->enemy_check_registry_present = 1;
+  h->bonk_registry_digest = Rando_CurrentBonkRegistryDigest();
+  h->bonk_registry_count = Rando_CurrentBonkRegistryCount();
+  h->bonk_registry_present = 1;
 }
 
 static bool rando_instant_flute_active(void);
@@ -1576,15 +1598,80 @@ static uint16 shop_lookup(uint8 room, uint8 entrance, uint8 pos) {
   return 0xFFFFu;  // not a known shop slot — vanilla item grants
 }
 
+// add-rando-shopsanity — forward decl (implementation lives below with the
+// other active-slot readers; the dispatch is defined before those globals).
+static bool rando_shopsanity_checked_restock(uint16 loc_id);
+
 uint8 Rando_ShopDispatch(uint8 room, uint8 entrance, uint8 pos,
                          uint8 vanilla_lttp_code) {
   uint16 loc_id = shop_lookup(room, entrance, pos);
   if (loc_id == 0xFFFFu) return vanilla_lttp_code;  // not mapped — vanilla
+  // add-rando-shopsanity — a purchased check slot permanently restocks its
+  // VANILLA item at vanilla behavior: never re-dispatch a checked shop slot
+  // (the placed item was granted once; re-dispatching on a re-buy would be
+  // the re-grant/dupe class). Returning the vanilla code takes the plain
+  // Link_ReceiveItem + vanilla-textbox path in ShopItem_HandleReceipt
+  // (never the 0xFE skip sentinel, and Rando_ShouldSkipReceive is stateless).
+  // Under shopsanity OFF (incl. plain Retro) this gate is inert and the
+  // Retro identity economy keeps its unlimited re-dispatch.
+  if (rando_shopsanity_checked_restock(loc_id))
+    return vanilla_lttp_code;
   // Vanilla registry id is not threaded through the shop receipt path; pass
   // 0xFFFF so Rando_DispatchVanillaGrant treats the slot as "always overridden
   // when present in the table" and falls back to the vanilla LttP code when the
   // slot is absent (non-Retro seeds) — identical to the chest-dispatch contract.
   return Rando_DispatchVanillaGrant(loc_id, 0xFFFFu, vanilla_lttp_code);
+}
+
+// add-rando-shopsanity — deterministic per-slot check price. ONE function
+// shared by the spoiler emitter (generation) and the shop spawn path
+// (runtime), derived from (seed, loc_id) on a dedicated salted stream so the
+// fill RNG is untouched and the price is never stored anywhere. Uniform over
+// multiples of 5 in [10, 250] — deliberately independent of the placed item's
+// class so the price tag cannot leak whether a slot holds progression
+// (design.md D5). Determinism is pinned by Rando_ShopPriceSelfCheck.
+uint16 Rando_ShopPrice(uint64 seed_u64, uint16 loc_id) {
+  RandoRng rng;
+  Rng_SeedFromU64(&rng, seed_u64 ^ 0x53686F7050726963ull ^ ((uint64)loc_id << 48));  // "ShopPric"
+  return (uint16)(10 + 5 * Rng_NextRange(&rng, 49));
+}
+
+// Fixed vector for the price stream (seed 0x1234, loc 237 = Dark World
+// Potion Shop - 0). Captured from the implementation at introduction; any
+// drift means the derived-price contract broke.
+enum { kShopPricePinnedVector = 190 };
+
+// Pins the price stream: determinism, band membership, per-slot variation,
+// and one fixed vector so a formula/RNG change cannot slip through as a
+// silent cross-version price shift (prices are re-derived at slot load, so a
+// drifted formula would make a reloaded seed disagree with its spoiler).
+static void Rando_ShopPriceSelfCheck(void) {
+  static const uint64 kSeeds[3] = { 0x1234ull, 0xC0FFEEull, 0xFFFFFFFFFFFFFFFFull };
+  uint16 distinct_probe = Rando_ShopPrice(kSeeds[0], 237);
+  bool any_distinct = false;
+  for (uint8 si = 0; si < 3; si++) {
+    for (uint16 loc = 237; loc <= 263; loc++) {
+      uint16 p = Rando_ShopPrice(kSeeds[si], loc);
+      if (p != Rando_ShopPrice(kSeeds[si], loc)) {
+        fprintf(stderr, "Rando_ShopPriceSelfCheck: non-deterministic price\n");
+        exit(2);
+      }
+      if (p < 10 || p > 250 || (p % 5) != 0) {
+        fprintf(stderr, "Rando_ShopPriceSelfCheck: price %u outside {10..250 step 5}\n", p);
+        exit(2);
+      }
+      if (si == 0 && p != distinct_probe) any_distinct = true;
+    }
+  }
+  if (!any_distinct) {
+    fprintf(stderr, "Rando_ShopPriceSelfCheck: loc_id does not vary the stream\n");
+    exit(2);
+  }
+  uint16 vec = Rando_ShopPrice(0x1234ull, 237);
+  if (vec != kShopPricePinnedVector) {
+    fprintf(stderr, "Rando_ShopPriceSelfCheck: pinned vector drifted (got %u)\n", vec);
+    exit(2);
+  }
 }
 
 // === Phase B Slice 3b — Retro TakeAny runtime ===
@@ -2811,7 +2898,14 @@ static void Rando_OverlayPaletteApplyGold(uint16 *dst) {
   int ph = (frame_counter >> 1) & 0x3f;
   int pulse = (ph < 0x20 ? ph : 0x3f - ph) >> 2;
   for (int i = 1; i < 16; i++) {
-    int lvl = i + pulse;
+    // Floor the ramp at bright gold: the glint chars are borrowed from each
+    // area's loaded sheets, and WHICH color indices their pixels use is
+    // sheet-dependent — on Death Mountain the borrowed tile drew indices
+    // 1/6/7, and the old `lvl = i` ramp made those 3-25% brightness gold:
+    // invisible against the mountain (playtest-found via F12 CGRAM decode —
+    // the gold WAS applied, just nearly black). 16 + i/2 keeps per-index
+    // shading and the pulse while making every index read as gold.
+    int lvl = 16 + (i >> 1) + pulse;
     if (lvl > 31)
       lvl = 31;
     int r = lvl;
@@ -2925,10 +3019,12 @@ int Rando_OverlayPaletteSelfCheck(void) {
   return fail;
 }
 
-bool Rando_GetFieldItemIcon(uint16 location_id, uint16 vanilla_item_id,
-                            uint8 *out_gfx, uint8 *out_big, uint8 *out_oam_flags) {
-  if (!Rando_FieldItemSpritesActive())
-    return false;
+// Resolver body shared by the field-item draw (client-toggle gated wrapper
+// below) and the shopsanity check-slot draw (never toggle-gated — a vanilla
+// shop icon over a different placed item would be a misleading lookalike).
+static bool rando_placed_item_icon(uint16 location_id, uint16 vanilla_item_id,
+                                   uint8 *out_gfx, uint8 *out_big,
+                                   uint8 *out_oam_flags) {
   // Placement_Lookup returns vanilla_item_id when no table is active or the
   // location is absent — both mean "draw the vanilla sprite".
   uint16 placed = Placement_Lookup(location_id, vanilla_item_id);
@@ -2968,6 +3064,33 @@ bool Rando_GetFieldItemIcon(uint16 location_id, uint16 vanilla_item_id,
     return true;
   }
   return false;
+}
+
+bool Rando_GetFieldItemIcon(uint16 location_id, uint16 vanilla_item_id,
+                            uint8 *out_gfx, uint8 *out_big, uint8 *out_oam_flags) {
+  if (!Rando_FieldItemSpritesActive())
+    return false;
+  return rando_placed_item_icon(location_id, vanilla_item_id,
+                                out_gfx, out_big, out_oam_flags);
+}
+
+// add-rando-shopsanity — icon resolution for an unchecked shop check slot.
+// Same shared resolver as field items (draw mirrors the grant chain) but
+// NOT gated on the client field_item_sprites toggle. Distinguishes the
+// truthful-vanilla case from the no-icon case so the caller never shows a
+// vanilla-item lookalike for a different placed item:
+//   0 = placement IS the slot's vanilla item -> vanilla item tiles are truthful
+//   1 = icon resolved (outputs filled)
+//   2 = placed item has no drawable icon -> caller draws the generic cue
+int Rando_GetShopCheckIcon(uint16 location_id, uint8 *out_gfx, uint8 *out_big,
+                           uint8 *out_oam_flags) {
+  // Per-frame per-column call — binary search (registry is id-sorted), not
+  // the linear registry scan (external-review perf note).
+  uint16 vanilla = rando_location_vanilla_item(location_id);
+  uint16 placed = Placement_Lookup(location_id, vanilla);
+  if (placed == vanilla) return 0;
+  return rando_placed_item_icon(location_id, vanilla,
+                                out_gfx, out_big, out_oam_flags) ? 1 : 2;
 }
 
 // ---------------------------------------------------------------------------
@@ -3783,6 +3906,24 @@ uint16 Rando_EntranceDungeonDecoupledExitRoom(uint16 lx) {
 // confidently-wrong prize/medallion gating.
 static RandoSettings g_rando_active_settings;
 static bool g_rando_active_settings_valid = false;
+
+// add-rando-shopsanity (external-review P2 fix): the active slot's seed for
+// price derivation. A plain cold snapshot replay restores settings + share
+// string but does NOT reconstruct g_rando_active_header, so deriving the
+// price seed from the header fell back to seed 0 there — cold-replayed
+// shops displayed AND charged seed-0 prices. Every settings_valid writer
+// populates this; deactivation and the snapshot settings-clear zero it.
+static uint64 g_rando_active_seed_u64;
+// add-rando-random-crystals — the active slot's RESOLVED crystal counts,
+// cached at activation from Crystals_Resolve(settings, base seed). 7/7
+// fail-closed when no valid slot (vanilla-equivalent). All runtime
+// consumers go through the getters; the requested sentinel (8) never
+// reaches a gate.
+static uint8 g_rando_effective_crystals_ganon = 7;
+static uint8 g_rando_effective_crystals_tower = 7;
+
+uint8 Rando_EffectiveCrystalsGanon(void) { return g_rando_effective_crystals_ganon; }
+uint8 Rando_EffectiveCrystalsTower(void) { return g_rando_effective_crystals_tower; }
 // distinguishes "settings valid because a GENUINE slot is active" (false)
 // from "valid because a snapshot COLD-REPLAY restored them" (true). The cold-
 // replay gate must protect a genuine active slot, yet still let a NEW cold replay
@@ -4158,6 +4299,68 @@ static uint64 rando_trap_decoy_seed(void) {
   return 0xD1CE5AFE7A9B3C4Dull;
 }
 
+// === add-rando-shopsanity — active-slot shop-check runtime ==================
+
+// Rando active AND the active slot's settings carry the shopsanity axis.
+// The valid flag matters: v1/no-blob slots recover no settings, and the
+// struct is NOT cleared on deactivation — without the gate a stale
+// shopsanity=1 from a previous slot would run the check machinery on a
+// plain Retro slot and permanently convert its first-bought economy column
+// to vanilla restock (the race-mode NULL-settings fail-open class). No
+// blob = axis off (its default), matching rando_instant_flute_active's
+// defaults-for-legacy convention.
+static bool rando_shopsanity_active(void) {
+  return (enhanced_features1 & kFeatures1_RandomizerActive) &&
+         g_rando_active_settings_valid &&
+         g_rando_active_settings.shopsanity != 0;
+}
+
+static bool rando_shopsanity_checked_restock(uint16 loc_id) {
+  return rando_shopsanity_active() && Rando_IsLocationChecked(loc_id);
+}
+
+// add-rando-bonk-sanity — resolve a DASH wake of a placed bonk sprite to its
+// unchecked check location. 0xFFFF = not a check right now (axis off, no
+// valid slot, unknown (area,block,type), no placement entry, or already
+// checked -> the caller runs the vanilla wake). The lookup table is tiny
+// (kRandoBonkLookup_COUNT rows); linear scan.
+uint16 Rando_BonkCheckLocForWake(uint8 area, uint16 block, uint8 sprite_type_id) {
+  if (!(enhanced_features1 & kFeatures1_RandomizerActive) ||
+      !g_rando_active_settings_valid ||
+      g_rando_active_settings.bonk_shuffle == kTerrainShuffle_Off)
+    return 0xFFFFu;
+  (void)sprite_type_id;  // identity is (area, block); type recorded in the registry
+  for (uint32 i = 0; i < (uint32)kRandoBonkLookup_COUNT; i++) {
+    if (kRandoBonkLookup[i].area == area && kRandoBonkLookup[i].block == block) {
+      uint16 loc = kRandoBonkLookup[i].loc_id;
+      if (Rando_IsLocationChecked(loc)) return 0xFFFFu;
+      if (Placement_Lookup(loc, 0xFFFFu) == 0xFFFFu) return 0xFFFFu;
+      return loc;
+    }
+  }
+  return 0xFFFFu;
+}
+
+bool Rando_ShopSlotCheckInfo(uint8 room, uint8 entrance, uint8 pos_plus1,
+                             uint16 *out_loc, uint16 *out_item,
+                             uint16 *out_price) {
+  // pos_plus1 is ShopKeeper_SpawnShopItem's stored slot (pos+1, 0 = unset).
+  // Only the three vanilla columns are check slots — the Retro genericKey
+  // 4th column (pos 3) is rejected here AND by shop_lookup's own pos > 2
+  // bound (belt and braces; this gate also filters pos_plus1 == 0 "unset").
+  if (pos_plus1 < 1 || pos_plus1 > 3) return false;
+  if (!rando_shopsanity_active()) return false;
+  uint16 loc = shop_lookup(room, entrance, (uint8)(pos_plus1 - 1));
+  if (loc == 0xFFFFu) return false;
+  if (Rando_IsLocationChecked(loc)) return false;  // bought → vanilla restock
+  uint16 placed = Placement_Lookup(loc, 0xFFFFu);
+  if (placed == 0xFFFFu) return false;  // no placement entry (defensive)
+  if (out_loc) *out_loc = loc;
+  if (out_item) *out_item = placed;
+  if (out_price) *out_price = Rando_ShopPrice(g_rando_active_seed_u64, loc);
+  return true;
+}
+
 static bool rando_trap_decoy_icon(uint16 item_id, uint16 location_id,
                                   DirectGrantIconEntry *out) {
   if (!rando_is_trap_item(item_id) || out == NULL)
@@ -4254,7 +4457,15 @@ bool Rando_SnapshotColdReplayRestore(const RandoSettings *s,
   g_rando_active_settings = *s;
   g_rando_active_world_state = s->world_state;
   uint64 seed = SlotSeedFromShareString(share_string_raw);
+  g_rando_active_seed_u64 = seed;  // price/derivation seed (see declaration)
   install_active_shuffles(&g_rando_active_settings, seed, prize_attempt);
+  // add-rando-random-crystals — the cold-replay restore is the THIRD
+  // settings_valid=true writer (implementation-review F1): without this
+  // resolve the five cached-getter consumers keep the previous slot's (or
+  // the 7/7 default) counts — a replay desync even for FIXED-count seeds.
+  Crystals_Resolve(&g_rando_active_settings, seed,
+                   &g_rando_effective_crystals_ganon,
+                   &g_rando_effective_crystals_tower);
   g_rando_active_share_string[0] = '\0';
   (void)Share_EncodeRaw(share_string_raw, g_rando_active_share_string,
                         (int)sizeof(g_rando_active_share_string));
@@ -4424,6 +4635,7 @@ bool Rando_SnapshotEntranceReplayRestore(const RandoSettings *s,
 static void rando_clear_snapshot_settings_replay_restore(void) {
   Rando_ClearDeferredPotConfirmation();
   g_rando_active_settings_valid = false;
+  g_rando_active_seed_u64 = 0;
   g_rando_settings_from_cold_replay = false;
   g_rando_active_world_state = kWorldState_Open;
   g_rando_active_door_logic = false;
@@ -4539,7 +4751,27 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
       return;
     }
   }
-  // Enemy-check registry guard, same shape as pot/terrain above: enemy-check
+  if (slot_settings_valid && Rando_SettingsNeedBonkRegistry(&slot_settings)) {
+    // Bonk registry guard (add-rando-bonk-sanity), same shape as terrain:
+    // count 0 rejects explicitly (an empty-registry build can never honor a
+    // bonk-active slot) and pre-v11 sidecars read present=0 -> refuse.
+    if (!src->header.bonk_registry_present ||
+        Rando_CurrentBonkRegistryCount() == 0 ||
+        !Rando_BonkRegistryMatches(src->header.bonk_registry_digest,
+                                   src->header.bonk_registry_count)) {
+      fprintf(stderr,
+              "Rando: bonk registry drift or missing registry identity "
+              "(slot count=%u digest=%08x, build count=%u digest=%08x) — "
+              "refusing to activate this slot on this build\n",
+              (unsigned)src->header.bonk_registry_count,
+              (unsigned)src->header.bonk_registry_digest,
+              (unsigned)Rando_CurrentBonkRegistryCount(),
+              (unsigned)Rando_CurrentBonkRegistryDigest());
+      Rando_DeactivateSlot();
+      return;
+    }
+  }
+    // Enemy-check registry guard, same shape as pot/terrain above: enemy-check
   // location ids are table-derived from local artifacts, so a dungeon/all-tier
   // slot must prove this binary carries the SAME registry — the version-drift
   // refusal earlier misses same-generator-version drift. present == 0 (a
@@ -4784,6 +5016,9 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   g_rando_active_share_string[0] = '\0';
   (void)Share_EncodeRaw(src->header.share_string, g_rando_active_share_string,
                         (int)sizeof(g_rando_active_share_string));
+  // Price/derivation seed — from the raw header share string, present on
+  // every slot vintage (unlike the canonical settings blob).
+  g_rando_active_seed_u64 = SlotSeedFromShareString(src->header.share_string);
 
   // === Reachability settings + shuffle assignments (tracker engine) ===
   // The runtime reachability engine (Logic_ComputeReachability, consumed by the
@@ -4807,11 +5042,22 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
       // the helper comment for the FIX #6 / falling-prize rationale.
       install_active_shuffles(&g_rando_active_settings, ss.seed_u64,
                               src->header.prize_attempt);
+      // add-rando-random-crystals — resolve + cache the effective counts
+      // HERE, inside the block where both the canonical deserialize AND the
+      // share decode succeeded ("valid settings but no seed" cannot occur).
+      // Every runtime consumer reads the cached getters; the values are
+      // seed-pure, so activation/deactivation are the only cache events.
+      Crystals_Resolve(&g_rando_active_settings, ss.seed_u64,
+                       &g_rando_effective_crystals_ganon,
+                       &g_rando_effective_crystals_tower);
       g_rando_active_settings_valid = true;
       g_rando_settings_from_cold_replay = false;  // a GENUINE slot activation.
     }
   }
   if (!g_rando_active_settings_valid) {
+    // add-rando-random-crystals — fail-closed defaults (vanilla-equivalent 7/7).
+    g_rando_effective_crystals_ganon = 7;
+    g_rando_effective_crystals_tower = 7;
     Rando_SetDungeonPrizeAssignment(NULL);
     Rando_SetMedallionAssignment(NULL);
     // No trustworthy (settings, seed) — do NOT guess a boss/drop shuffle.
@@ -5056,6 +5302,12 @@ void Rando_ReinstallActiveSlotLogicOverlays(void) {
 }
 
 void Rando_DeactivateSlot(void) {
+  // add-rando-random-crystals — reset the resolved-count cache to the
+  // vanilla-equivalent 7/7 (implementation-review F4: the consumers all
+  // guard on slot_active+settings_valid, but a stale cache masked the F1
+  // cold-replay gap on warm processes; keep the invariant explicit).
+  g_rando_effective_crystals_ganon = 7;
+  g_rando_effective_crystals_tower = 7;
   // dungeon-chains owns the same overworld entrance-id asset as entrance
   // shuffle, so drop it before the generic entrance teardown clears the shared
   // logic override stores.
@@ -5127,6 +5379,7 @@ void Rando_DeactivateSlot(void) {
   // leave eval_has_prize / eval_medallion_opens reading the prior slot's stale
   // assignment table. (The VM treats NULL as "no prize/medallion reachable".)
   g_rando_active_settings_valid = false;
+  g_rando_active_seed_u64 = 0;
   g_rando_settings_from_cold_replay = false;  // reset the source flag.
   rando_restore_seed_qol_features0();
   Rando_ApplyActiveForcedFeatures0();
@@ -5185,7 +5438,7 @@ bool Rando_HasRequiredTowerCrystals(void) {
   // blob is unavailable. Current slots use their independent tower threshold.
   uint8 required = 7;
   if (g_rando_slot_active && g_rando_active_settings_valid)
-    required = g_rando_active_settings.crystals_tower;
+    required = g_rando_effective_crystals_tower;  // resolved, never the sentinel
   return rando_count_crystals() >= required;
 }
 
@@ -5195,15 +5448,16 @@ bool Rando_HasRequiredGanonCrystals(void) {
   // unavailable; current randomizer slots honor their configured threshold.
   if (!g_rando_slot_active || !g_rando_active_settings_valid)
     return true;
-  return rando_count_crystals() >= g_rando_active_settings.crystals_ganon;
+  return rando_count_crystals() >= g_rando_effective_crystals_ganon;
 }
 
 void Rando_ApplyLoadedSaveRuntimeSettings(void) {
   if (!g_rando_slot_active || !g_rando_active_settings_valid)
     return;
   // ALTTPR preOpenGanonsTower: zero-crystal GT starts open rather than playing
-  // a zero-maiden seal-breaking cutscene on first contact.
-  if (g_rando_active_settings.crystals_tower == 0)
+  // a zero-maiden seal-breaking cutscene on first contact. Reads the RESOLVED
+  // count so tower=random rolling 0 pre-opens too.
+  if (g_rando_effective_crystals_tower == 0)
     save_ow_event_info[0x43] |= 0x20;
 }
 
@@ -5803,7 +6057,7 @@ RandoRevealResult Rando_RevealSpoiler(const char *suppressed_path,
   regen.boss_assignment = settings.boss_shuffle ? regen_boss_assignment : NULL;
   regen.drop_map = settings.drop_shuffle ? regen_drop_map : NULL;
   regen.drop_used_fallback = regen_drop_used_fallback;
-  regen.goal_completable = Goal_IsCompletable(&settings, &table);
+  regen.goal_completable = Goal_IsCompletable(&settings, seed_u64, &table);
   regen.forward_fill_fallback_count = 0;  // stamp normalization
   regen.retry_attempts = 1;               // stamp normalization
   regen.generation_wall_clock_ms = 0;     // stamp normalization
@@ -8571,10 +8825,27 @@ static void Rando_ReinstallOverlaysSelfCheck(void) {
   fprintf(stderr, "[Rando_ReinstallOverlaysSelfCheck] OK\n");
 }
 
+// add-rando-random-crystals — fixed resolve vectors (seed 0x1234, both axes
+// random), captured at introduction; any drift means the derived-count
+// contract broke across versions (nothing else observes these streams).
+enum { kCrystalsPinnedGanon0x1234 = 1, kCrystalsPinnedTower0x1234 = 3 };
+
+// add-rando-random-crystals — selfcheck-only seam: the gate helpers read the
+// activation-time CACHE, so the fixture must poke settings + cache together
+// (poking only the settings struct would be invisible to the getters).
+static void tsc_set_crystals(uint8 ganon, uint8 tower) {
+  g_rando_active_settings.crystals_ganon = ganon;
+  g_rando_active_settings.crystals_tower = tower;
+  g_rando_effective_crystals_ganon = ganon;
+  g_rando_effective_crystals_tower = tower;
+}
+
 static void Rando_CrystalGateSelfCheck(void) {
   uint8 saved_slot_active = g_rando_slot_active;
   bool saved_settings_valid = g_rando_active_settings_valid;
   RandoSettings saved_settings = g_rando_active_settings;
+  uint8 saved_eff_ganon = g_rando_effective_crystals_ganon;
+  uint8 saved_eff_tower = g_rando_effective_crystals_tower;
   uint8 saved_crystals = link_has_crystals;
   uint8 saved_event43 = save_ow_event_info[0x43];
 
@@ -8592,8 +8863,7 @@ static void Rando_CrystalGateSelfCheck(void) {
   g_rando_slot_active = 1;
   g_rando_active_settings_valid = true;
   Settings_SetDefaults(&g_rando_active_settings);
-  g_rando_active_settings.crystals_tower = 0;
-  g_rando_active_settings.crystals_ganon = 1;
+  tsc_set_crystals(/*ganon=*/1, /*tower=*/0);
   link_has_crystals = 0;
   if (!Rando_HasRequiredTowerCrystals())
     tsc_die("CrystalGate: zero-crystal tower requirement failed");
@@ -8607,12 +8877,12 @@ static void Rando_CrystalGateSelfCheck(void) {
   if (!Rando_HasRequiredGanonCrystals())
     tsc_die("CrystalGate: one crystal failed a one-crystal Ganon gate");
 
-  g_rando_active_settings.crystals_ganon = 0;
+  tsc_set_crystals(/*ganon=*/0, /*tower=*/0);
   link_has_crystals = 0;
   if (!Rando_HasRequiredGanonCrystals())
     tsc_die("CrystalGate: zero-crystal Ganon requirement failed");
 
-  g_rando_active_settings.crystals_tower = 3;
+  tsc_set_crystals(/*ganon=*/0, /*tower=*/3);
   link_has_crystals = 0x03;
   if (Rando_HasRequiredTowerCrystals())
     tsc_die("CrystalGate: two crystals passed a three-crystal gate");
@@ -8631,9 +8901,34 @@ static void Rando_CrystalGateSelfCheck(void) {
   if (!Rando_HasRequiredGanonCrystals())
     tsc_die("CrystalGate: unknown settings did not preserve vanilla Ganon combat");
 
+  // add-rando-random-crystals — the sentinel resolves deterministically and
+  // in range; per-axis independence (ganon draw unaffected by tower mode).
+  {
+    RandoSettings rc;
+    Settings_SetDefaults(&rc);
+    rc.crystals_ganon = kCrystalsRandom;
+    uint8 g1, t1, g2, t2;
+    Crystals_Resolve(&rc, 0x1234ull, &g1, &t1);
+    Crystals_Resolve(&rc, 0x1234ull, &g2, &t2);
+    if (g1 != g2 || t1 != t2 || g1 > 7 || t1 != 7)
+      tsc_die("CrystalGate: sentinel resolve not deterministic/in-range");
+    rc.crystals_tower = kCrystalsRandom;
+    Crystals_Resolve(&rc, 0x1234ull, &g2, &t2);
+    if (g2 != g1 || t2 > 7)
+      tsc_die("CrystalGate: per-axis independence violated");
+    // Pinned vector (implementation-review F2): salt/stream drift would
+    // silently re-roll every random seed's effective counts across versions
+    // with the whole suite green — nothing else observes these streams.
+    // Captured from the implementation at introduction.
+    if (g2 != kCrystalsPinnedGanon0x1234 || t2 != kCrystalsPinnedTower0x1234)
+      tsc_die("CrystalGate: pinned resolve vector drifted");
+  }
+
   g_rando_slot_active = saved_slot_active;
   g_rando_active_settings_valid = saved_settings_valid;
   g_rando_active_settings = saved_settings;
+  g_rando_effective_crystals_ganon = saved_eff_ganon;
+  g_rando_effective_crystals_tower = saved_eff_tower;
   link_has_crystals = saved_crystals;
   save_ow_event_info[0x43] = saved_event43;
   fprintf(stderr, "[Rando_CrystalGateSelfCheck] OK\n");
@@ -8778,6 +9073,7 @@ void Rando_RunAllSelfChecks(void) {
     exit(2);
   }
   Rando_Rng_SelfCheck();
+  Rando_ShopPriceSelfCheck();  // add-rando-shopsanity
   Share_SelfCheck();
   Settings_SelfCheck();
   Logic_SelfCheck();
@@ -8809,4 +9105,63 @@ void Rando_RunAllSelfChecks(void) {
   Rando_ShuffleInstallSelfCheck();
   Rando_MedallionIcons_SelfCheck();
   fprintf(stderr, "Rando_RunAllSelfChecks: all subsystems OK.\n");
+}
+
+// ---------------------------------------------------------------------------
+// add-rando-shopsanity — playtest diagnostic. Prints the WHOLE shop-check
+// decision chain (activation gates, then per-shop-slot resolution) to
+// dump_shop_debug.txt AND stderr, so an "icons not drawing" playtest report
+// localizes in one F12 dump / one headless probe run instead of a bisect
+// (runtime-debugging discipline: instrument the whole chain at once).
+// Read-only; no gameplay effect.
+void Rando_DumpShopCheckDebug(void) {
+  FILE *outs[2];
+  outs[0] = stderr;
+  outs[1] = fopen("dump_shop_debug.txt", "w");
+  for (int o = 0; o < 2; o++) {
+    FILE *f = outs[o];
+    if (f == NULL) continue;
+    fprintf(f, "[SHOPDBG] rando_active=%d slot_active=%d settings_valid=%d "
+               "from_cold_replay=%d header_valid=%d\n",
+            (enhanced_features1 & kFeatures1_RandomizerActive) ? 1 : 0,
+            g_rando_slot_active ? 1 : 0,
+            g_rando_active_settings_valid ? 1 : 0,
+            g_rando_settings_from_cold_replay ? 1 : 0,
+            g_rando_active_header_valid ? 1 : 0);
+    fprintf(f, "[SHOPDBG] settings: shopsanity=%d bonk_shuffle=%d "
+               "crystals=%d/%d effective=%d/%d world_state=%d "
+               "shopsanity_active=%d\n",
+            g_rando_active_settings.shopsanity,
+            g_rando_active_settings.bonk_shuffle,
+            g_rando_active_settings.crystals_ganon,
+            g_rando_active_settings.crystals_tower,
+            g_rando_effective_crystals_ganon, g_rando_effective_crystals_tower,
+            g_rando_active_settings.world_state,
+            rando_shopsanity_active() ? 1 : 0);
+    fprintf(f, "[SHOPDBG] cur_room=%02X which_entrance=%02X\n",
+            BYTE(dungeon_room_index), which_entrance);
+    for (uint32 i = 0; i < sizeof(kRandoShopSlots) / sizeof(kRandoShopSlots[0]); i++) {
+      for (uint8 pos = 0; pos < 3; pos++) {
+        uint16 loc = (uint16)(kRandoShopSlots[i].loc_base + pos);
+        uint16 placed = Placement_Lookup(loc, 0xFFFFu);
+        uint16 ci_loc = 0xFFFFu, ci_item = 0xFFFFu, ci_price = 0;
+        // Non-room-only rows resolve with their own table door id; the
+        // room-only row matches on room alone so any entrance value works.
+        bool ci = Rando_ShopSlotCheckInfo(kRandoShopSlots[i].room,
+                                          kRandoShopSlots[i].door,
+                                          (uint8)(pos + 1),
+                                          &ci_loc, &ci_item, &ci_price);
+        uint8 gfx = 0, big = 0, fl = 0;
+        int icon = ci ? Rando_GetShopCheckIcon(loc, &gfx, &big, &fl) : -1;
+        fprintf(f, "[SHOPDBG] loc=%u room=%02X door=%02X pos=%u placed=%d "
+                   "checked=%d checkinfo=%d item=%d price=%u icon=%d gfx=%02X\n",
+                loc, kRandoShopSlots[i].room, kRandoShopSlots[i].door, pos,
+                placed == 0xFFFFu ? -1 : (int)placed,
+                Rando_IsLocationChecked(loc) ? 1 : 0,
+                ci ? 1 : 0, ci ? (int)ci_item : -1,
+                ci ? (unsigned)ci_price : 0u, icon, gfx);
+      }
+    }
+    if (f != stderr) fclose(f);
+  }
 }

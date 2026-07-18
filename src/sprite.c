@@ -1669,6 +1669,29 @@ void Entity_ApplyRumbleToSprites(SpriteHitBox *hb) {  // 86ad03
       if (!CheckIfHitBoxesOverlap(hb))
         continue;
     }
+    // add-rando-bonk-sanity — an unchecked bonk check consumes a RUMBLE wake:
+    // grant the placed item quietly, mark checked, despawn (the 12-bee /
+    // apple burst never runs). Both rumble origins collect — the Boots dash
+    // (player.c RepelDash) and the Quake medallion (ancilla.c), the latter
+    // per owner playtest decision 2026-07-18 (Quake is the other vanilla way
+    // to wake these sprites; one cast may collect several on-screen checks,
+    // each safe through the quiet path — no receipt ancilla involved).
+    // Placement logic matches: CanBonk() = Boots OR (sword AND Quake), so
+    // the placer may rely on either wake method (kGen 149).
+    // Never indoors (overworld_area_index is stale there). Checked /
+    // axis-off / unresolved sprites take the vanilla wake below.
+    if (!player_is_indoors &&
+        (sprite_type[j] == 0x79 || sprite_type[j] == 0xac)) {
+      uint16 bonk_loc = Rando_BonkCheckLocForWake(
+          (uint8)overworld_area_index, sprite_N_word[j], sprite_type[j]);
+      if (bonk_loc != 0xFFFFu) {
+        uint8 bonk_lttp = Rando_DispatchVanillaGrant(bonk_loc, 0xFFFFu,
+                                                     kRandoLttpSkip);
+        Rando_QuietReceiveOrConfirm(bonk_lttp, Rando_LastDispatchedItemId());
+        sprite_state[j] = 0;
+        continue;
+      }
+    }
     sprite_E[j] = 0;
     sound_effect_2 = 0x30;
     sprite_z_vel[j] = 0x30;
@@ -2160,6 +2183,111 @@ bool Rando_TryDrawFieldItemSprite(int k, uint16 location_id, uint16 vanilla_item
   if (Sprite_PrepOamCoordOrDoubleRet(k, &info))
     return true;   // off-screen: handled (don't draw the vanilla sprite either)
   Rando_DrawRecvItemSlotAt(k, gfx, big, oam_flags, &info, 0, 0);
+  return true;
+}
+
+// add-rando-shopsanity — draw an unchecked shop check slot's placed-item icon.
+// Same shared recv-slot discipline as the field-item draw (never the client
+// toggle). The shared slot holds ONE gfx at a time, so the FIRST check slot
+// that claims it each frame draws its exact icon; a sibling slot with a
+// DIFFERENT placed item the same frame falls back (return 2) instead of
+// thrashing the slot (the documented one-item-per-screen limitation).
+// Returns the Rando_GetShopCheckIcon contract: 0 = vanilla tiles truthful,
+// 1 = icon drawn (or intentionally suppressed off-screen/mid-transition),
+// 2 = caller draws the generic check cue.
+// add-rando-shopsanity — three CONCURRENT shop check-slot icon slots, each a
+// full 16x16 quad. VRAM ownership (external-review P2: the previous page-0
+// gap picks collided with the arrow/boomerang projectile tiles, and before
+// that with the heart/sparkle shop tiles — page 0 below 0x40 has NO
+// permanently free chars):
+//   pos 0 -> the travel-bird quad (page-0 chars 0x0E/0x0F + 0x1E/0x1F).
+//     Its consumers — the flute bird and a handful of overworld NPCs — can
+//     never spawn inside a shop room, and on expiry NMI_DoUpdates restores
+//     the bird's own staging bytes so nothing outdoors ever sees icon
+//     pixels.
+//   pos 1 -> the shop sheet set's zero quad (page-1 chars 0x0C/0x0D +
+//     0x1C/0x1D — all-zero tiles in the loaded shop sheets, VRAM-verified;
+//     zeroed again on expiry).
+//   pos 2 -> the SHARED recv-item slot (chars 0x24/0x25 + 0x34/0x35),
+//     gated by Rando_CanDrawRecvItemSlot so a live receipt animation wins
+//     the slot and the column shows the sparkle cue for those frames.
+// pos-0/1 tiles stage into this C-side buffer (recv-slot layout per entry)
+// — NOT the g_ram gfx atlas, whose tail past the recv slot (0xbdc0+) is
+// occupied by receive-anim sources. NMI_DoUpdates uploads both quads while
+// the countdown is armed; every staging call re-arms it, so uploads decay
+// (with the restore writes) two frames after the last shop draw.
+uint8 g_rando_shop_icon_tiles[2][0x80];
+uint8 g_rando_shop_icon_upload_frames;
+
+// Stage a shop column's icon tiles into `dst` (recv-slot layout: 0x40-byte
+// top char row + 0x40-byte bottom row). Shared by the pos-0/1 private-quad
+// buffers; pos 2 routes through the recv slot instead (see SlotStage).
+static bool rando_shop_icon_decode(uint8 gfx, uint8 *dst) {
+  if (gfx & 0x80) {
+    if (gfx == kRandoCustomGfx_Rupoor) {
+      // ALTTPR's Rupoor IS the vanilla rupee tile — only the palette differs.
+      return DecodeAnimatedSpriteTile_ToBuffer(0x24, dst);
+    }
+    if (gfx == kRandoCustomGfx_Cucco) {
+      // Mirror Rando_EnsureRecvItemSlotGfx's cucco path (sheet-80 frame 0).
+      Decomp_spr(&g_ram[0x14000], 80);
+      const uint8 *csrc = &g_ram[0x14000] + 0x3F0;
+      Expand3To4High(dst, csrc, g_ram, 2);
+      Expand3To4High(dst + 0x40, csrc + 0x180, g_ram, 2);
+      return true;
+    }
+    uint32 idx = gfx & 0x7f;
+    if ((idx + 1) * 0x80 > kRandoCustomItemGfx_SIZE)
+      return false;  // stale assets blob — draw the cue, not garbage
+    memcpy(dst, kRandoCustomItemGfx + idx * 0x80, 0x80);
+    return true;
+  }
+  return DecodeAnimatedSpriteTile_ToBuffer(gfx, dst);
+}
+
+// Custom-art palette guard (external-review P2): all non-Rupoor custom art
+// shares ONE overlay palette row, and Rupoor needs a DIFFERENT one — two
+// visible custom icons of different classes cannot both be truthful. The
+// first custom class to stage each frame owns the row; a conflicting later
+// column falls back to the sparkle cue.
+static bool rando_shop_icon_palette_ok(uint8 gfx) {
+  static uint8 s_frame, s_class;
+  if (!(gfx & 0x80))
+    return true;  // vanilla bundles use their own stable rows
+  uint8 cls = (gfx == kRandoCustomGfx_Rupoor) ? 1 : 2;
+  if (s_frame != frame_counter) {
+    s_frame = frame_counter;
+    s_class = 0;
+  }
+  if (s_class != 0 && s_class != cls)
+    return false;
+  s_class = cls;
+  Rando_ApplyCustomItemGfxPalette(gfx);
+  return true;
+}
+
+bool Rando_ShopIconSlotStage(uint8 pos, uint8 gfx) {
+  static uint16 s_owner[2] = {0xFFFF, 0xFFFF};
+  if (pos >= 3)
+    return false;
+  if (!rando_shop_icon_palette_ok(gfx))
+    return false;
+  if (pos == 2) {
+    // Third column rides the SHARED recv-item slot (chars 0x24/0x34) — the
+    // only remaining conflict is a live receipt animation repainting the
+    // same slot, so defer to the sparkle cue for those frames.
+    if (!Rando_CanDrawRecvItemSlot())
+      return false;
+    Rando_EnsureRecvItemSlotGfx(gfx);
+    g_rando_shop_icon_upload_frames = 2;
+    return true;
+  }
+  if (s_owner[pos] != gfx) {
+    if (!rando_shop_icon_decode(gfx, g_rando_shop_icon_tiles[pos]))
+      return false;
+    s_owner[pos] = gfx;
+  }
+  g_rando_shop_icon_upload_frames = 2;
   return true;
 }
 
@@ -3022,6 +3150,29 @@ static bool Rando_EnemyMarkerAllocateGlintOam(void) {
   return true;
 }
 
+// Shared OW check-glint tile. The glint originally borrowed 4 chars from each
+// area's loaded sprite sheets (kGlint_Char 0x80/0x83/0xB7/0xC7) — but WHAT
+// those chars hold is per-area sheet content: on Death Mountain they are 1-17
+// nonzero-byte specks, an invisible cue even after the gold ramp was
+// brightened (two playtest rounds). The glint now owns a private hand-authored
+// 4-frame sparkle uploaded into char 0x0E — the travel-bird char pair, which
+// NMI_DoUpdates uploads ONLY during flute flight; the bird upload is placed
+// after ours so a mid-flight frame shows bird wings, never a stale sparkle.
+// Frames use color index 15 only (all planes set) = the bright end of the
+// golded overlay row. embedded-data-guard: allow (hand-authored 8x8 sparkle
+// art, 4 frames x 32 bytes; original art, not ROM-derived data)
+uint8 g_rando_glint_upload_frames;
+const uint8 kRandoGlintTile4bpp[4][0x20] = {
+  { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x18, 0x18, 0x18, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x18, 0x18, 0x18, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },  // dot
+  { 0x00, 0x00, 0x00, 0x00, 0x18, 0x18, 0x3C, 0x3C, 0x3C, 0x3C, 0x18, 0x18, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x18, 0x18, 0x3C, 0x3C, 0x3C, 0x3C, 0x18, 0x18, 0x00, 0x00, 0x00, 0x00 },  // small
+  { 0x00, 0x00, 0x18, 0x18, 0x3C, 0x3C, 0x7E, 0x7E, 0x7E, 0x7E, 0x3C, 0x3C, 0x18, 0x18, 0x00, 0x00,
+    0x00, 0x00, 0x18, 0x18, 0x3C, 0x3C, 0x7E, 0x7E, 0x7E, 0x7E, 0x3C, 0x3C, 0x18, 0x18, 0x00, 0x00 },  // big
+  { 0x18, 0x18, 0x18, 0x18, 0x5A, 0x5A, 0x3C, 0x3C, 0x3C, 0x3C, 0x5A, 0x5A, 0x18, 0x18, 0x18, 0x18,
+    0x18, 0x18, 0x18, 0x18, 0x5A, 0x5A, 0x3C, 0x3C, 0x3C, 0x3C, 0x5A, 0x5A, 0x18, 0x18, 0x18, 0x18 },  // star
+};
+
 void Rando_DrawOverworldEnemyMarkerGlints(void) {
   if (player_is_indoors || !(enhanced_features1 & kFeatures1_RandomizerActive))
     return;
@@ -3052,6 +3203,23 @@ void Rando_DrawOverworldEnemyMarkerGlints(void) {
       continue;
     enemy_glint_mask |= (uint16)(1u << k);
   }
+
+  // add-rando-bonk-sanity — live DORMANT bonk sprites whose check is still
+  // uncollected join the same glint mask (drawn at the sprite's position by
+  // the shared pass below). Rando_BonkCheckLocForWake is the same
+  // axis+placed+unchecked resolver the wake hook uses, so the cue and the
+  // grant can't drift; it returns 0xFFFF for axis-off / checked / unknown
+  // sprites, keeping this fully inert otherwise. (As-built refinement of
+  // design D7: sourcing coords from the spawned sprites needs no
+  // block->coordinate math and only marks what is actually on screen.)
+  for (int k = 0; k < 16; k++) {
+    if (sprite_state[k] == 0 || sprite_E[k] == 0) continue;  // live + dormant
+    if (sprite_type[k] != 0x79 && sprite_type[k] != 0xac) continue;
+    if (Rando_BonkCheckLocForWake((uint8)overworld_area_index,
+                                  sprite_N_word[k], sprite_type[k]) == 0xFFFFu)
+      continue;
+    enemy_glint_mask |= (uint16)(1u << k);
+  }
   if (enemy_glint_mask == 0)
     return;
 
@@ -3071,10 +3239,13 @@ void Rando_DrawOverworldEnemyMarkerGlints(void) {
   if (prow < 0)
     return;
 
-  static const uint8 kGlint_Char[4] = {0x80, 0x83, 0xb7, 0xc7};
-  uint8 tile = kGlint_Char[(frame_counter >> 2) & 3];
   int bob = (frame_counter >> 3) & 3;
-  uint8 flags = (uint8)((prow << 1) | 0x20);
+  // OBJ priority 3: tree canopies (and similar walk-behind scenery) are
+  // high-priority BG tiles that composite ABOVE priority-2 sprites (that is
+  // why Link vanishes under a canopy). The glint drew correctly for two
+  // playtest rounds and was occluded by the canopy every time; a check cue
+  // must never hide behind the very object it marks.
+  uint8 flags = (uint8)((prow << 1) | 0x30);
   for (int k = 0; k < 16; k++) {
     if (!(enemy_glint_mask & (uint16)(1u << k)))
       continue;
@@ -3086,8 +3257,9 @@ void Rando_DrawOverworldEnemyMarkerGlints(void) {
       continue;
     if (!Rando_EnemyMarkerAllocateGlintOam())
       continue;
-    SetOamHelper0(GetOamCurPtr(), (uint16)gx, (uint16)gy, tile, flags, 0);
+    SetOamHelper0(GetOamCurPtr(), (uint16)gx, (uint16)gy, 0x0F, flags, 0);
     Rando_OverlayPaletteRequestGold((uint8)prow);
+    g_rando_glint_upload_frames = 2;  // private sparkle tile -> char 0x0E
   }
 }
 
@@ -3116,10 +3288,13 @@ void Rando_DrawTerrainGlints(void) {
   }
   if (prow < 0)
     return;
-  static const uint8 kGlint_Char[4] = {0x80, 0x83, 0xb7, 0xc7};
-  uint8 tile = kGlint_Char[(frame_counter >> 2) & 3];
   int bob = (frame_counter >> 3) & 3;
-  uint8 flags = (uint8)((prow << 1) | 0x20);
+  // OBJ priority 3: tree canopies (and similar walk-behind scenery) are
+  // high-priority BG tiles that composite ABOVE priority-2 sprites (that is
+  // why Link vanishes under a canopy). The glint drew correctly for two
+  // playtest rounds and was occluded by the canopy every time; a check cue
+  // must never hide behind the very object it marks.
+  uint8 flags = (uint8)((prow << 1) | 0x30);
   int32 basex = (int32)overworld_offset_base_x << 3;
   int32 basey = (int32)overworld_offset_base_y;
   bool drew = false;
@@ -3136,11 +3311,13 @@ void Rando_DrawTerrainGlints(void) {
       continue;
     if (!Rando_EnemyMarkerAllocateGlintOam())
       continue;
-    SetOamHelper0(GetOamCurPtr(), (uint16)gx, (uint16)gy, tile, flags, 0);
+    SetOamHelper0(GetOamCurPtr(), (uint16)gx, (uint16)gy, 0x0F, flags, 0);
     drew = true;
   }
-  if (drew)
+  if (drew) {
     Rando_OverlayPaletteRequestGold((uint8)prow);
+    g_rando_glint_upload_frames = 2;  // private sparkle tile -> char 0x0E
+  }
 }
 
 bool Rando_EnemyDropMarkerNeedsOverlay(int k) {

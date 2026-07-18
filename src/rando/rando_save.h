@@ -69,9 +69,11 @@
 //       registry drift).
 //   10 — add-rando-key-rings-skeleton-key: widens the settings blob 30->31
 //        bytes (canonical byte [30]); the extension remains the v9 51-byte
-//        block. Older blobs zero-extend the new axes to Off. New writes are
-//        always v10.
-#define kRandoSidecar_FileFormatVersion 10
+//        block. Older blobs zero-extend the new axes to Off.
+//   11 — add-rando-bonk-sanity: bonk registry identity in the extension
+//        (@51-57, same guard shape as pot/terrain/enemy-check). New writes
+//        are always v11.
+#define kRandoSidecar_FileFormatVersion 11
 #define kRandoSidecar_SlotCount         3       // mirrors sram.dat's 3-slot layout
 #define kRandoSidecar_FileHeaderSize    16
 #define kRandoSidecar_SlotHeaderSize    80
@@ -114,7 +116,12 @@
 //   @48-49  enemy_check_registry_count (u16 LE)
 //   @50     enemy_check_registry_present (u8; 1 = refuse enemy-check drift)
 #define kRandoSidecar_SlotExtV9Size     51
-#define kRandoSidecar_SlotExtCurrentSize kRandoSidecar_SlotExtV9Size
+// format_version >= 11 (add-rando-bonk-sanity): bonk registry identity.
+//   @51-54  bonk_registry_digest (u32 LE)
+//   @55-56  bonk_registry_count (u16 LE)
+//   @57     bonk_registry_present (u8; 1 = refuse bonk-enabled drift)
+#define kRandoSidecar_SlotExtV11Size    58
+#define kRandoSidecar_SlotExtCurrentSize kRandoSidecar_SlotExtV11Size
 
 // Per randomizer-save spec § Slot header: 3-value discriminator.
 // Empty=0 is the all-zeroes default, distinguishable from an explicit
@@ -342,6 +349,10 @@ typedef struct RandoSlotHeader {
   uint32 enemy_check_registry_digest;  // v9 ext block @44-47
   uint16 enemy_check_registry_count;   // v9 ext block @48-49
   uint8 enemy_check_registry_present;  // v9 ext block @50
+  // Bonk registry identity (add-rando-bonk-sanity, same guard shape).
+  uint32 bonk_registry_digest;   // v11 ext block @51-54
+  uint16 bonk_registry_count;    // v11 ext block @55-56
+  uint8 bonk_registry_present;   // v11 ext block @57
 } RandoSlotHeader;
 
 // Bitmap covers placement_table_size / 2 locations.

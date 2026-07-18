@@ -287,11 +287,13 @@ enum {
   LOCTYPE_Enemy       = 19,  // Ordinary dungeon enemy check.
   LOCTYPE_Grass       = 20,  // Overworld bush/thick-grass check (add-rando-grass-rock-shuffle)
   LOCTYPE_Rock        = 21,  // Overworld light/heavy rock check (add-rando-grass-rock-shuffle)
+  LOCTYPE_Bonk        = 22,  // Placed OW bonk-item sprite check (add-rando-bonk-sanity)
 };
 
 static inline bool Rando_LocationTypeCountsAsCheck(uint8 type) {
   return type != LOCTYPE_Prize_Event && type != LOCTYPE_Medallion;
 }
+
 
 typedef struct RandoRegionDef {
   uint16 id;
@@ -308,6 +310,24 @@ typedef struct RandoEdgeDef {
   uint8 one_way;
   uint8 _pad;
 } RandoEdgeDef;
+
+// add-rando-shopsanity — does this location's world_state_filter accept the
+// active world state? ONE definition for the junk-pad target, the
+// open-location collection, Placement_SelfCheck's expected count, and the
+// reachability expansion, so the four can't drift. Shopsanity overrides the
+// Retro-only filter on the 27 regular shop slots: with the axis on they are
+// live fill locations in EVERY world state. ShopUpgrade/TakeAny keep their
+// plain Retro filter. The world_state >= 32 guard keeps the shift defined if
+// a caller ever bypasses Settings_Validate (unknown state = filter never
+// matches, matching the prior reachability-site behavior).
+static inline bool Rando_LocationWorldStateActive(const RandoLocationDef *loc,
+                                                  const RandoSettings *settings) {
+  uint8 wsf = loc->world_state_filter;
+  if (wsf == 0) return true;
+  if (settings->world_state < 32 &&
+      (wsf & (1u << settings->world_state)) != 0) return true;
+  return loc->type == LOCTYPE_Shop && settings->shopsanity != 0;
+}
 
 extern const RandoLocationDef kRandoLocations[];
 extern const uint32 kRandoLocationsCount;

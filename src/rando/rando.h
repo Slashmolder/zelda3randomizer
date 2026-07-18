@@ -16,7 +16,17 @@
 // kGeneratorVersion — bumped per tasks.md §13.6 whenever placement output
 // could change. The bump triggers regression-corpus regeneration.
 // ---------------------------------------------------------------------------
-#define kGeneratorVersion 146u  // Vanilla NPC randomized-item hint redirects
+// 147: merge resolution — main's 146 (vanilla NPC hint redirects) and this
+// branch's 146 (shopsanity + random crystals + bonk-sanity) were CONCURRENT
+// same-number bumps describing different placement universes; the merged
+// branch takes 147 and recaptures the whole corpus.
+// 148: external-review P1 logic fixes — Inverted LW DM shop rows gain the
+// upstream Hookshot requirement (Mitt-portal arrivals can't cross the gap),
+// and stage-0-absent bonk rows gain HAS_ITEM(RescuedZelda) (their sprites
+// only spawn post-escort; Standard could hardlock the Lamp onto one).
+// 149: CanBonk widens to Boots OR (sword AND Quake) — logic now matches the
+// runtime's two accepted wake origins (owner decision; canGetGoodBee shape).
+#define kGeneratorVersion 149u  // CanBonk = Boots OR (sword AND Quake)
 // The share-string binary layout packs version into 1 byte
 // (rando_share.h: ShareString.version is uint8). Compile-time enforce
 // kGeneratorVersion ≤ 255 so silent truncation can't ship.
@@ -429,6 +439,26 @@ bool Rando_TryDrawFieldItemSprite(int k, uint16 location_id, uint16 vanilla_item
 bool Rando_TryDrawHeldItemSprite(int k, uint16 location_id, uint16 vanilla_item_id,
                                  int dx, int dy);
 
+// add-rando-shopsanity — stage shop column `pos` (0..2)'s icon tiles into its
+// quad (sprite.c ownership map: pos 0 = the bird quad 0x0E/0x0F+0x1E/0x1F,
+// pos 1 = the shop sheets' page-1 zero quad, pos 2 = the shared recv slot).
+// pos 0/1 upload from the buffer below while the countdown is armed, with
+// restore writes on expiry; pos 2 rides the recv slot's own upload. Returns
+// false when the gfx can't decode, the custom palette row is already owned
+// by a different custom class this frame, or (pos 2) a receipt animation
+// owns the recv slot — the caller then draws the generic check cue. Never
+// touches OAM; the caller emits the quad's entries in its own dmd block.
+bool Rando_ShopIconSlotStage(uint8 pos, uint8 gfx);
+extern uint8 g_rando_shop_icon_tiles[2][0x80];
+extern uint8 g_rando_shop_icon_upload_frames;
+
+// Shared OW check-glint private sparkle tile (sprite.c): 4 hand-authored
+// animation frames NMI_DoUpdates uploads into char 0x0E (the travel-bird
+// char, unused outside flute flight) while the countdown is armed by a glint
+// pass. Area-sheet independent — see the sprite.c comment for the history.
+extern const uint8 kRandoGlintTile4bpp[4][0x20];
+extern uint8 g_rando_glint_upload_frames;
+
 // Draw a trap-cucco (sprite 0x0B with the trap signal byte set) as a single 16x16
 // large OAM entry from the shared recv-item slot with the custom cucco tile +
 // palette, so the flock renders in ANY area. Mirrors the vanilla large draw
@@ -549,6 +579,53 @@ uint8 Rando_ChestDispatch(uint16 dungeon_room, uint8 chest_ordinal,
 // ---------------------------------------------------------------------------
 uint8 Rando_ShopDispatch(uint8 room, uint8 entrance, uint8 pos,
                          uint8 vanilla_lttp_code);
+
+// add-rando-random-crystals — the active slot's RESOLVED crystal
+// requirements (0..7), cached at slot activation from the seed-taking
+// resolver; 7/7 vanilla-equivalent when no valid slot. The ONLY sanctioned
+// runtime access to crystal thresholds (the requested settings byte may
+// carry the `random` sentinel 8).
+uint8 Rando_EffectiveCrystalsGanon(void);
+uint8 Rando_EffectiveCrystalsTower(void);
+
+// add-rando-shopsanity — deterministic per-slot check price (multiples of 5
+// in [10, 250]), derived from (seed, loc_id) on a dedicated salted RNG stream.
+// Shared by the spoiler emitter and the runtime shop spawn so the two can't
+// drift; never stored. Only meaningful for LOCTYPE_Shop slots on a
+// shopsanity=true seed — every other slot keeps its vanilla price literal.
+uint16 Rando_ShopPrice(uint64 seed_u64, uint16 loc_id);
+
+// add-rando-bonk-sanity — bonk registry identity (activation guard, same
+// shape as pot/terrain/enemy-check) + the dash-wake check resolver used by
+// Entity_ApplyRumbleToSprites' hook (0xFFFF = vanilla wake).
+uint32 Rando_CurrentBonkRegistryDigest(void);
+uint16 Rando_CurrentBonkRegistryCount(void);
+bool Rando_SettingsNeedBonkRegistry(const RandoSettings *settings);
+bool Rando_BonkRegistryMatches(uint32 digest, uint16 count);
+uint16 Rando_BonkCheckLocForWake(uint8 area, uint16 block, uint8 sprite_type_id);
+
+// add-rando-shopsanity — is the (room, entrance-door, spawn-slot pos+1) shop
+// column an ACTIVE UNCHECKED check? True only when the active slot has the
+// axis, the column maps to one of the 27 regular shop-slot locations
+// (pos_plus1 1..3 — never the Retro genericKey 4th column), a placement
+// entry exists, and the location is not yet checked. Outputs (each optional):
+// location id, placed registry item, derived price. False = the vanilla shop
+// path applies (axis off, non-shop caller, or bought -> vanilla restock).
+bool Rando_ShopSlotCheckInfo(uint8 room, uint8 entrance, uint8 pos_plus1,
+                             uint16 *out_loc, uint16 *out_item,
+                             uint16 *out_price);
+
+// add-rando-shopsanity — icon resolution for an unchecked check slot (same
+// shared resolver as field items, NOT client-toggle gated). Returns:
+// 0 = placement is the slot's vanilla item (vanilla tiles truthful),
+// 1 = icon resolved into the outputs, 2 = no drawable icon (generic cue).
+int Rando_GetShopCheckIcon(uint16 location_id, uint8 *out_gfx, uint8 *out_big,
+                           uint8 *out_oam_flags);
+
+// Playtest diagnostic: dump the whole shop-check decision chain (activation
+// gates + per-slot resolution) to dump_shop_debug.txt and stderr. Called by
+// the F12 debug dump and the --rando-shop-probe headless CLI. Read-only.
+void Rando_DumpShopCheckDebug(void);
 
 // ---------------------------------------------------------------------------
 // Retro TakeAny caves.

@@ -618,5 +618,137 @@ void Customizer_PlacementSelfCheck(void) {
       customizer_selfcheck_die("placement selfcheck: virtual non-grantable pin must be rejected");
   }
 
+  // add-rando-shopsanity — shop-slot pins follow the axis: with shopsanity ON
+  // the slot is an ordinary open location and the pin is honored; with it OFF
+  // (Retro, where the slot IS collected but identity-pinned) the pin is
+  // refused with the non-customizable-type message. Closes the deferred
+  // tasks.md 3.5 prong.
+  {
+    CustomizerManifest shop;
+    memset(&shop, 0, sizeof shop);
+    shop.pins[0].location_id = Customizer_ResolveLocation("Dark World Forest Shop - 0");
+    shop.pins[0].item_id = Customizer_ResolveItem("Hookshot");
+    shop.pin_count = 1;
+    if (shop.pins[0].location_id == 0xFFFF || shop.pins[0].item_id == 0xFFFF)
+      customizer_selfcheck_die("placement selfcheck: shop pin names failed to resolve");
+    RandoPlacement *shop_entries =
+        (RandoPlacement *)calloc(kRandoLocationsCount, sizeof(RandoPlacement));
+    if (shop_entries == NULL)
+      customizer_selfcheck_die("placement selfcheck: out of memory for shop pin");
+    RandoPlacementTable shop_table = { shop_entries, 0 };
+    RandoSettings ss = s;
+    ss.shopsanity = 1;
+    Customizer_Install(&shop);
+    bool shop_ok = Place_AssumedFill(&ss, 0x00C0FFEEull, 0, &shop_table);
+    Customizer_Install(NULL);
+    if (!shop_ok) {
+      fprintf(stderr, "Customizer_PlacementSelfCheck: shopsanity shop pin refused: %s\n",
+              Customizer_LastError());
+      exit(2);
+    }
+    bool honored = false;
+    for (uint16 pi2 = 0; pi2 < shop_table.count; pi2++) {
+      if (shop_table.entries[pi2].location_id == shop.pins[0].location_id &&
+          shop_table.entries[pi2].item_id == shop.pins[0].item_id) {
+        honored = true;
+        break;
+      }
+    }
+    free(shop_entries);
+    if (!honored)
+      customizer_selfcheck_die("placement selfcheck: shopsanity shop pin was not honored");
+    RandoPlacement *off_entries =
+        (RandoPlacement *)calloc(kRandoLocationsCount, sizeof(RandoPlacement));
+    if (off_entries == NULL)
+      customizer_selfcheck_die("placement selfcheck: out of memory for shop-off pin");
+    RandoPlacementTable off_table = { off_entries, 0 };
+    RandoSettings off = s;
+    off.world_state = kWorldState_Retro;  // slot collected but identity-pinned
+    Customizer_Install(&shop);
+    bool off_ok = Place_AssumedFill(&off, 0x00C0FFEEull, 0, &off_table);
+    Customizer_Install(NULL);
+    free(off_entries);
+    if (off_ok || strstr(Customizer_LastError(), "shop slot without shopsanity") == NULL)
+      customizer_selfcheck_die(
+          "placement selfcheck: shop pin without shopsanity must be refused with the type message");
+  }
+
+  // External-review P1 negative pins — each reproduced a shipped self-lock the
+  // placer ACCEPTED; after the logic fixes both must REFUSE at the default
+  // items accessibility. They pin exactly the reviewer's reproducers so the
+  // circular placements can never regress silently.
+  //
+  // (1) Inverted LW Death Mountain Shop holding the Hookshot: the shop's
+  // location predicate requires the Hookshot (upstream Inverted East.php:37
+  // callback; the region's dark-rock-lift entry admits Mitt-only arrivals,
+  // so region reachability proves nothing) — Hookshot inside it is circular.
+  {
+    CustomizerManifest lock;
+    memset(&lock, 0, sizeof lock);
+    lock.pins[0].location_id =
+        Customizer_ResolveLocation("Light World Death Mountain Shop - 0");
+    lock.pins[0].item_id = Customizer_ResolveItem("Hookshot");
+    lock.pin_count = 1;
+    if (lock.pins[0].location_id == 0xFFFF || lock.pins[0].item_id == 0xFFFF)
+      customizer_selfcheck_die("placement selfcheck: inverted shop self-lock names failed to resolve");
+    RandoPlacement *e =
+        (RandoPlacement *)calloc(kRandoLocationsCount, sizeof(RandoPlacement));
+    if (e == NULL)
+      customizer_selfcheck_die("placement selfcheck: out of memory for inverted self-lock");
+    RandoPlacementTable t = { e, 0 };
+    RandoSettings inv = s;
+    inv.world_state = kWorldState_Inverted;
+    inv.shopsanity = 1;
+    inv.accessibility = kAccessibility_Items;
+    Customizer_Install(&lock);
+    bool filled = Place_AssumedFill(&inv, 0x00C0FFEEull, 0, &t);
+    // The fill itself may complete; the REFUSAL lives in the pipeline's
+    // acceptance gate (Goal_ShouldRefuse — beatability + accessibility tier),
+    // exactly as --generate-seed applies it. Base seed, never attempt seed.
+    bool refused = !filled || Goal_ShouldRefuse(&inv, 0x00C0FFEEull, &t);
+    Customizer_Install(NULL);
+    free(e);
+    if (!refused)
+      customizer_selfcheck_die(
+          "placement selfcheck: Hookshot pinned inside the Inverted LW DM shop must refuse (self-lock)");
+  }
+
+  // (2) Standard bonk-sanity with the Lamp on a post-rescue bonk tree: the
+  // stage-0-absent rows carry HAS_ITEM(RescuedZelda), the escort needs the
+  // Lamp, so Lamp-on-the-tree is circular. Registry-gated: an assetless
+  // build has zero bonk rows and the pin target does not exist.
+  {
+    uint16 bonk_locs = 0;
+    for (uint32 i = 0; i < kRandoLocationsCount; i++)
+      if (kRandoLocations[i].type == LOCTYPE_Bonk) bonk_locs++;
+    if (bonk_locs > 0) {
+      CustomizerManifest lock;
+      memset(&lock, 0, sizeof lock);
+      lock.pins[0].location_id =
+          Customizer_ResolveLocation("HyruleCastleEscape BonkApple A1B B0546");
+      lock.pins[0].item_id = Customizer_ResolveItem("Lamp");
+      lock.pin_count = 1;
+      if (lock.pins[0].location_id == 0xFFFF || lock.pins[0].item_id == 0xFFFF)
+        customizer_selfcheck_die("placement selfcheck: bonk self-lock names failed to resolve");
+      RandoPlacement *e =
+          (RandoPlacement *)calloc(kRandoLocationsCount, sizeof(RandoPlacement));
+      if (e == NULL)
+        customizer_selfcheck_die("placement selfcheck: out of memory for bonk self-lock");
+      RandoPlacementTable t = { e, 0 };
+      RandoSettings std = s;
+      std.world_state = kWorldState_Standard;
+      std.bonk_shuffle = kTerrainShuffle_All;
+      std.accessibility = kAccessibility_Items;
+      Customizer_Install(&lock);
+      bool filled = Place_AssumedFill(&std, 0x00C0FFEEull, 0, &t);
+      bool refused = !filled || Goal_ShouldRefuse(&std, 0x00C0FFEEull, &t);
+      Customizer_Install(NULL);
+      free(e);
+      if (!refused)
+        customizer_selfcheck_die(
+            "placement selfcheck: Lamp pinned on the Standard post-rescue bonk tree must refuse (hardlock)");
+    }
+  }
+
   fprintf(stderr, "[Customizer_PlacementSelfCheck] OK\n");
 }

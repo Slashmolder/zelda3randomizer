@@ -115,8 +115,15 @@ MATRIX = [
     # Stable slot/CLI rejection: all-tier overworld checks include missable
     # pre/post-Aga windows, so 100%-locations is intentionally unsupported.
     ("all-enemy-locations-REJECT", "mode.state=open,goal=fast_ganon,dungeon_items.small_keys=wild,enemy_drop_checks=all,accessibility=locations", "0x12", False, False, None, False),
-    ("std-ganonhunt-hard-items-OK",     "mode.state=standard,goal=ganonhunt,item_pool=hard,accessibility=items", "3", True, True, 1, False),
-    ("std-ganonhunt-hard-beatable-OK",  "mode.state=standard,goal=ganonhunt,item_pool=hard,accessibility=none",  "3", True,  True,  1, False),
+    # Seed reselected 3 -> 1 (2026-07-16): regenerating the stale Jul-7
+    # gitignored artifacts (the room-0x099 big-key self-lock gates + the
+    # CanKillHceThings alignment) tipped seed 3 from feasible to the
+    # documented marginal hunt-goal-at-items-tier refusal (seed 8 also
+    # refuses; 1/2/4-7/9-11 pass — verified by sweep on main-identical code,
+    # A/B-proven pre-existing, NOT a shopsanity regression). Both cells stay
+    # paired on one seed so the items/beatable tiers compare like-for-like.
+    ("std-ganonhunt-hard-items-OK",     "mode.state=standard,goal=ganonhunt,item_pool=hard,accessibility=items", "1", True, True, 1, False),
+    ("std-ganonhunt-hard-beatable-OK",  "mode.state=standard,goal=ganonhunt,item_pool=hard,accessibility=none",  "1", True,  True,  1, False),
 ]
 
 

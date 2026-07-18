@@ -355,8 +355,12 @@ static void at_append_settings(AtStr *s) {
   at_str_puts(s, "{");
   at_str_puts(s, "\"world_state\":"); at_json_str(s, at_world_name(rs->world_state));
   at_str_puts(s, ",\"goal\":"); at_json_str(s, at_goal_name(rs->goal));
+  // add-rando-random-crystals: external trackers need actionable thresholds,
+  // so emit the RESOLVED counts (deliberate divergence from the spoiler's
+  // requested field — documented in docs/randomizer.md).
   at_str_printf(s, ",\"crystals_ganon\":%u,\"crystals_tower\":%u",
-                (unsigned)rs->crystals_ganon, (unsigned)rs->crystals_tower);
+                (unsigned)Rando_EffectiveCrystalsGanon(),
+                (unsigned)Rando_EffectiveCrystalsTower());
   if (rs->goal == kGoal_TriforceHunt || rs->goal == kGoal_GanonHunt)
     at_str_printf(s, ",\"pieces_required\":%u", (unsigned)rs->pieces_required);
   at_str_puts(s, "}");

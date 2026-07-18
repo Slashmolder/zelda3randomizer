@@ -273,7 +273,13 @@ static void write_medallion_requirements_json(FILE *f, const uint8 *assignment) 
 
 // One shop-class placement row, gathered once for both spoiler emitters (the
 // JSON `shops[]` array and the text `Shops:` section).
-typedef struct { uint16 loc; uint16 item; uint8 type; uint16 region_id; } SpoilerShopRow;
+typedef struct {
+  uint16 loc; uint16 item; uint8 type; uint16 region_id;
+  // add-rando-shopsanity — derived check price; valid iff has_price (set only
+  // on LOCTYPE_Shop rows of a shopsanity seed; identity rows keep vanilla
+  // purchase behavior and emit no price).
+  uint16 price; bool has_price;
+} SpoilerShopRow;
 
 static int spoiler_shoprow_cmp(const void *a, const void *b) {
   uint16 la = ((const SpoilerShopRow *)a)->loc;
@@ -300,6 +306,9 @@ static uint16 collect_shop_rows(const RandoSpoiler *s, SpoilerShopRow *out, uint
     out[n].item = s->placements->entries[i].item_id;
     out[n].type = d->type;
     out[n].region_id = d->region_id;
+    out[n].has_price = d->type == LOCTYPE_Shop &&
+                       s->settings != NULL && s->settings->shopsanity != 0;
+    out[n].price = out[n].has_price ? Rando_ShopPrice(s->seed_u64, loc) : 0;
     n++;
   }
   qsort(out, n, sizeof(out[0]), spoiler_shoprow_cmp);
@@ -533,6 +542,17 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
   fprintf(f, "    \"goal\": %u,\n", s->settings->goal);
   fprintf(f, "    \"crystals_ganon\": %u,\n", s->settings->crystals_ganon);
   fprintf(f, "    \"crystals_tower\": %u,\n", s->settings->crystals_tower);
+  // add-rando-random-crystals — when either axis carries the requested
+  // sentinel (8), also emit the seed-RESOLVED counts (keyrings
+  // requested/effective precedent) + the resolve salt version.
+  if (s->settings->crystals_ganon == kCrystalsRandom ||
+      s->settings->crystals_tower == kCrystalsRandom) {
+    uint8 rg, rt;
+    Crystals_Resolve(s->settings, s->seed_u64, &rg, &rt);
+    fprintf(f, "    \"crystals_ganon_resolved\": %u,\n", rg);
+    fprintf(f, "    \"crystals_tower_resolved\": %u,\n", rt);
+    fprintf(f, "    \"crystals_salt_version\": 1,\n");
+  }
   fprintf(f, "    \"item_pool_difficulty\": %u,\n", s->settings->item_pool_difficulty);
   // Emit the EFFECTIVE key modes (Retro pins Wild; door shuffle pins Dungeon
   // for both) so the spoiler matches the canonical hash + actual placement,
@@ -863,10 +883,10 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
         const char *type_str = (shops[i].type == LOCTYPE_ShopUpgrade) ? "ShopUpgrade"
                              : (shops[i].type == LOCTYPE_TakeAny)      ? "TakeAny"
                                                                       : "Shop";
-        // Shop-class locations are identity-pinned and carry no logic-region
-        // binding (region_id == 0xFFFF), so the location NAME is the grouping key
-        // (e.g. "Light World Kakariko Shop - 1"); a bound region is emitted only
-        // when one actually exists.
+        // The location NAME is the grouping key (e.g. "Light World Kakariko
+        // Shop - 1"); a bound region is emitted only when one exists —
+        // regular Shop slots carry one since add-rando-shopsanity's region
+        // binding, ShopUpgrade/TakeAny remain region-optional (0xFFFF).
         const char *lname = Rando_GetLocationName(shops[i].loc);
         fprintf(f, "%s    {\"location\": %u, \"name\": \"%s\", \"item\": %u, "
                    "\"type\": \"%s\"",
@@ -875,6 +895,8 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
           fprintf(f, ", \"region\": \"%s\"", Rando_GetRegionName(shops[i].region_id));
         if (shops[i].type == LOCTYPE_ShopUpgrade)
           fprintf(f, ", \"identity_placed\": true");
+        if (shops[i].has_price)
+          fprintf(f, ", \"price\": %u", shops[i].price);
         fprintf(f, "}");
       }
       fprintf(f, "\n  ],\n");
@@ -1395,7 +1417,11 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
         const char *iname = Rando_GetItemName(shops[i].item);
         const char *tag =
             (shops[i].type == LOCTYPE_ShopUpgrade) ? "  [identity-placed]" : "";
-        fprintf(f, "  %-44s -> %s%s\n", lname, iname, tag);
+        if (shops[i].has_price)
+          fprintf(f, "  %-44s -> %s (%u rupees)%s\n", lname, iname,
+                  shops[i].price, tag);
+        else
+          fprintf(f, "  %-44s -> %s%s\n", lname, iname, tag);
       }
       fprintf(f, "\n");
     }

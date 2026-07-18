@@ -116,8 +116,8 @@ axis via `item_pool`.
 |---|---|---|
 | `mode.state` | `open`, `standard`, `inverted`, `retro` | `open` |
 | `goal` | `ganon`, `fast_ganon`, `dungeons`, `pedestal`, `triforce-hunt`, `ganonhunt`, `completionist` | `fast_ganon` |
-| `crystals.ganon` | 0..7 | 7 |
-| `crystals.tower` | 0..7 | 7 |
+| `crystals.ganon` | 0..7, `random` | 7 (`random`: the seed decides — the requested sentinel stays in the share string/settings hash, the effective 0-7 count is resolved deterministically from the seed; Ganon's warning dialogue reveals his rolled count in-game, the external auto-tracker export exposes both counts once the slot loads, and the spoiler adds `crystals_*_resolved`) |
+| `crystals.tower` | 0..7, `random` | 7 (`random` as above; a rolled 0 pre-opens Ganon's Tower exactly like a fixed 0) |
 | `item_pool` (alias `item.pool`) | `easy`, `normal`, `hard`, `expert` | `normal` |
 | `mode.weapons` | `randomized`, `assured`, `swordless` | `randomized` |
 | `accessibility` | `items`, `locations`, `none` (alias `beatable`; UI label "beatable only") | `items` (auto-set to `locations` for Completionist) |
@@ -135,6 +135,8 @@ axis via `item_pool`.
 | `enemy_drop_checks` | `off`, `keys`, `dungeon`, `all` | `off` (experimental; `keys` turns vanilla forced enemy key drops into checks, `dungeon` also turns eligible ordinary dungeon enemies into checks, and `all` adds eligible overworld, GT-miniboss, finite scripted-spawn, and reviewed underworld enemy checks; active only when effective small keys are Wild/Retro or Dungeon; vanilla small keys force `off`; enemy shuffle degrades `dungeon`/`all` to `keys`; entrance shuffle degrades `all` to `dungeon`; see [Enemy drop checks](#enemy-drop-checks-experimental)) |
 | `dungeon_chains` | `true`, `false` | `false` (experimental; main dungeon doors route through dungeon chains ending in bosses; see [Dungeon chains](#dungeon-chains-experimental)) |
 | `grass_shuffle` | `off`, `junk`, `all` | `off` (experimental; turns overworld bushes and cuttable grass into checks — `junk` = filler only, `all` = anything including progression; see [Grass & rock shuffle](#grass--rock-shuffle-experimental)) |
+| `shopsanity` | `true`, `false` | `false` (experimental; the 27 regular shop slots become one-time purchase checks at seed-random prices, in every world state; a bought slot permanently restocks its vanilla item at its vanilla price; see [Shopsanity](#shopsanity-experimental)) |
+| `bonk_shuffle` | `off`, `junk`, `all` | `off` (experimental; the stage-stable placed bonk trees — dormant bee hives and apple trees — become one-time checks; `junk` = filler only, `all` = anything; the first wake grants the check and suppresses that wake, later wakes swarm/drop apples as vanilla; both wake methods collect — a Pegasus Boots dash bonk or a Quake-medallion rumble (one Quake can collect several on-screen checks) — and placement logic matches: a bonk check is in logic with the Boots OR with any sword + Quake (swordless seeds need the Boots — field medallion casts require a sword); requires the local `bonk.gen.yaml` registry or bonk seeds refuse to generate/activate) |
 | `rock_shuffle` | `off`, `junk`, `all` | `off` (experimental; turns liftable rocks — Glove and Titan's Mitt — into checks; `junk` = filler only, `all` = anything; see [Grass & rock shuffle](#grass--rock-shuffle-experimental)) |
 | `instant_flute` | `true`, `false` | `true` (seed-burned QoL: flute pickups are immediately bird-woken; `false` restores the separate activation route) |
 | `region_boss_hearts_in_pool` (alias `region.bossHeartsInPool`) | `true`, `false` | Legacy/no-op. Accepted for old CSV/share compatibility, but canonicalized to `false`; boss-heart drops are always shuffled and the item-pool difficulty's boss-heart-container count always enters the item pool (10 Easy/Normal, 6 Hard, 2 Expert). Pin boss hearts with Customizer if desired. |
@@ -773,6 +775,55 @@ behind a **"Show terrain"** toggle while still counting them toward
 completion. Terrain locations are generated from local ROM-derived assets; a
 build without them refuses to activate a grass/rock-enabled slot rather than
 silently granting vanilla drops.
+
+### Shopsanity (experimental)
+
+`shopsanity` (`add-rando-shopsanity`, `true`/`false`, default `false`) turns
+the **27 regular shop slots** (9 shops × 3 items) into one-time randomizer
+checks, in **every world state** — not just Retro:
+
+- An **unchecked** slot offers the seed's **placed item** (progression
+  included) at a **seed-derived price**: uniform multiples of 5 in 10–250
+  rupees, deliberately independent of what the item is, so the price tag
+  never hints at progression. The spoiler's `shops[]` /
+  `Shops:` sections list every slot's item and price.
+- Buying grants the placed item through the normal receive/confirmation
+  flow and marks the check. The vanilla "can't buy" gates (own a shield
+  already, need an empty bottle, ammo full) do **not** apply to a check —
+  only affordability does — so a check can never become unbuyable.
+- A **bought** slot permanently reverts to its **vanilla item at the
+  vanilla price**, so potion/shield/bomb/arrow shopping still works after
+  the check (and re-buying can never duplicate the placed item).
+- The slot draws the placed item's icon where the shared field-item
+  resolver can represent it — each of the three shop columns owns an icon
+  tile slot, so all three placed items render at once; a gold sparkle
+  cue appears for an item with no drawable icon, never a misleading
+  vanilla icon. The price digits render for any value.
+- **Known limitation**: the third (right-most) column shares its icon tiles
+  with the item-receipt animation, so while a purchase's receive/confirmation
+  animation plays, that column briefly shows the sparkle cue instead of its
+  item icon and restores itself when the animation ends. Shop VRAM has no
+  third private tile slot; this is cosmetic, purchase-time-only, and
+  self-healing. (Same class: two *custom-art* icons needing different
+  palettes — e.g. a Rupoor next to another custom item — can't both be
+  truthful, so the later column shows the sparkle cue.)
+
+Shop reachability is modeled honestly in logic: each shop is bound to the
+overworld region holding its door, the Light World Death Mountain shop
+additionally needs bombs (it sits behind a bombable wall), the Village of
+Outcasts shop needs the Hammer + Moon Pearl, and the Dark World Potion Shop
+needs the Pearl plus a traversal item — all mechanically translated from the
+upstream shop requirements. Bunny purchases stay possible exactly where
+upstream allows them (the Dark World Death Mountain shop). Inverted
+re-authors three shops per upstream — notably the Light World Death
+Mountain shop needs the Moon Pearl AND the Hookshot there (the dark-rock
+portal admits Mitt-only arrivals that cannot cross the gap to its door).
+
+Out of scope (unchanged by the axis): the 2 Capacity Upgrade slots
+(identity-placed), Retro's Take-Any caves and its unlimited generic-key
+column, the Bomb Shop, and the witch's powder trade. The axis composes with
+every other setting — including Retro, where the take-any/economy machinery
+runs alongside the shop checks — and has no derived-rule normalization.
 
 ### Traps
 

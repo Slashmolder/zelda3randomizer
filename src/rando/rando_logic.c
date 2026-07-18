@@ -1597,6 +1597,10 @@ static bool logic_location_active_for_settings(const RandoLocationDef *loc,
   if (loc->type == LOCTYPE_Pot) return logic_pot_active(loc, settings);
   if (loc->type == LOCTYPE_EnemyDrop) return logic_enemy_drop_active(loc, settings);
   if (loc->type == LOCTYPE_Enemy) return logic_enemy_check_active(loc, settings);
+  // add-rando-bonk-sanity — bonk rows sit BELOW the terrain suffix (always
+  // scanned); the axis gate keeps them out of reachability when off.
+  if (loc->type == LOCTYPE_Bonk)
+    return settings != NULL && settings->bonk_shuffle != kTerrainShuffle_Off;
   return true;
 }
 
@@ -1799,13 +1803,9 @@ static const RandoReachability *logic_compute_reachability_internal(
       if (loc->type == LOCTYPE_Rock &&
           settings->rock_shuffle == kTerrainShuffle_Off) continue;
       if (bitset_has(g_reachability.location_bitset, loc->id)) continue;
-      if (loc->world_state_filter != 0) {
-        // Guard the shift: world_state is validated at every byte entry point
-        // (Settings_Validate), but a shift by >=32 would be UB if a new caller
-        // bypasses validation. Unknown world_state = filter never matches.
-        if (settings->world_state >= 32 ||
-            !(loc->world_state_filter & (1u << settings->world_state))) continue;
-      }
+      // Shared filter (shift-guarded; shopsanity overrides the Retro-only
+      // filter on regular shop slots) — see Rando_LocationWorldStateActive.
+      if (!Rando_LocationWorldStateActive(loc, settings)) continue;
       if (!logic_location_active_for_settings(loc, settings)) continue;
       // Phase B Slice 2 — consult the per-world-state override table.
       // Inverted seeds get a different can_reach predicate per location;

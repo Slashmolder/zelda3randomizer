@@ -744,14 +744,25 @@ static void Panel_General() {
   if (EnumCombo("World state", &s->world_state, kWorldStateLabels, 4)) changed = true;
   if (EnumCombo("Goal", &s->goal, kGoalLabels, 7)) changed = true;
 
-  // Crystals (0..7).
+  // Crystals (0..7, or 8 = "Random" — add-rando-random-crystals: the seed
+  // decides; Ganon's dialogue reveals his rolled count in-game).
   {
     int cg = (int)s->crystals_ganon;
-    if (ImGui::SliderInt("Crystals: Ganon", &cg, 0, 7)) { s->crystals_ganon = (uint8)cg; changed = true; }
-    HelpTooltip("Crystals required to make Ganon vulnerable.");
+    if (ImGui::SliderInt("Crystals: Ganon", &cg, 0, kCrystalsRandom,
+                         cg == kCrystalsRandom ? "Random" : "%d")) {
+      s->crystals_ganon = (uint8)cg;
+      changed = true;
+    }
+    HelpTooltip("Crystals required to make Ganon vulnerable. Random = the "
+                "seed decides; Ganon tells you his count in-game.");
     int ct = (int)s->crystals_tower;
-    if (ImGui::SliderInt("Crystals: Tower", &ct, 0, 7)) { s->crystals_tower = (uint8)ct; changed = true; }
-    HelpTooltip("Crystals required to enter Ganon's Tower.");
+    if (ImGui::SliderInt("Crystals: Tower", &ct, 0, kCrystalsRandom,
+                         ct == kCrystalsRandom ? "Random" : "%d")) {
+      s->crystals_tower = (uint8)ct;
+      changed = true;
+    }
+    HelpTooltip("Crystals required to enter Ganon's Tower. Random = the seed "
+                "decides (shown in the tracker once the slot loads).");
   }
 
   if (EnumCombo("Item pool difficulty", &s->item_pool_difficulty, kItemPoolLabels, 4)) changed = true;
@@ -1404,6 +1415,31 @@ static void Panel_Shuffles() {
       }
       HelpTooltip("Turns liftable rocks (Glove and Titan's Mitt) into "
                   "randomizer checks. junk = filler only; all = anything.");
+    }
+
+    // add-rando-shopsanity — shop slots as one-time purchase checks. No
+    // disable-coupling: composes with every other axis (design.md D8).
+    {
+      bool shops = s->shopsanity != 0;
+      if (ImGui::Checkbox("Shopsanity", &shops)) {
+        s->shopsanity = shops ? 1 : 0;
+        changed = true;
+      }
+      HelpTooltip("Shop slots sell one-time checks at seed-random prices, in "
+                  "every world state. A purchased slot restocks its normal "
+                  "item at its normal price.");
+    }
+
+    // add-rando-bonk-sanity — dash-bonk bee hives / apple trees as checks.
+    {
+      uint8 bonk_value = s->bonk_shuffle;
+      if (EnumCombo("Bonk shuffle", &bonk_value, kTerrainShuffleLabels, 3)) {
+        s->bonk_shuffle = bonk_value;
+        changed = true;
+      }
+      HelpTooltip("Dashing into bee-hive and apple trees grants a check "
+                  "(needs the Pegasus Boots). junk = filler only; all = "
+                  "anything. Checked trees swarm/drop apples as normal.");
     }
 
     if (EnumCombo("Traps", &s->traps, kTrapFrequencyLabels, 5)) {

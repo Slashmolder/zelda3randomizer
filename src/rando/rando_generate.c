@@ -403,7 +403,7 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
         // (always beatable, plus per-tier reachability). Rejects a π that strands
         // placements beyond the tier's bar (e.g. a gated door leading to the very
         // dungeon that grants the gating item) and tries another.
-        if (Accessibility_SeedAcceptable(settings, table)) {
+        if (Accessibility_SeedAcceptable(settings, seed_u64, table)) {
           placed = true;
           reg->entrance_attempt = (uint8)att;
           if (g_generate_profile_active) g_generate_profile.entrance_successes++;
@@ -438,7 +438,7 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
       Rando_SetDoorLogicLayout(&g_door_gen_layout, g_door_gen_layout.shuffled_mask);
       table->count = 0;
       if (Place_AssumedFill(settings, seed_u64, budget_seconds, table) &&
-          Accessibility_SeedAcceptable(settings, table)) {
+          Accessibility_SeedAcceptable(settings, seed_u64, table)) {
         placed = true;
         g_door_gen_attempt = (uint8)datt;
         g_door_gen_digest24 = DoorShuffle_LayoutDigest(&g_door_gen_layout) & 0xFFFFFF;
@@ -472,7 +472,7 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
       Chains_ApplyEdgeOverrides(&chains_layout);
       table->count = 0;
       if (Place_AssumedFill(settings, seed_u64, budget_seconds, table) &&
-          Accessibility_SeedAcceptable(settings, table)) {
+          Accessibility_SeedAcceptable(settings, seed_u64, table)) {
         placed = true;
         reg->chains_active = true;
         reg->chains_attempt = (uint8)catt;
@@ -496,7 +496,7 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
   } else {
     if (g_generate_profile_active) g_generate_profile.plain_calls++;
     placed = Place_AssumedFill(settings, seed_u64, budget_seconds, table);
-    if (placed && !Accessibility_SeedAcceptable(settings, table)) {
+    if (placed && !Accessibility_SeedAcceptable(settings, seed_u64, table)) {
       placed = false;
     }
   }
@@ -775,7 +775,7 @@ bool Rando_GenerateSlotWithShapeFilter(const RandoSettings *settings, uint64 see
     spoiler.boss_assignment = settings->boss_shuffle ? boss_assignment : NULL;
     spoiler.drop_map = settings->drop_shuffle ? drop_map : NULL;
     spoiler.drop_used_fallback = drop_used_fallback;
-    spoiler.goal_completable = Goal_IsCompletable(settings, &table);
+    spoiler.goal_completable = Goal_IsCompletable(settings, seed_u64, &table);
     goal_completable = spoiler.goal_completable;
     {
       const PlacementStats *st = Placement_GetLastStats();

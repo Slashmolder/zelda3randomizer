@@ -259,11 +259,14 @@ static void write_ganon_crystal_warning(uint8 *buf, unsigned required) {
 }
 
 static void rewrite_ganon_crystal_warning(uint8 *buf) {
+  // add-rando-random-crystals: reads the RESOLVED count — this dialogue is
+  // the in-world reveal of a rolled ganon requirement.
   const RandoSettings *settings = Rando_GetActiveSettings();
-  if (settings == NULL || settings->crystals_ganon == 0 ||
+  uint8 required = Rando_EffectiveCrystalsGanon();
+  if (settings == NULL || required == 0 ||
       Rando_HasRequiredGanonCrystals())
     return;
-  write_ganon_crystal_warning(buf, settings->crystals_ganon);
+  write_ganon_crystal_warning(buf, required);
 }
 
 static uint16 fairy_next_location(void) {

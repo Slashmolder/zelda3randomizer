@@ -46,6 +46,13 @@ typedef struct KeyRingSelection {
 bool KeyRings_Resolve(const RandoSettings *settings, uint64 seed_u64,
                       KeyRingSelection *out);
 
+// add-rando-random-crystals — resolve requested crystal counts (fixed 0..7
+// pass through; kCrystalsRandom draws per-axis salted streams) to effective
+// values. Callers MUST pass the BASE seed_u64 (never an attempt-perturbed
+// seed). Shared by generation and slot activation.
+void Crystals_Resolve(const RandoSettings *settings, uint64 seed_u64,
+                      uint8 *out_ganon, uint8 *out_tower);
+
 uint16 BuildItemPool(const RandoSettings *settings, uint64 seed_u64,
                      uint16 *out_items, uint16 capacity);
 
@@ -154,7 +161,10 @@ void Placement_SelfCheck(void);
 // Returns true when the goal is reachable, false otherwise. Logs a one-line
 // reason to stderr on false.
 // ---------------------------------------------------------------------------
-bool Goal_IsCompletable(const RandoSettings *settings,
+// seed_u64 = the BASE generation seed (add-rando-random-crystals: the
+// crystal arms certify against Crystals_Resolve of the BASE seed — never an
+// attempt-perturbed seed).
+bool Goal_IsCompletable(const RandoSettings *settings, uint64 seed_u64,
                         const RandoPlacementTable *placements);
 
 // Accessibility-tier seed acceptance (ALTTPR three-way). Every tier requires
@@ -163,7 +173,7 @@ bool Goal_IsCompletable(const RandoSettings *settings,
 //   kAccessibility_Items     — every PROGRESSION item's location reachable
 //   kAccessibility_None       — "beatable only": no extra reachability demand
 // See the definition in rando_placement.c for the full rationale.
-bool Accessibility_SeedAcceptable(const RandoSettings *settings,
+bool Accessibility_SeedAcceptable(const RandoSettings *settings, uint64 seed_u64,
                                   const RandoPlacementTable *placements);
 
 // Should the generator REFUSE this seed? The negation of
@@ -172,7 +182,7 @@ bool Accessibility_SeedAcceptable(const RandoSettings *settings,
 // reachability). The spoiler's `goal_completable` field is always the pure
 // reachability predicate (Goal_IsCompletable); the refusal gate additionally
 // honors the accessibility tier.
-bool Goal_ShouldRefuse(const RandoSettings *settings,
+bool Goal_ShouldRefuse(const RandoSettings *settings, uint64 seed_u64,
                        const RandoPlacementTable *placements);
 
 // ---------------------------------------------------------------------------

@@ -90,6 +90,12 @@ TERRAIN_ARTIFACT_RELS = (
     os.path.join("assets", "rando", "terrain_dump.gen.txt"),
     os.path.join("assets", "rando", "terrain.gen.yaml"),
 )
+# add-rando-bonk-sanity: its own group, NOT part of the terrain complete-set
+# (external-review P2: riding the terrain tuple made a missing bonk artifact
+# veto the whole terrain mirror). Regenerable from the mirrored
+# zelda3_assets.dat alone (gen_bonk_tables.py), so mirror-else-regenerate
+# like soul_rooms. Absent => bonk tiers fail closed via the registry guard.
+BONK_REGISTRY_REL = os.path.join("assets", "rando", "bonk.gen.yaml")
 # add-enemy-souls: kill-gated-room soul requirements. Local/gitignored; read by
 # rando_logic_gen.py. Absent => kRandoSoulRoomsBaked=0 and souls_shuffle=all
 # seeds fail closed in BuildItemPool (loud, not silent), but a worktree that
@@ -579,6 +585,24 @@ def main() -> int:
                 print(f"setup_worktree: WARNING could not produce {SOUL_ROOMS_REL} "
                       f"-- souls_shuffle=all seeds will fail closed in this "
                       f"worktree build (bosses tier unaffected).", file=sys.stderr)
+
+    # add-rando-bonk-sanity: bonk.gen.yaml — mirror, else regenerate from the
+    # just-mirrored zelda3_assets.dat (gen_bonk_tables.py needs nothing else).
+    # Absence is fail-closed for the bonk tiers, so best-effort + loud warning.
+    dst_bonk = cwd / BONK_REGISTRY_REL
+    if not dst_bonk.is_file():
+        src_bonk = source / BONK_REGISTRY_REL
+        if src_bonk.is_file():
+            dst_bonk.parent.mkdir(parents=True, exist_ok=True)
+            print(f"setup_worktree: copy {src_bonk} -> {dst_bonk}")
+            shutil.copy2(src_bonk, dst_bonk)
+        else:
+            gen = cwd / "assets" / "scripts" / "gen_bonk_tables.py"
+            rc = subprocess.call([sys.executable, str(gen)], cwd=str(cwd))
+            if rc or not dst_bonk.is_file():
+                print(f"setup_worktree: WARNING could not produce {BONK_REGISTRY_REL} "
+                      f"-- bonk_shuffle seeds will fail closed in this worktree "
+                      f"build.", file=sys.stderr)
 
     if copied_assets or not (cwd / VANILLA_ASSETS_HASH_REL).is_file():
         rc = ensure_vanilla_assets_hash(cwd)

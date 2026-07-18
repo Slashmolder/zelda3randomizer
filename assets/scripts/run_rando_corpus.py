@@ -128,15 +128,18 @@ def entry_uses_enemy_drop_checks(entry: dict) -> bool:
 
 
 def entry_uses_terrain_shuffle(entry: dict) -> bool:
-    """True when grass_shuffle or rock_shuffle is active (off/junk/all).
+    """True when grass_shuffle, rock_shuffle, or bonk_shuffle is active.
 
-    Public CI runs without the ROM-derived local terrain registry
-    (terrain.gen.yaml), so it must skip these rows — the activation guard
-    fails a terrain-enabled slot closed, and generation aborts, on such a
-    build. add-rando-grass-rock-shuffle.
+    Public CI runs without the ROM-derived local registries (terrain.gen.yaml,
+    bonk.gen.yaml), so it must skip these rows — the activation guard fails
+    such a slot closed, and generation aborts, on a registry-less build.
+    add-rando-grass-rock-shuffle; bonk_shuffle is the same terrain-family
+    axis with the same local-artifact dependency (add-rando-bonk-sanity —
+    review P1: CI previously ran the four bonk rows against an EMPTY
+    registry).
     """
     settings = entry.get("settings", {}) or {}
-    for axis in ("grass_shuffle", "rock_shuffle"):
+    for axis in ("grass_shuffle", "rock_shuffle", "bonk_shuffle"):
         if _setting_truthy(settings.get(axis, "off")):
             return True
     return False

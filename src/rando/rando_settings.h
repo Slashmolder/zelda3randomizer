@@ -92,8 +92,13 @@ typedef struct RandoSettings {
   uint8 settings_version;           // = 1 for Phase A
   uint8 world_state;                // WorldState
   uint8 goal;                       // Goal
-  uint8 crystals_ganon;             // 0..7 — required to make Ganon vulnerable
-  uint8 crystals_tower;             // 0..7 — required to enter Ganon's Tower
+  // 0..7 fixed, or kCrystalsRandom (8) = "random" (add-rando-random-crystals):
+  // the REQUESTED sentinel stays in canonical bytes [2]/[3] (hash/share
+  // preserve it, keyrings-style never-normalized); the EFFECTIVE 0..7 count
+  // is resolved deterministically from the seed by Crystals_Resolve at
+  // generation and slot activation.
+  uint8 crystals_ganon;             // required to make Ganon vulnerable
+  uint8 crystals_tower;             // required to enter Ganon's Tower
   uint8 tricks;                     // Phase A: pinned to 0 (none); Phase B bitmask reserved
   uint8 item_pool_difficulty;       // ItemPoolDifficulty
   uint8 logic;                      // Phase A: 0 (NoGlitches); Phase B+ reserved
@@ -234,6 +239,18 @@ typedef struct RandoSettings {
   // doors.
   uint8 key_rings;    // KeyRingsMode
   uint8 skeleton_key; // bool
+  // add-rando-shopsanity — the 27 regular shop slots (LOCTYPE_Shop, ids
+  // 237-263) become ordinary open fill locations in every world state, with
+  // seed-derived prices and buy-once-then-vanilla-restock runtime semantics.
+  // Serialized in canonical byte [29] bit 4 (the first reserved bit — no
+  // length change, so default-settings settings_hash is unchanged). No
+  // derived-rule couplings: composes with every other axis.
+  uint8 shopsanity;  // bool
+  // add-rando-bonk-sanity — placed OW bonk-item sprites (bee hives / apple
+  // trees) as checks. TerrainShuffle tiers (off/junk/all); canonical byte
+  // [29] bits 5-6 (after shopsanity's bit 4; no length change). First bonk
+  // grants + marks; later bonks replay vanilla (farmable bees/apples).
+  uint8 bonk_shuffle;  // TerrainShuffle
 } RandoSettings;
 
 // add-rando-grass-rock-shuffle — shared tier values for both terrain axes.
@@ -244,11 +261,20 @@ typedef enum {
   kTerrainShuffle_All  = 2,  // full open locations (progression may land)
 } TerrainShuffle;
 
+// add-rando-random-crystals — the requested-"random" sentinel for the two
+// crystal-count axes (full canonical bytes [2]/[3]; values 0..8 valid).
+enum { kCrystalsRandom = 8 };
+
 enum {
   kGrassShuffleAxis_Shift = 0,        // canonical [29] bits 0-1
   kGrassShuffleAxis_Mask  = 3u << 0,
   kRockShuffleAxis_Shift  = 2,        // canonical [29] bits 2-3
-  kRockShuffleAxis_Mask   = 3u << 2,  // bits 4-7 refused-undefined
+  kRockShuffleAxis_Mask   = 3u << 2,
+  kShopsanityAxis_Enabled = 1u << 4,  // canonical [29] bit 4
+                                      // (add-rando-shopsanity)
+  kBonkShuffleAxis_Shift = 5,         // canonical [29] bits 5-6
+  kBonkShuffleAxis_Mask  = 3u << 5,   // (add-rando-bonk-sanity); bit 7
+                                      // refused-undefined
 };
 
 enum {
@@ -402,10 +428,13 @@ enum {
 // (kSoulsShuffleAxis_*); add-npc-souls takes [28] bit 4 (kNpcSoulsAxis_*);
 // [28] bits 5-7 remain free (refused by Settings_FromCanonical until claimed).
 // add-rando-grass-rock-shuffle grew 29 -> 30 by appending [29]: grass_shuffle
-// bits 0-1 + rock_shuffle bits 2-3 (kGrassShuffleAxis_*/kRockShuffleAxis_*);
-// [29] bits 4-7 are refused-undefined. The length change alters every
-// settings_hash (SHA input length) — covered by that change's
-// kGeneratorVersion bump; sidecar format_version 8 widened the stored blob.
+// bits 0-1 + rock_shuffle bits 2-3 (kGrassShuffleAxis_*/kRockShuffleAxis_*).
+// The length change alters every settings_hash (SHA input length) — covered
+// by that change's kGeneratorVersion bump; sidecar format_version 8 widened
+// the stored blob. add-rando-shopsanity takes [29] bit 4
+// (kShopsanityAxis_Enabled) — length UNCHANGED, so default settings_hash is
+// stable across that change. add-rando-bonk-sanity takes [29] bits 5-6
+// (kBonkShuffleAxis_*); only bit 7 remains refused-undefined.
 // add-rando-key-rings-skeleton-key grows 30 -> 31 with append-only byte [30]:
 // key_rings bits 0-1, skeleton_key bit 2, bits 3-7 refused-undefined; sidecar
 // format_version 10 carries the widened blob.

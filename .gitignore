@@ -34,6 +34,9 @@
 # add-enemy-souls: kill-gated-room soul requirements (from zelda3_assets.dat +
 # the committed door tables); absent => souls_shuffle=all fails closed.
 /assets/rando/soul_rooms.gen.yaml
+# add-rando-bonk-sanity: OW bonk-item registry (gen_bonk_tables.py, from ROM
+# sprite tables); absent => bonk_shuffle fails closed. Mirrored by setup_worktree.py.
+/assets/rando/bonk.gen.yaml
 /key_depth.txt
 /zelda3.sfc
 /zelda3.smc
@@ -60,6 +63,7 @@ __pycache__
 /src/rando/terrain_lookup.h
 /src/rando/enemy_drop_lookup.h
 /src/rando/enemy_check_lookup.h
+/src/rando/bonk_lookup.h
 /src/rando/pot_nonpot_drop_counts.h
 /src/rando/icon_atlas.h
 /src/rando/direct_grant_icons.h

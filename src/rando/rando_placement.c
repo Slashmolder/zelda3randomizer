@@ -23,6 +23,7 @@
 #include "location_ids.h"
 #include "dungeon_ids.h"
 #include "enemy_drop_lookup.h"
+#include "bonk_lookup.h"    // add-rando-bonk-sanity selfcheck sortedness probe
 #include "enemy_check_lookup.h"
 #include "pot_nonpot_drop_counts.h"
 #include "souls.h"        // add-enemy-souls (Souls_ItemIsSoul)
@@ -302,6 +303,8 @@ static bool terrain_active(const RandoLocationDef *loc, const RandoSettings *s) 
   if (loc == NULL || s == NULL) return false;
   if (loc->type == LOCTYPE_Grass) return s->grass_shuffle != kTerrainShuffle_Off;
   if (loc->type == LOCTYPE_Rock) return s->rock_shuffle != kTerrainShuffle_Off;
+  // add-rando-bonk-sanity — same skip-triple discipline, third family.
+  if (loc->type == LOCTYPE_Bonk) return s->bonk_shuffle != kTerrainShuffle_Off;
   return false;
 }
 
@@ -314,6 +317,7 @@ static bool terrain_junk_only(const RandoLocationDef *loc, const RandoSettings *
   if (loc == NULL || s == NULL) return false;
   if (loc->type == LOCTYPE_Grass) return s->grass_shuffle == kTerrainShuffle_Junk;
   if (loc->type == LOCTYPE_Rock) return s->rock_shuffle == kTerrainShuffle_Junk;
+  if (loc->type == LOCTYPE_Bonk) return s->bonk_shuffle == kTerrainShuffle_Junk;
   return false;
 }
 
@@ -480,6 +484,32 @@ static uint8 key_rings_mask_count(uint16 mask) {
   return n;
 }
 
+// add-rando-random-crystals — resolve the requested crystal counts to
+// effective 0..7 values. Fixed axes pass through; a kCrystalsRandom axis
+// draws uniformly from its OWN salted stream ("CrystlRq" ^ 'G'/'T' high
+// byte), so the ganon draw is independent of whether tower is random and
+// vice versa (the ShopPrice per-key-mix precedent). ONE function shared by
+// generation (Goal_IsCompletable's crystal arms — BASE seed, never the
+// attempt seed) and slot activation (the runtime cache) so the two cannot
+// drift; the requested sentinel is never normalized into canonical bytes.
+void Crystals_Resolve(const RandoSettings *settings, uint64 seed_u64,
+                      uint8 *out_ganon, uint8 *out_tower) {
+  uint8 ganon = settings ? settings->crystals_ganon : 7;
+  uint8 tower = settings ? settings->crystals_tower : 7;
+  if (ganon == kCrystalsRandom) {
+    RandoRng rng;
+    Rng_SeedFromU64(&rng, seed_u64 ^ 0x43727973746C5271ull ^ ((uint64)'G' << 56));
+    ganon = (uint8)Rng_NextRange(&rng, 8);
+  }
+  if (tower == kCrystalsRandom) {
+    RandoRng rng;
+    Rng_SeedFromU64(&rng, seed_u64 ^ 0x43727973746C5271ull ^ ((uint64)'T' << 56));
+    tower = (uint8)Rng_NextRange(&rng, 8);
+  }
+  if (out_ganon) *out_ganon = ganon;
+  if (out_tower) *out_tower = tower;
+}
+
 bool KeyRings_Resolve(const RandoSettings *settings, uint64 seed_u64,
                       KeyRingSelection *out) {
   if (out == NULL || settings == NULL) return false;
@@ -636,6 +666,19 @@ static bool settings_need_terrain_registry(const RandoSettings *s) {
                        s->rock_shuffle != kTerrainShuffle_Off);
 }
 
+// add-rando-bonk-sanity — same fail-closed class as terrain: bonk adds no
+// unique pool items, so an assetless build would otherwise silently generate
+// a bonk-enabled seed with zero bonk checks (the grass-rock fail-open HIGH).
+static bool bonk_registry_available(void) {
+  for (uint32 i = 0; i < kRandoLocationsCount; i++)
+    if (kRandoLocations[i].type == LOCTYPE_Bonk) return true;
+  return false;
+}
+
+static bool settings_need_bonk_registry(const RandoSettings *s) {
+  return s != NULL && s->bonk_shuffle != kTerrainShuffle_Off;
+}
+
 static bool settings_need_enemy_drop_registry(const RandoSettings *s) {
   return Settings_EnemyDropKeysActive(s);
 }
@@ -760,9 +803,15 @@ static bool location_is_prepinned(const RandoLocationDef *loc,
   //     identity-placed (per ALTTPR Randomizer.php Retro shops).
   //   - Prize_Pendant / Prize_Crystal: pinned per the prize-shuffle assignment.
   if (loc->type == LOCTYPE_Prize_Event || loc->type == LOCTYPE_Medallion ||
-      loc->type == LOCTYPE_Shop || loc->type == LOCTYPE_ShopUpgrade ||
+      loc->type == LOCTYPE_ShopUpgrade ||
       loc->type == LOCTYPE_Prize_Pendant || loc->type == LOCTYPE_Prize_Crystal)
     return true;
+  // add-rando-shopsanity — regular shop slots stay identity-pinned (the Retro
+  // economy) only while the axis is off; with it on they are ordinary open
+  // fill targets in every world state (Rando_LocationWorldStateActive is the
+  // matching filter override). ShopUpgrade stays unconditionally pinned above.
+  if (loc->type == LOCTYPE_Shop)
+    return settings->shopsanity == 0;
   uint16 vi = loc->vanilla_item_id;
   // An ACTIVE empty pot (vanilla_item_id == ITEM_Nothing, present only under
   // tier All; both callers filter INACTIVE pots before reaching here) is pinned
@@ -868,6 +917,10 @@ static uint16 inject_traps_into_junk_placements(uint16 *placement_at,
   uint16 eligible_n = 0;
   for (uint16 idx = 0; idx < n && eligible_n < (uint16)(sizeof eligible / sizeof eligible[0]); idx++) {
     if (!junk_filled[idx]) continue;
+    // add-rando-shopsanity — shop slots are OUT of the trap-masquerade
+    // eligible set in v1 (spec'd): a bought trap needs draw + refund
+    // semantics the shop check flow doesn't have (design.md Q2 defers it).
+    if (kRandoLocations[open_loc_idx[idx]].type == LOCTYPE_Shop) continue;
     if (!trap_replacement_candidate(placement_at[idx])) continue;
     eligible[eligible_n++] = idx;
   }
@@ -904,6 +957,7 @@ static uint16 inject_traps_into_junk_placements(uint16 *placement_at,
     // trap_loc_is_overworld_enemy_check — interiors keep flags 0, so
     // outdoor-locked effects still never roll there).
     if (loc->type == LOCTYPE_Grass || loc->type == LOCTYPE_Rock ||
+        loc->type == LOCTYPE_Bonk ||
         (loc->type == LOCTYPE_Enemy &&
          trap_loc_is_overworld_enemy_check(loc->id)))
       loc_flags |= kTrapLoc_IsOutdoor;
@@ -986,6 +1040,14 @@ static uint16 build_item_pool_internal(const RandoSettings *settings,
       "  without assets/rando/terrain.gen.yaml. Run zelda3 --dump-terrain-table\n"
       "  + assets/scripts/gen_terrain_tables.py --emit with ROM assets and\n"
       "  rebuild before generating terrain-shuffle seeds.\n");
+    return 0;
+  }
+  if (settings_need_bonk_registry(settings) && !bonk_registry_available()) {
+    fprintf(stderr,
+      "BuildItemPool: bonk_shuffle requested, but this binary was built\n"
+      "  without assets/rando/bonk.gen.yaml. Run\n"
+      "  assets/scripts/gen_bonk_tables.py with ROM assets and rebuild\n"
+      "  before generating bonk-shuffle seeds.\n");
     return 0;
   }
   if (settings_need_enemy_drop_registry(settings) && !enemy_drop_registry_available()) {
@@ -1336,8 +1398,7 @@ static uint16 build_item_pool_internal(const RandoSettings *settings,
   uint16 target = 0;
   for (uint32 i = 0; i < kRandoLocationsCount; i++) {
     const RandoLocationDef *loc = &kRandoLocations[i];
-    uint8 wsf = loc->world_state_filter;
-    if (wsf == 0 || (wsf & (1u << settings->world_state))) {
+    if (Rando_LocationWorldStateActive(loc, settings)) {
       // Phase B Slice 3b — TakeAny LOCs are reward-pinned by role in the placer
       // (not pool-filled) and only a fixed 9-of-62 emit per seed. Excluding them
       // from the junk-pad target keeps the pool sized to the actual fillable
@@ -1354,7 +1415,8 @@ static uint16 build_item_pool_internal(const RandoSettings *settings,
       if (loc->type == LOCTYPE_Pot && !pot_active(loc, settings)) continue;
       if (loc->type == LOCTYPE_EnemyDrop && !enemy_drop_active(loc, settings)) continue;
       if (loc->type == LOCTYPE_Enemy && !enemy_check_active(loc, settings)) continue;
-      if ((loc->type == LOCTYPE_Grass || loc->type == LOCTYPE_Rock) &&
+      if ((loc->type == LOCTYPE_Grass || loc->type == LOCTYPE_Rock ||
+           loc->type == LOCTYPE_Bonk) &&
           !terrain_active(loc, settings)) continue;
       // pre-pinned slots (prizes, events, medallions, shops,
       // vanilla-mode dungeon items) are identity-placed by
@@ -1923,7 +1985,7 @@ bool Place_AssumedFill(const RandoSettings *settings,
     // pieces instead of shipping an attempt the caller must refuse.
     bool attempt_ok;
     if (Settings_EffectiveAccessibility(settings) == kAccessibility_None) {
-      attempt_ok = Goal_IsCompletable(settings, out);
+      attempt_ok = Goal_IsCompletable(settings, seed_u64, out);  // BASE seed (crystal resolve)
     } else {
       // Goal completability is ALSO required (hardening, fresh-eyes review):
       // the reachability bar walks placement ENTRIES, while goal predicates
@@ -1943,7 +2005,7 @@ bool Place_AssumedFill(const RandoSettings *settings,
       // set (digest-inert).
       attempt_ok = accessibility_reachability_ok(settings, out, &spheres) &&
                    fallback_count == 0 && has_core_weapon && has_escape_lamp &&
-                   Goal_IsCompletable(settings, out);
+                   Goal_IsCompletable(settings, seed_u64, out);  // BASE seed (crystal resolve)
     }
     (void)full_reach;
     if (attempt_ok && fallback_count == 0 && has_core_weapon && has_escape_lamp) {
@@ -2431,8 +2493,7 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
   uint16 open_n = 0;
   for (uint32 i = 0; i < kRandoLocationsCount; i++) {
     const RandoLocationDef *loc = &kRandoLocations[i];
-    if (loc->world_state_filter != 0 &&
-        !(loc->world_state_filter & (1u << settings->world_state))) continue;
+    if (!Rando_LocationWorldStateActive(loc, settings)) continue;
     // Phase B Slice 3b — only the per-seed ACTIVE TakeAny LOCs emit (Option B).
     // Inactive caves (and the weapon cave's unused slot 1) produce no placement
     // entry, per the spec "the placement table contains only the active slots".
@@ -2447,7 +2508,8 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
     if (loc->type == LOCTYPE_Pot && !pot_active(loc, settings)) continue;
     if (loc->type == LOCTYPE_EnemyDrop && !enemy_drop_active(loc, settings)) continue;
     if (loc->type == LOCTYPE_Enemy && !enemy_check_active(loc, settings)) continue;
-    if ((loc->type == LOCTYPE_Grass || loc->type == LOCTYPE_Rock) &&
+    if ((loc->type == LOCTYPE_Grass || loc->type == LOCTYPE_Rock ||
+         loc->type == LOCTYPE_Bonk) &&
         !terrain_active(loc, settings)) continue;
     open_loc_idx[open_n++] = (uint16)i;
   }
@@ -2616,14 +2678,18 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
       const RandoLocationDef *loc = &kRandoLocations[open_loc_idx[slot]];
       // Reject non-customizable location TYPES (computed-item slots: prize /
       // medallion / shop / capacity-upgrade / take-any).
+      // add-rando-shopsanity: a regular Shop slot is an ordinary OPEN fill
+      // location when the axis is on, so it becomes pinnable like a chest;
+      // with the axis off it stays an identity-pinned economy slot and the
+      // rejection below keeps its clear message.
       if (loc->type == LOCTYPE_Prize_Crystal || loc->type == LOCTYPE_Prize_Pendant ||
           loc->type == LOCTYPE_Prize_Event   || loc->type == LOCTYPE_Medallion ||
-          loc->type == LOCTYPE_Shop          || loc->type == LOCTYPE_ShopUpgrade ||
-          loc->type == LOCTYPE_TakeAny) {
+          (loc->type == LOCTYPE_Shop && settings->shopsanity == 0) ||
+          loc->type == LOCTYPE_ShopUpgrade   || loc->type == LOCTYPE_TakeAny) {
         char msg[160];
         snprintf(msg, sizeof msg,
                  "pinned location '%s' has a non-customizable type "
-                 "(prize/medallion/shop/take-any)",
+                 "(prize/medallion/take-any, or a shop slot without shopsanity)",
                  Rando_GetLocationName(loc_id));
         Customizer__SetError(msg);
         return false;
@@ -3108,9 +3174,16 @@ static uint16 count_reachable_placements_of(const RandoPlacementTable *t,
 #define ITEM_ID_BluePendant  113
 #define ITEM_ID_TriforcePiece 52
 
-bool Goal_IsCompletable(const RandoSettings *settings,
+bool Goal_IsCompletable(const RandoSettings *settings, uint64 seed_u64,
                         const RandoPlacementTable *placements) {
   if (settings == NULL || placements == NULL) return false;
+  // add-rando-random-crystals — certify against the RESOLVED ganon count.
+  // seed_u64 MUST be the BASE seed (never placement_attempt_seed): the
+  // retry loop, the outer acceptance gate, the spoiler, and the runtime all
+  // resolve from the base seed, same rule as the key-ring / boss-assignment
+  // resolves (see the Place_AssumedFill base-seed comments).
+  uint8 eff_crystals_ganon;
+  Crystals_Resolve(settings, seed_u64, &eff_crystals_ganon, NULL);
 
   // Pure reachability predicate — does NOT consider accessibility=none.
   // For "should the generator refuse to ship this seed?", call
@@ -3164,9 +3237,9 @@ bool Goal_IsCompletable(const RandoSettings *settings,
       for (uint16 cid = 114; cid <= 120; cid++) {
         reachable_crystals += count_reachable_placements_of(placements, r, cid);
       }
-      if (reachable_crystals < settings->crystals_ganon) {
+      if (reachable_crystals < eff_crystals_ganon) {
         fprintf(stderr, "Goal_IsCompletable(ganon): %u reachable crystals, need %u\n",
-                (unsigned)reachable_crystals, (unsigned)settings->crystals_ganon);
+                (unsigned)reachable_crystals, (unsigned)eff_crystals_ganon);
         return false;
       }
       if (!Reachability_HasLocation(r, LOC_ID_Agahnim2)) {
@@ -3187,9 +3260,9 @@ bool Goal_IsCompletable(const RandoSettings *settings,
       for (uint16 cid = 114; cid <= 120; cid++) {
         reachable_crystals += count_reachable_placements_of(placements, r, cid);
       }
-      if (reachable_crystals < settings->crystals_ganon) {
+      if (reachable_crystals < eff_crystals_ganon) {
         fprintf(stderr, "Goal_IsCompletable(fast_ganon): %u reachable crystals, need %u\n",
-                (unsigned)reachable_crystals, (unsigned)settings->crystals_ganon);
+                (unsigned)reachable_crystals, (unsigned)eff_crystals_ganon);
         return false;
       }
       if (!Reachability_HasLocation(r, LOC_ID_Ganon)) {
@@ -3346,11 +3419,11 @@ static bool accessibility_reachability_ok(const RandoSettings *settings,
 // only" — the seed is still guaranteed completable. The old "ship a literally
 // unwinnable seed" behavior is no longer reachable from this axis; the CLI
 // --allow-broken-seed flag remains for diagnostic seeds.
-bool Accessibility_SeedAcceptable(const RandoSettings *settings,
+bool Accessibility_SeedAcceptable(const RandoSettings *settings, uint64 seed_u64,
                                   const RandoPlacementTable *placements) {
   if (settings == NULL || placements == NULL) return false;
   // Beatability is required for every tier.
-  if (!Goal_IsCompletable(settings, placements)) return false;
+  if (!Goal_IsCompletable(settings, seed_u64, placements)) return false;
   // "beatable only" needs nothing more — skip the sphere walk entirely.
   // EFFECTIVE tier: Completionist forces Locations, so a raw accessibility=none
   // can't sneak past the sphere walk the canonical hash already promises.
@@ -3367,10 +3440,10 @@ bool Accessibility_SeedAcceptable(const RandoSettings *settings,
 // accessibility-tier acceptance predicate. The spoiler's `goal_completable`
 // field is always the pure reachability predicate (Goal_IsCompletable); the
 // refusal gate additionally honors the accessibility tier.
-bool Goal_ShouldRefuse(const RandoSettings *settings,
+bool Goal_ShouldRefuse(const RandoSettings *settings, uint64 seed_u64,
                        const RandoPlacementTable *placements) {
   if (settings == NULL) return false;
-  return !Accessibility_SeedAcceptable(settings, placements);
+  return !Accessibility_SeedAcceptable(settings, seed_u64, placements);
 }
 
 // ---------------------------------------------------------------------------
@@ -3749,8 +3822,7 @@ void Placement_SelfCheck(void) {
     uint16 expected = 0;
     for (uint32 i = 0; i < kRandoLocationsCount; i++) {
       const RandoLocationDef *loc = &kRandoLocations[i];
-      uint8 wsf = loc->world_state_filter;
-      if (!(wsf == 0 || (wsf & (1u << kWorldState_Open)))) continue;
+      if (!Rando_LocationWorldStateActive(loc, &defaults)) continue;
       if (loc->type == LOCTYPE_TakeAny) continue;
       // Same tier-aware predicate as the open-loc + junk-pad loops. Under default
       // settings pot_shuffle is Off, so pot_active is false and every pot is
@@ -3758,7 +3830,8 @@ void Placement_SelfCheck(void) {
       if (loc->type == LOCTYPE_Pot && !pot_active(loc, &defaults)) continue;
       if (loc->type == LOCTYPE_EnemyDrop && !enemy_drop_active(loc, &defaults)) continue;
       if (loc->type == LOCTYPE_Enemy && !enemy_check_active(loc, &defaults)) continue;
-      if ((loc->type == LOCTYPE_Grass || loc->type == LOCTYPE_Rock) &&
+      if ((loc->type == LOCTYPE_Grass || loc->type == LOCTYPE_Rock ||
+           loc->type == LOCTYPE_Bonk) &&
           !terrain_active(loc, &defaults)) continue;
       if (location_is_prepinned(loc, &defaults)) continue;
       expected++;
@@ -3775,6 +3848,74 @@ void Placement_SelfCheck(void) {
     // NULL settings → 0 (safe rejection, not crash).
     uint16 n_null = BuildItemPool(NULL, 0, pool, kRandoLocationCapacity);
     if (n_null != 0) selfcheck_die("BuildItemPool(NULL) should return 0");
+
+    // add-rando-shopsanity — with the axis on, the 27 regular shop slots are
+    // ordinary open fill targets in EVERY world state: the pool grows by
+    // exactly the shop-slot count vs the same-world-state baseline. Open
+    // exercises the world_state_filter bypass (slots are Retro-filtered),
+    // Retro exercises the formerly-prepinned arm.
+    {
+      uint16 shop_slot_count = 0;
+      for (uint32 i = 0; i < kRandoLocationsCount; i++)
+        if (kRandoLocations[i].type == LOCTYPE_Shop) shop_slot_count++;
+      if (shop_slot_count != 27)
+        selfcheck_die("registry must carry exactly 27 regular shop slots");
+      RandoSettings shopson = defaults;
+      shopson.shopsanity = 1;
+      uint16 n_on = BuildItemPool(&shopson, 0, pool, kRandoLocationCapacity);
+      if (n_on != n + shop_slot_count)
+        selfcheck_die("shopsanity(Open) pool must grow by the shop-slot count");
+      RandoSettings retro_off = defaults, retro_on;
+      retro_off.world_state = kWorldState_Retro;
+      retro_on = retro_off;
+      retro_on.shopsanity = 1;
+      uint16 n_roff = BuildItemPool(&retro_off, 0, pool, kRandoLocationCapacity);
+      uint16 n_ron = BuildItemPool(&retro_on, 0, pool, kRandoLocationCapacity);
+      if (n_ron != n_roff + shop_slot_count)
+        selfcheck_die("shopsanity(Retro) pool must grow by the shop-slot count");
+    }
+  }
+
+  // add-rando-bonk-sanity — pool accounting per tier (junk and all both add
+  // every registered bonk location to the fillable set; off adds none), the
+  // junk-only proof (a junk-tier fill never puts progression on a bonk
+  // location), and lookup sortedness. Skipped entirely on a registry-less
+  // build (generation there fails closed instead — the terrain pattern).
+  {
+    uint16 bonk_locs = 0;
+    for (uint32 i = 0; i < kRandoLocationsCount; i++)
+      if (kRandoLocations[i].type == LOCTYPE_Bonk) bonk_locs++;
+    if (bonk_locs > 0) {
+      RandoSettings boff, bjunk, ball;
+      Settings_SetDefaults(&boff);
+      bjunk = boff; bjunk.bonk_shuffle = kTerrainShuffle_Junk;
+      ball = boff;  ball.bonk_shuffle = kTerrainShuffle_All;
+      uint16 pool_b[kRandoLocationCapacity];
+      uint16 n_off = BuildItemPool(&boff, 0, pool_b, kRandoLocationCapacity);
+      uint16 n_junk = BuildItemPool(&bjunk, 0, pool_b, kRandoLocationCapacity);
+      uint16 n_all = BuildItemPool(&ball, 0, pool_b, kRandoLocationCapacity);
+      if (n_junk != n_off + bonk_locs || n_all != n_off + bonk_locs)
+        selfcheck_die("bonk_shuffle pool must grow by the bonk-location count");
+      static RandoPlacement bonk_entries[kRandoLocationCapacity];
+      RandoPlacementTable bt = { bonk_entries, 0 };
+      if (!Place_AssumedFill(&bjunk, 0x424F4E4Bull, 0, &bt))
+        selfcheck_die("bonk junk-tier fill failed");
+      for (uint16 e = 0; e < bt.count; e++) {
+        uint16 lid = bt.entries[e].location_id;
+        const RandoLocationDef *ld = NULL;
+        for (uint32 i = 0; i < kRandoLocationsCount; i++)
+          if (kRandoLocations[i].id == lid) { ld = &kRandoLocations[i]; break; }
+        if (ld != NULL && ld->type == LOCTYPE_Bonk &&
+            is_progression_item(bt.entries[e].item_id))
+          selfcheck_die("bonk junk tier placed progression on a bonk location");
+      }
+      for (uint32 i = 1; i < (uint32)kRandoBonkLookup_COUNT; i++) {
+        if (kRandoBonkLookup[i - 1].area > kRandoBonkLookup[i].area ||
+            (kRandoBonkLookup[i - 1].area == kRandoBonkLookup[i].area &&
+             kRandoBonkLookup[i - 1].block >= kRandoBonkLookup[i].block))
+          selfcheck_die("bonk lookup must be strictly (area, block)-sorted");
+      }
+    }
   }
 
   // Key Ring selector/pool invariants: All collapses every eligible family to
@@ -4759,7 +4900,7 @@ void Placement_SelfCheck(void) {
     RandoPlacementTable skt = { sk_entries, 0 };
     if (!Place_AssumedFill(&sks, 0x4B4559520000000Dull, 0, &skt))
       selfcheck_die("Skeleton Key neutrality: Place_AssumedFill failed");
-    if (!Goal_IsCompletable(&sks, &skt))
+    if (!Goal_IsCompletable(&sks, 0x4B4559520000000Dull, &skt))
       selfcheck_die("Skeleton Key neutrality: enabled seed is not completable");
     RandoSpheres with_sk, without_sk;
     Logic_ComputeSpheres(&sks, &skt, &with_sk);
@@ -4772,7 +4913,7 @@ void Placement_SelfCheck(void) {
     }
     if (skeleton_count != 1)
       selfcheck_die("Skeleton Key neutrality: expected exactly one placement");
-    if (!Goal_IsCompletable(&sks, &skt))
+    if (!Goal_IsCompletable(&sks, 0x4B4559520000000Dull, &skt))
       selfcheck_die("Skeleton Key neutrality: removal changed goal completion");
     Logic_ComputeSpheres(&sks, &skt, &without_sk);
     if (with_sk.max_sphere != without_sk.max_sphere ||
@@ -4804,7 +4945,7 @@ void Placement_SelfCheck(void) {
       RandoPlacementTable gkt = { gk_entries, 0 };
       if (!Place_AssumedFill(&gks, kGkSeeds[si], 0, &gkt))
         selfcheck_die("Retro genericKeys: Place_AssumedFill produced no placement");
-      if (!Goal_IsCompletable(&gks, &gkt))
+      if (!Goal_IsCompletable(&gks, kGkSeeds[si], &gkt))
         selfcheck_die("Retro genericKeys: goal not completable (key strand?)");
       RandoSpheres gsp;
       Logic_ComputeSpheres(&gks, &gkt, &gsp);
@@ -4820,6 +4961,44 @@ void Placement_SelfCheck(void) {
         selfcheck_die("Retro genericKeys: no GenericKey in the placement");
       if (leaked != 0)
         selfcheck_die("Retro genericKeys: a per-dungeon SmallKey leaked into a Retro seed");
+    }
+  }
+
+  // add-rando-shopsanity — full generation net for the open shop slots.
+  // One seed per world state (the axis composes with all four): assumed fill
+  // completes, the goal is completable, spheres leave 0 unreachable at the
+  // default items tier (the 27 slots carry real region gates from
+  // logic_parts/50_shops.yaml — a broken predicate would strand them), and
+  // every one of the 27 shop slots emits exactly one placement entry.
+  {
+    static RandoPlacement shop_entries[kRandoLocationCapacity];
+    static const uint8 kShopWorldStates[4] = {
+      kWorldState_Open, kWorldState_Standard, kWorldState_Inverted,
+      kWorldState_Retro,
+    };
+    for (uint8 wi = 0; wi < 4; wi++) {
+      RandoSettings shs;
+      Settings_SetDefaults(&shs);
+      shs.world_state = kShopWorldStates[wi];
+      shs.shopsanity = 1;
+      RandoPlacementTable sht = { shop_entries, 0 };
+      if (!Place_AssumedFill(&shs, 0x53686F7053414Eull, 0, &sht))
+        selfcheck_die("shopsanity: Place_AssumedFill produced no placement");
+      if (!Goal_IsCompletable(&shs, 0x53686F7053414Eull, &sht))
+        selfcheck_die("shopsanity: goal not completable");
+      RandoSpheres ssp;
+      Logic_ComputeSpheres(&shs, &sht, &ssp);
+      if (ssp.unreachable_count != 0)
+        selfcheck_die("shopsanity: unreachable placement(s)");
+      uint16 shop_rows = 0;
+      for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+        if (kRandoLocations[i].type != LOCTYPE_Shop) continue;
+        for (uint16 e = 0; e < sht.count; e++) {
+          if (sht.entries[e].location_id == kRandoLocations[i].id) { shop_rows++; break; }
+        }
+      }
+      if (shop_rows != 27)
+        selfcheck_die("shopsanity: expected all 27 shop slots in the placement");
     }
   }
 
@@ -4866,7 +5045,7 @@ void Placement_SelfCheck(void) {
         if (ba[kShufDng[i]] != kVanBoss[kShufDng[i]]) non_identity = true;
       if (!non_identity)
         selfcheck_die("boss shuffle: installed assignment is the identity (test not exercising the shuffle)");
-      if (!Goal_IsCompletable(&bss, &bst))
+      if (!Goal_IsCompletable(&bss, kBsCases[ci].seed, &bst))
         selfcheck_die("boss shuffle: goal not completable (boss-kill strand?)");
       RandoSpheres bsp;
       Logic_ComputeSpheres(&bss, &bst, &bsp);

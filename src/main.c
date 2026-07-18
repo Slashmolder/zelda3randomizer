@@ -38,6 +38,7 @@
 #include "rando/customizer.h"  // manifest pins
 #include "rando/rando_spoiler.h"
 #include "rando/rando_share.h"
+#include "rando/rando_save.h"  // --rando-shop-probe sidecar loader
 #include "rando/rando_textfield.h"  // §9.1b — SDL_TEXTINPUT host hooks
 #include "rando/rando_logic.h"  // Logic_ComputeReachability for --rando-bench-logic
 #include "rando/shuffle_doors.h"  // DoorShuffle_SelfTest for --door-selftest
@@ -1073,13 +1074,13 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   }
   // Goal completability — runs Logic_ComputeReachability against the full
   // placement-table inventory and checks the goal-specific locations.
-  spoiler.goal_completable = Goal_IsCompletable(&settings, &table);
+  spoiler.goal_completable = Goal_IsCompletable(&settings, seed_u64, &table);
 
   // Per `randomizer-core / Generation rejects un-completable seeds`: refuse
   // to write the spoiler when the goal predicate fails. CI corpus + race-mode
   // workflows can't tolerate broken seeds. Set --allow-broken-seed to
   // override (debug / diagnostic use only).
-  if (Goal_ShouldRefuse(&settings, &table) && !allow_broken_seed) {
+  if (Goal_ShouldRefuse(&settings, seed_u64, &table) && !allow_broken_seed) {
     fprintf(stderr,
       "--generate-seed: this seed does not meet the accessibility requirement\n"
       "  for goal %u (accessibility=%u) — refusing to write spoiler. All tiers\n"
@@ -1221,6 +1222,42 @@ static void MaybeRunRevealSpoilerAndExit(int argc, char **argv, const char *conf
   fprintf(stderr, "--reveal-spoiler: FAILED (%d): %s\n  path: %s\n",
           (int)r, Rando_RevealResultDescription(r), reveal_path);
   exit(1);
+}
+
+// --rando-shop-probe[=<sidecar_path>] — headless shopsanity diagnostic.
+// Loads the sidecar (default saves/sram_rando.dat), runs the REAL slot
+// activation for slot 0 (Rando_ActivateSidecarSlot — the same path file-select
+// load and fresh generation use), then prints the shop-check decision chain.
+// Reproduces "shop icons not drawing" playtest reports without a game session
+// when the fault is in sidecar-load -> activation -> Rando_ShopSlotCheckInfo.
+static void MaybeRunShopProbeAndExit(int argc, char **argv, const char *config_file) {
+  const char *sidecar_path = NULL;
+  for (int i = 0; i < argc; ++i) {
+    if (strcmp(argv[i], "--rando-shop-probe") == 0) {
+      sidecar_path = "saves/sram_rando.dat";
+      break;
+    }
+    if (strncmp(argv[i], "--rando-shop-probe=", 19) == 0) {
+      sidecar_path = argv[i] + 19;
+      break;
+    }
+  }
+  if (sidecar_path == NULL) return;
+
+  ParseConfigFile(config_file);
+  LoadAssetsIfPresent();
+
+  static RandoSidecarSlot slots[kRandoSidecar_SlotCount];
+  if (!RandoSave_ReadFile(sidecar_path, slots)) {
+    fprintf(stderr, "--rando-shop-probe: cannot read sidecar at %s\n", sidecar_path);
+    exit(1);
+  }
+  // Mimic the in-game active state the file-select loader establishes before
+  // activation (the check-info gates read this feature bit).
+  enhanced_features1 |= kFeatures1_RandomizerActive;
+  Rando_ActivateSidecarSlot(&slots[0]);
+  Rando_DumpShopCheckDebug();
+  exit(0);
 }
 
 // Comparator for qsort over uint64 samples — ascending order.
@@ -1625,6 +1662,7 @@ int main(int argc, char** argv) {
   MaybeRunGenerateSeedAndExit(argc, argv, config_file);
   MaybeRunGenerateSlotAndExit(argc, argv, config_file);
   MaybeRunRevealSpoilerAndExit(argc, argv, config_file);
+  MaybeRunShopProbeAndExit(argc, argv, config_file);
 
   // Dev/verification: decode the overworld map (asset 66/67/68/93) to PPM files
   // and exit. Used to visually verify the Map Tracker background decoder.

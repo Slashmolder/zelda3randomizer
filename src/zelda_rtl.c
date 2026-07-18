@@ -959,9 +959,10 @@ void ZeldaDumpDebugState(void) {
   if ((f = fopen("dump_oam.bin", "wb")))   { fwrite(g_zenv.ppu->oam, 2, 0x110, f); fclose(f); }
   if ((f = fopen("dump_cgram.bin", "wb"))) { fwrite(g_zenv.ppu->cgram, 2, 0x100, f); fclose(f); }
   Rando_DumpHintDebug(dialogue_message_index);  // dev: hint-table state -> dump_hints.txt
+  Rando_DumpShopCheckDebug();  // dev: shopsanity decision chain -> dump_shop_debug.txt
   fprintf(stderr, "[DUMP] wrote dump_gram.bin / dump_sram.bin / "
                   "dump_rando_checked.bin / dump_vram.bin / dump_oam.bin / "
-                  "dump_cgram.bin / dump_hints.txt\n");
+                  "dump_cgram.bin / dump_hints.txt / dump_shop_debug.txt\n");
 }
 
 void SaveLoadSlot(int cmd, int which) {

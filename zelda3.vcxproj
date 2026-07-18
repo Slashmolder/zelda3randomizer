@@ -1027,6 +1027,7 @@
     <RandoCodegenOptionalInput Include="assets\rando\pots.gen.yaml" Condition="Exists('assets\rando\pots.gen.yaml')" />
     <RandoCodegenOptionalInput Include="assets\rando\pot_key_depth.gen.yaml" Condition="Exists('assets\rando\pot_key_depth.gen.yaml')" />
     <RandoCodegenOptionalInput Include="assets\rando\terrain.gen.yaml" Condition="Exists('assets\rando\terrain.gen.yaml')" />
+    <RandoCodegenOptionalInput Include="assets\rando\bonk.gen.yaml" Condition="Exists('assets\rando\bonk.gen.yaml')" />
     <RandoCodegenOptionalInput Include="assets\rando\enemy_drops.gen.yaml" Condition="Exists('assets\rando\enemy_drops.gen.yaml')" />
     <RandoCodegenOptionalInput Include="assets\rando\enemy_checks.gen.yaml" Condition="Exists('assets\rando\enemy_checks.gen.yaml')" />
     <RandoCodegenOptionalInput Include="assets\rando\soul_rooms.gen.yaml" Condition="Exists('assets\rando\soul_rooms.gen.yaml')" />
@@ -1042,6 +1043,7 @@
     <RandoCodegenOutput Include="src\rando\chest_lookup.h" />
     <RandoCodegenOutput Include="src\rando\pot_lookup.h" />
     <RandoCodegenOutput Include="src\rando\terrain_lookup.h" />
+    <RandoCodegenOutput Include="src\rando\bonk_lookup.h" />
     <RandoCodegenOutput Include="src\rando\enemy_drop_lookup.h" />
     <RandoCodegenOutput Include="src\rando\enemy_check_lookup.h" />
     <RandoCodegenOutput Include="src\rando\pot_nonpot_drop_counts.h" />

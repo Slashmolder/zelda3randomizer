@@ -198,6 +198,46 @@ void NMI_DoUpdates() {  // 8089e0
     memcpy(&g_zenv.vram[0x4320], &g_ram[dma_source_addr_19], 0x40);
     memcpy(&g_zenv.vram[0x4340], &g_ram[0xbd80], 0x40);
 
+    // add-rando-shopsanity — the two private shop check-slot icon quads
+    // (pos 0 = bird quad chars 0x0E/0x0F+0x1E/0x1F, pos 1 = the shop sheet
+    // zero quad page-1 0x0C/0x0D+0x1C/0x1D; pos 2 rides the recv slot's own
+    // upload above). Armed only while shop check slots draw. The FINAL
+    // decrement restores the borrowed chars — the bird quad from the bird's
+    // staging (an overworld NPC reading these chars must never see icon
+    // pixels), the page-1 quad back to zero — so no stale icon tiles
+    // outlive the shop visit (external-review P2).
+    if (g_rando_shop_icon_upload_frames) {
+      g_rando_shop_icon_upload_frames--;
+      if (g_rando_shop_icon_upload_frames) {
+        memcpy(&g_zenv.vram[0x40e0], g_rando_shop_icon_tiles[0], 0x40);
+        memcpy(&g_zenv.vram[0x41e0], g_rando_shop_icon_tiles[0] + 0x40, 0x40);
+        memcpy(&g_zenv.vram[0x50c0], g_rando_shop_icon_tiles[1], 0x40);
+        memcpy(&g_zenv.vram[0x51c0], g_rando_shop_icon_tiles[1] + 0x40, 0x40);
+      } else {
+        memcpy(&g_zenv.vram[0x40e0], &g_ram[dma_source_addr_20], 0x40);
+        memcpy(&g_zenv.vram[0x41e0], &g_ram[dma_source_addr_21], 0x40);
+        memset(&g_zenv.vram[0x50c0], 0, 0x40);
+        memset(&g_zenv.vram[0x51c0], 0, 0x40);
+      }
+    }
+
+    // rando — OW check-glint private sparkle into char 0x0F (see
+    // kRandoGlintTile4bpp). 0x0F has ZERO draw-table references anywhere
+    // (unlike 0x0E, which several overworld NPCs reference — external-review
+    // P2); it is bird-block real estate, so the final decrement restores the
+    // bird's staging byte for that char, and the block is placed BEFORE the
+    // travel-bird upload so an active flight overwrites it (the bird
+    // animates correctly; the glint shows wing pixels those seconds).
+    if (g_rando_glint_upload_frames) {
+      g_rando_glint_upload_frames--;
+      if (g_rando_glint_upload_frames) {
+        memcpy(&g_zenv.vram[0x40f0],
+               kRandoGlintTile4bpp[(frame_counter >> 2) & 3], 0x20);
+      } else {
+        memcpy(&g_zenv.vram[0x40f0], &g_ram[dma_source_addr_20 + 0x20], 0x20);
+      }
+    }
+
     if (BYTE(flag_travel_bird)) {
       memcpy(&g_zenv.vram[0x40e0], &g_ram[dma_source_addr_20], 0x40);
       memcpy(&g_zenv.vram[0x41e0], &g_ram[dma_source_addr_21], 0x40);

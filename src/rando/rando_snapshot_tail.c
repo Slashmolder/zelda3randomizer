@@ -397,19 +397,22 @@ bool RandoSnapshotTail_Save(FILE *f) {
   }
 
   if (g_has_settings_ctx) {
-    // PotRegistry TLV, payload format_version 3: pot identity (v1) followed by
-    // the terrain registry identity (v2, add-rando-grass-rock-shuffle) and the
-    // enemy-check registry identity (v3). Extending this TLV instead of adding
+    // PotRegistry TLV, payload format_version 4: pot identity (v1) followed by
+    // the terrain registry identity (v2, add-rando-grass-rock-shuffle), the
+    // enemy-check registry identity (v3), and the bonk registry identity
+    // (v4, add-rando-bonk-sanity). Extending this TLV instead of adding
     // a new type keeps the snapshot's TLV COUNT unchanged, so the round-trip
     // selfchecks' recognized-count asserts stand.
-    uint8 pp[19];
-    pp[0] = 3u;  // format_version 3 = pot + terrain + enemy-check
+    uint8 pp[25];
+    pp[0] = 4u;  // format_version 4 = pot + terrain + enemy-check + bonk
     put_u32le_bytes(pp + 1, Rando_CurrentPotRegistryDigest());
     put_u16le_bytes(pp + 5, Rando_CurrentPotRegistryCount());
     put_u32le_bytes(pp + 7, Rando_CurrentTerrainRegistryDigest());
     put_u16le_bytes(pp + 11, Rando_CurrentTerrainRegistryCount());
     put_u32le_bytes(pp + 13, Rando_CurrentEnemyCheckRegistryDigest());
     put_u16le_bytes(pp + 17, Rando_CurrentEnemyCheckRegistryCount());
+    put_u32le_bytes(pp + 19, Rando_CurrentBonkRegistryDigest());
+    put_u16le_bytes(pp + 23, Rando_CurrentBonkRegistryCount());
     uint8 phdr[16];
     memcpy(phdr, kRandoSnapshotTail_Magic, kRandoSnapshotTail_MagicLen);
     put_u32le_bytes(phdr + 8, kRandoSnapshotTail_Type_PotRegistry);
@@ -567,6 +570,12 @@ int RandoSnapshotTail_Load(FILE *f) {
   bool has_enemy_registry_ctx = false;
   uint32 enemy_registry_digest = 0;
   uint16 enemy_registry_count = 0;
+  // Bonk registry identity rides the same TLV (payload format_version 4
+  // appends it); pre-v4 snapshots leave it absent and a bonk-active cold
+  // replay fails CLOSED below (add-rando-bonk-sanity).
+  bool has_bonk_registry_ctx = false;
+  uint32 bonk_registry_digest = 0;
+  uint16 bonk_registry_count = 0;
   bool pending_settings_header_clear = false;
   bool accepted_rando_state = false;
 
@@ -734,6 +743,9 @@ int RandoSnapshotTail_Load(FILE *f) {
       has_enemy_registry_ctx = false;
       enemy_registry_digest = 0;
       enemy_registry_count = 0;
+      has_bonk_registry_ctx = false;
+      bonk_registry_digest = 0;
+      bonk_registry_count = 0;
       pending_settings_header_clear = true;
       pending_chain_layout = false;
       pending_entrance_layout = false;
@@ -761,14 +773,16 @@ int RandoSnapshotTail_Load(FILE *f) {
       // Payload v1: format_version[1] + pot_digest[4] + pot_count[2] (7 bytes).
       // Payload v2 (add-rando-grass-rock-shuffle): + terrain_digest[4] +
       // terrain_count[2] (13 bytes). Payload v3: + enemy_check_digest[4] +
-      // enemy_check_count[2] (19 bytes). Read up to 19; older snapshots leave
-      // the newer contexts absent (so an axis-active older snapshot is refused
-      // below — fail-closed, same posture as the sidecar activation guard).
+      // enemy_check_count[2] (19 bytes). Payload v4 (add-rando-bonk-sanity):
+      // + bonk_digest[4] + bonk_count[2] (25 bytes). Read up to 25; older
+      // snapshots leave the newer contexts absent (so an axis-active older
+      // snapshot is refused below — fail-closed, same posture as the sidecar
+      // activation guard).
       if (length < 7u) {
         if (fseek(f, (long)length, SEEK_CUR) != 0) FINISH_LOAD();
         continue;
       }
-      uint8 pp[19];
+      uint8 pp[25];
       size_t take = length < sizeof(pp) ? (size_t)length : sizeof(pp);
       if (fread(pp, 1, take, f) != take) FINISH_LOAD();
       if (length > take && fseek(f, (long)(length - take), SEEK_CUR) != 0)
@@ -787,6 +801,11 @@ int RandoSnapshotTail_Load(FILE *f) {
         enemy_registry_digest = get_u32le_bytes(pp + 13);
         enemy_registry_count = get_u16le_bytes(pp + 17);
         has_enemy_registry_ctx = true;
+      }
+      if (pp[0] >= 4u && take >= 25u) {
+        bonk_registry_digest = get_u32le_bytes(pp + 19);
+        bonk_registry_count = get_u16le_bytes(pp + 23);
+        has_bonk_registry_ctx = true;
       }
       recognized++;
       continue;
@@ -914,6 +933,23 @@ int RandoSnapshotTail_Load(FILE *f) {
             fprintf(stderr,
                     "RandoSnapshotTail: enemy-check registry drift or missing "
                     "registry identity — deactivating randomizer state\n");
+            Rando_DeactivateSlot();
+            pending_door_layout = false;
+            pending_chain_layout = false;
+            recognized++;
+            FINISH_LOAD();
+          }
+          // Bonk registry guard, same shape (add-rando-bonk-sanity): a
+          // bonk-active snapshot replayed against an absent (pre-v4 TLV /
+          // empty build registry) or drifted bonk registry fails CLOSED.
+          if (Rando_SettingsNeedBonkRegistry(&s) &&
+              (!has_bonk_registry_ctx ||
+               Rando_CurrentBonkRegistryCount() == 0 ||
+               !Rando_BonkRegistryMatches(bonk_registry_digest,
+                                          bonk_registry_count))) {
+            fprintf(stderr,
+                    "RandoSnapshotTail: bonk registry drift or missing "
+                    "registry identity - deactivating randomizer state\n");
             Rando_DeactivateSlot();
             pending_door_layout = false;
             pending_chain_layout = false;

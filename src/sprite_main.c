@@ -26236,7 +26236,41 @@ void NiceThiefUnderRock(int k) {  // 9ef14f
   Sprite_ShowSolicitedMessage(k, sprite_subtype2[k] == 5 ? 0x177 : 0x178);
 }
 
+// add-rando-shopsanity — shared front-end for the seven vanilla shop-slot
+// handlers. Returns true when the slot is an ACTIVE UNCHECKED check and this
+// call fully handled the sprite's frame: the check sells the PLACED item at
+// the derived price and bypasses every vanilla refusal gate except
+// affordability — the vanilla gates ("you already own a shield", "need an
+// empty bottle", "health/ammo full") belong to the vanilla ITEM, and keeping
+// them on a check would make it missable (the location-guard bug class).
+// Checked slots / axis-off return false -> the vanilla body runs (vanilla
+// restock at the vanilla price; Rando_ShopDispatch's checked branch keeps a
+// re-buy from re-granting the placed item). Rando_ShopSlotCheckInfo
+// re-verifies "unchecked" every frame, so a bought slot can't sell twice.
+static bool ShopItem_ShopsanityCheckSlot(int k, uint8 vanilla_code) {
+  uint16 price;
+  if (!Rando_ShopSlotCheckInfo(BYTE(dungeon_room_index), which_entrance,
+                               sprite_subtype[k], NULL, NULL, &price))
+    return false;
+  SpriteDraw_ShopItem(k);  // routes to the check-slot draw
+  if (Sprite_ReturnIfInactive(k))
+    return true;
+  Sprite_BehaveAsBarrier(k);
+  if (ShopItem_CheckForAPress(k)) {
+    if (ShopItem_HandleCost((int)price)) {
+      sprite_state[k] = 0;
+      ShopItem_HandleReceipt(k, vanilla_code);
+    } else {
+      Sprite_ShowMessageUnconditional(0x17c);
+      ShopItem_PlayBeep(k);
+    }
+  }
+  return true;
+}
+
 void ShopItem_RedPotion150(int k) {  // 9ef16e
+  if (ShopItem_ShopsanityCheckSlot(k, 0x2e))
+    return;
   SpriteDraw_ShopItem(k);
   if (Sprite_ReturnIfInactive(k))
     return;
@@ -26279,6 +26313,8 @@ void ShopKeeper_SpawnShopItem(int k, int pos, int what) {  // 9ef1b3
 }
 
 void ShopItem_FighterShield(int k) {  // 9ef1f2
+  if (ShopItem_ShopsanityCheckSlot(k, 0x04))
+    return;
   SpriteDraw_ShopItem(k);
   if (Sprite_ReturnIfInactive(k))
     return;
@@ -26302,6 +26338,8 @@ void ShopItem_FighterShield(int k) {  // 9ef1f2
 }
 
 void ShopItem_FireShield(int k) {  // 9ef230
+  if (ShopItem_ShopsanityCheckSlot(k, 0x05))
+    return;
   SpriteDraw_ShopItem(k);
   if (Sprite_ReturnIfInactive(k))
     return;
@@ -26334,6 +26372,8 @@ void ShopItem_MakeShieldsDeflect(int k) {  // 9ef261
 }
 
 void ShopItem_Heart(int k) {  // 9ef27d
+  if (ShopItem_ShopsanityCheckSlot(k, 0x42))
+    return;
   SpriteDraw_ShopItem(k);
   if (Sprite_ReturnIfInactive(k))
     return;
@@ -26352,6 +26392,8 @@ void ShopItem_Heart(int k) {  // 9ef27d
 }
 
 void ShopItem_Arrows(int k) {  // 9ef2af
+  if (ShopItem_ShopsanityCheckSlot(k, 0x44))
+    return;
   SpriteDraw_ShopItem(k);
   if (Sprite_ReturnIfInactive(k))
     return;
@@ -26371,6 +26413,8 @@ void ShopItem_Arrows(int k) {  // 9ef2af
 }
 
 void ShopItem_Bombs(int k) {  // 9ef2f0
+  if (ShopItem_ShopsanityCheckSlot(k, 0x31))
+    return;
   SpriteDraw_ShopItem(k);
   if (Sprite_ReturnIfInactive(k))
     return;
@@ -26390,6 +26434,8 @@ void ShopItem_Bombs(int k) {  // 9ef2f0
 }
 
 void ShopItem_Bee(int k) {  // 9ef322
+  if (ShopItem_ShopsanityCheckSlot(k, 0x0e))
+    return;
   SpriteDraw_ShopItem(k);
   if (Sprite_ReturnIfInactive(k))
     return;
@@ -26495,49 +26541,140 @@ bool ShopItem_HandleCost(int amt) {  // 9ef39e
   return true;
 }
 
-void SpriteDraw_ShopItem(int k) {  // 9ef4ce
-  // 7 kinds x 5 rows. Kinds 0..6 = subtype2 7..13 (vanilla shop items). Within
-  // each kind the y:16 ext:0 rows are the PRICE digits and the ext:2 big tile
-  // is the item graphic (e.g. RedPotion: 0x0231/0x0213/0x0230 = "150", 0x02c0 =
-  // bottle). Phase B Slice 3b take-any items (subtype2 14/15) draw price-less
-  // per-item icons separately below, from those item tiles.
-  static const DrawMultipleData kShopKeeper_ItemWithPrice_Dmd[35] = {
-    {-4, 16, 0x0231, 0},
-    { 4, 16, 0x0213, 0},
-    {12, 16, 0x0230, 0},
-    { 0,  0, 0x02c0, 2},
-    { 0, 11, 0x036c, 2},
-    { 0, 16, 0x0213, 0},
-    { 0, 16, 0x0213, 0},
-    { 8, 16, 0x0230, 0},
-    { 0,  0, 0x04ce, 2},
-    { 4, 12, 0x0338, 0},
-    {-4, 16, 0x0213, 0},
-    { 4, 16, 0x0230, 0},
-    {12, 16, 0x0230, 0},
-    { 0,  0, 0x08cc, 2},
-    { 4, 12, 0x0338, 0},
-    { 0, 16, 0x0231, 0},
-    { 0, 16, 0x0231, 0},
-    { 8, 16, 0x0230, 0},
-    { 4,  8, 0x0329, 0},
-    { 4, 11, 0x0338, 0},
-    {-4, 16, 0x0203, 0},
-    {-4, 16, 0x0203, 0},
-    { 4, 16, 0x0230, 0},
-    { 0,  0, 0x04c4, 2},
-    { 0, 11, 0x0338, 0},
-    { 0, 16, 0x0213, 0},
-    { 0, 16, 0x0213, 0},
-    { 8, 16, 0x0230, 0},
-    { 0,  0, 0x04e8, 2},
-    { 0, 11, 0x036c, 2},
-    { 0, 16, 0x0231, 0},
-    { 0, 16, 0x0231, 0},
-    { 8, 16, 0x0230, 0},
-    { 4,  8, 0x0ff4, 0},
-    { 4, 11, 0x0338, 0},
+// 7 kinds x 5 rows (kinds 0..6 = subtype2 7..13). File-scope so the
+// shopsanity check-slot draw below can reuse each kind's item tiles
+// (rows 3-4 of its group); SpriteDraw_ShopItem's vanilla path indexes it
+// unchanged. Within each kind the y:16 ext:0 rows are the PRICE digits and
+// the ext:2 big tile is the item graphic.
+static const DrawMultipleData kShopKeeper_ItemWithPrice_Dmd[35] = {
+  {-4, 16, 0x0231, 0},
+  { 4, 16, 0x0213, 0},
+  {12, 16, 0x0230, 0},
+  { 0,  0, 0x02c0, 2},
+  { 0, 11, 0x036c, 2},
+  { 0, 16, 0x0213, 0},
+  { 0, 16, 0x0213, 0},
+  { 8, 16, 0x0230, 0},
+  { 0,  0, 0x04ce, 2},
+  { 4, 12, 0x0338, 0},
+  {-4, 16, 0x0213, 0},
+  { 4, 16, 0x0230, 0},
+  {12, 16, 0x0230, 0},
+  { 0,  0, 0x08cc, 2},
+  { 4, 12, 0x0338, 0},
+  { 0, 16, 0x0231, 0},
+  { 0, 16, 0x0231, 0},
+  { 8, 16, 0x0230, 0},
+  { 4,  8, 0x0329, 0},
+  { 4, 11, 0x0338, 0},
+  {-4, 16, 0x0203, 0},
+  {-4, 16, 0x0203, 0},
+  { 4, 16, 0x0230, 0},
+  { 0,  0, 0x04c4, 2},
+  { 0, 11, 0x0338, 0},
+  { 0, 16, 0x0213, 0},
+  { 0, 16, 0x0213, 0},
+  { 8, 16, 0x0230, 0},
+  { 0,  0, 0x04e8, 2},
+  { 0, 11, 0x036c, 2},
+  { 0, 16, 0x0231, 0},
+  { 0, 16, 0x0231, 0},
+  { 8, 16, 0x0230, 0},
+  { 4,  8, 0x0ff4, 0},
+  { 4, 11, 0x0338, 0},
+};
+
+// add-rando-shopsanity — draw an unchecked check slot: dynamic price digits
+// (all ten glyphs exist in shop GFX — map grounded in upstream
+// shopkeeper.asm DrawPrice `.digit_properties`) + the placed item's icon via
+// the shared field-item resolver, with the sparkle tile (0x0338, present in
+// every shop's GFX) as the generic cue when no exact icon can draw.
+static void SpriteDraw_ShopCheckSlot(int k, uint16 loc, uint16 price) {
+  static const uint16 kShopPriceDigitChar[10] = {
+    0x0230, 0x0231, 0x0202, 0x0203, 0x0212,
+    0x0213, 0x0222, 0x0223, 0x0232, 0x0233,
   };
+  DrawMultipleData dmd[5];
+  int n = 0;
+  uint8 digits[3];
+  int nd = 0;
+  uint16 v = price;
+  do { digits[nd++] = (uint8)(v % 10); v /= 10; } while (v && nd < 3);
+  // Vanilla digit layout: 3 digits at x=-4/4/12, 2 at x=0/8 (y=16, small).
+  int x0 = (nd == 3) ? -4 : 0;
+  for (int i = 0; i < nd; i++) {
+    dmd[n].x = (int8)(x0 + 8 * i);
+    dmd[n].y = 16;
+    dmd[n].char_flags = kShopPriceDigitChar[digits[nd - 1 - i]];
+    dmd[n].ext = 0;
+    n++;
+  }
+  uint8 gfx, big, oam_flags;
+  int icon = Rando_GetShopCheckIcon(loc, &gfx, &big, &oam_flags);
+  if (icon == 0) {
+    // Truthful vanilla placement — the kind's own item tiles (rows 3-4 of
+    // its 5-row group).
+    int j = sprite_subtype2[k] - 7;
+    dmd[n++] = kShopKeeper_ItemWithPrice_Dmd[j * 5 + 3];
+    dmd[n++] = kShopKeeper_ItemWithPrice_Dmd[j * 5 + 4];
+    Sprite_DrawMultiplePlayerDeferred(k, dmd, n, NULL);
+    return;
+  }
+  // Each shop column owns an icon quad (see the ownership map at
+  // Rando_ShopIconSlotStage: pos 0 = the bird quad 0x0E.., pos 1 = the shop
+  // sheets' page-1 zero quad 0x10C.., pos 2 = the shared recv slot 0x24..)
+  // so all three placed items render concurrently; the generic check cue
+  // draws for no-icon placements (icon == 2), a failed decode, a custom-
+  // palette conflict, or pos 2 while a receipt animation owns the recv
+  // slot. The icon rides the SAME deferred dmd block as the digits — never
+  // a separate Oam_AllocateFromRegion*(8): in shop rooms that
+  // overflow-rotates into parked scratch entries (invisible icon) and the
+  // cursor disturbance stomps a price digit (the F12 OAM-buffer diagnosis).
+  // Total block stays <= vanilla's 5 entries per slot.
+  static const uint8 kRandoShopIconTopChar[3] = {0x0E, 0x0C, 0x24};
+  static const uint8 kRandoShopIconPageBit[3] = {0x00, 0x01, 0x00};
+  uint8 pos = (uint8)(sprite_subtype[k] - 1);
+  bool mine = icon == 1 && Rando_ShopIconSlotStage(pos, gfx);
+  PrepOamCoordsRet info;
+  if (mine && !Sprite_PrepOamCoordOrDoubleRet(k, &info)) {
+    // Final OAM attr must be the resolver's oam_flags (palette row for custom
+    // art etc.) plus the column's char-page bit, not the shop sprite's:
+    // Sprite_DrawMultiple XORs each entry's high byte with the live prep
+    // flags, so pre-XOR them away.
+    uint8 hi = (uint8)((oam_flags | kRandoShopIconPageBit[pos]) ^ info.flags);
+    uint8 top = kRandoShopIconTopChar[pos], bot = (uint8)(top + 0x10);
+    if (big) {
+      dmd[n].x = 0; dmd[n].y = 0;
+      dmd[n].char_flags = (uint16)(top | hi << 8); dmd[n].ext = 2; n++;
+    } else {
+      dmd[n].x = 4; dmd[n].y = 0;
+      dmd[n].char_flags = (uint16)(top | hi << 8); dmd[n].ext = 0; n++;
+      dmd[n].x = 4; dmd[n].y = 8;
+      dmd[n].char_flags = (uint16)(bot | hi << 8); dmd[n].ext = 0; n++;
+    }
+  } else {
+    dmd[n].x = 4; dmd[n].y = 4; dmd[n].char_flags = 0x0338; dmd[n].ext = 0; n++;
+  }
+  Sprite_DrawMultiplePlayerDeferred(k, dmd, n, NULL);
+}
+
+void SpriteDraw_ShopItem(int k) {  // 9ef4ce
+  // Kinds 0..6 = subtype2 7..13 (vanilla shop items) draw from the file-scope
+  // kShopKeeper_ItemWithPrice_Dmd (e.g. RedPotion: 0x0231/0x0213/0x0230 =
+  // "150", 0x02c0 = bottle). Phase B Slice 3b take-any items (subtype2 14/15)
+  // draw price-less per-item icons separately below, from those item tiles.
+  //
+  // add-rando-shopsanity — an unchecked check slot draws the PLACED item at
+  // the derived price instead of the vanilla kind (never a vanilla-item
+  // lookalike; checked slots fall through to the vanilla rows = restock).
+  if (sprite_subtype2[k] >= 7 && sprite_subtype2[k] <= 13) {
+    uint16 loc, price;
+    if (Rando_ShopSlotCheckInfo(BYTE(dungeon_room_index), which_entrance,
+                                sprite_subtype[k], &loc, NULL, &price)) {
+      SpriteDraw_ShopCheckSlot(k, loc, price);
+      return;
+    }
+  }
   // Phase B Slice 3b — take-any per-item icon (price-less). Item tiles only:
   //   kind 14 = heart  -> the Heart kind's item tiles (0x0329 / 0x0338)
   //   kind 15 = potion -> RedPotion's item big-tile (0x02c0); also used for the

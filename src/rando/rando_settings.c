@@ -7,8 +7,8 @@
 // Layout (kSettingsCanonicalLen = 31 bytes):
 //   offset 0   world_state                 WorldState enum
 //   offset 1   goal                        Goal enum
-//   offset 2   crystals_ganon              0..7
-//   offset 3   crystals_tower              0..7
+//   offset 2   crystals_ganon              0..7 or 8=random (add-rando-random-crystals)
+//   offset 3   crystals_tower              0..7 or 8=random
 //   offset 4   tricks                      uint8 bitmask (Phase A: 0)
 //   offset 5   item_pool_difficulty        ItemPoolDifficulty enum
 //   offset 6   logic                       uint8 (Phase A: 0)
@@ -47,6 +47,8 @@
 //   offset 29  grass_shuffle               bits0-1 (TerrainShuffle enum)
 //              rock_shuffle                bits2-3 (TerrainShuffle enum,
 //                                          add-rando-grass-rock-shuffle)
+//              shopsanity                  bit4 (bool, add-rando-shopsanity)
+//              bonk_shuffle                bits5-6 (TerrainShuffle, add-rando-bonk-sanity)
 //   offset 30  key_rings                   bits0-1 (KeyRingsMode enum)
 //              skeleton_key                bit2 (bonus-only item toggle)
 //
@@ -135,6 +137,8 @@ void Settings_SetDefaults(RandoSettings *s) {
   s->npc_souls = 0;  // add-npc-souls default off (byte-identical)
   s->key_rings = kKeyRings_Off;
   s->skeleton_key = 0;
+  s->shopsanity = 0;  // add-rando-shopsanity default off ([29] bit 4 stays 0)
+  s->bonk_shuffle = kTerrainShuffle_Off;  // add-rando-bonk-sanity ([29] bits 5-6 stay 0)
 }
 
 // Apply derived-from-other-fields normalization rules.
@@ -495,7 +499,9 @@ int Settings_CanonicalSerialize(const RandoSettings *s_in,
   // Defaults keep the byte 0x00; the LENGTH growth 29->30 changes every
   // settings_hash once, under that change's kGeneratorVersion bump.
   out[29] = (uint8)(((s->grass_shuffle << kGrassShuffleAxis_Shift) & kGrassShuffleAxis_Mask) |
-                    ((s->rock_shuffle << kRockShuffleAxis_Shift) & kRockShuffleAxis_Mask));
+                    ((s->rock_shuffle << kRockShuffleAxis_Shift) & kRockShuffleAxis_Mask) |
+                    (s->shopsanity ? kShopsanityAxis_Enabled : 0) |
+                    ((s->bonk_shuffle << kBonkShuffleAxis_Shift) & kBonkShuffleAxis_Mask));
   // add-rando-key-rings-skeleton-key — preserve the REQUESTED ring policy.
   // Effective-off semantics are computed by Settings_EffectiveKeyRings and are
   // deliberately not part of apply_derived_rules.
@@ -609,7 +615,11 @@ int Settings_CanonicalDeserialize(const uint8 in[kSettingsCanonicalLen],
   // range (off/junk/all) — corruption, not forward-compat.
   s.grass_shuffle = (uint8)((in[29] & kGrassShuffleAxis_Mask) >> kGrassShuffleAxis_Shift);
   s.rock_shuffle = (uint8)((in[29] & kRockShuffleAxis_Mask) >> kRockShuffleAxis_Shift);
-  if (in[29] & ~(uint8)(kGrassShuffleAxis_Mask | kRockShuffleAxis_Mask)) return -2;
+  s.shopsanity = (in[29] & kShopsanityAxis_Enabled) ? 1 : 0;
+  s.bonk_shuffle = (uint8)((in[29] & kBonkShuffleAxis_Mask) >> kBonkShuffleAxis_Shift);
+  if (in[29] & ~(uint8)(kGrassShuffleAxis_Mask | kRockShuffleAxis_Mask |
+                        kShopsanityAxis_Enabled | kBonkShuffleAxis_Mask)) return -2;
+  if (s.bonk_shuffle > kTerrainShuffle_All) return -2;
   if (s.grass_shuffle > kTerrainShuffle_All || s.rock_shuffle > kTerrainShuffle_All) return -2;
   // add-rando-key-rings-skeleton-key — [30] is strict append-only data. Older
   // containers zero-extend a 30-byte blob before calling this function.
@@ -638,7 +648,9 @@ bool Settings_Validate(const RandoSettings *s) {
   if (s == NULL) return false;
   if (s->world_state > kWorldState_Retro) return false;                    // [0] 0..3
   if (s->goal > kGoal_Completionist) return false;                         // [1] 0..6
-  if (s->crystals_ganon > 7 || s->crystals_tower > 7) return false;        // [2][3]
+  // [2][3] 0..7 fixed or kCrystalsRandom (8) — add-rando-random-crystals.
+  if (s->crystals_ganon > kCrystalsRandom || s->crystals_tower > kCrystalsRandom)
+    return false;
   // [4] tricks: full 8-bit bitmask (all 8 trick bits defined) — any byte valid.
   if (s->item_pool_difficulty > kItemPoolDifficulty_Expert) return false;  // [5] 0..3
   if (s->logic > 4) return false;          // [6] tier ceiling = NoLogic (4), per the CSV parser
@@ -693,6 +705,10 @@ bool Settings_Validate(const RandoSettings *s) {
   // 0..2 defined (add-rando-grass-rock-shuffle); 3 is reserved.
   if (s->grass_shuffle > kTerrainShuffle_All) return false;
   if (s->rock_shuffle > kTerrainShuffle_All) return false;
+  // [29] bit 4: shopsanity is a strict boolean (add-rando-shopsanity).
+  if (s->shopsanity > 1) return false;
+  // [29] bits 5-6: bonk_shuffle TerrainShuffle 0..2 (add-rando-bonk-sanity).
+  if (s->bonk_shuffle > kTerrainShuffle_All) return false;
   // [30] bits 0-1: requested key-ring mode; bit2: Skeleton Key item toggle.
   if (s->key_rings > kKeyRings_All || s->skeleton_key > 1) return false;
   return true;
@@ -859,6 +875,103 @@ void Settings_SelfCheck(void) {
     if (Settings_ParseCsv("key_rings=random,skeleton_key=true", &kr) != 0 ||
         kr.key_rings != kKeyRings_Random || !kr.skeleton_key) {
       fprintf(stderr, "Settings_SelfCheck: key-rings CSV parse mismatch\n");
+      exit(2);
+    }
+  }
+
+  // Shopsanity occupies [29] bit 4 with no length change: a default blob is
+  // bit-identical to the pre-shopsanity build, the enabled bit round-trips
+  // alongside the terrain axes, and [29] bits 5-7 stay refused.
+  {
+    RandoSettings sh, round;
+    uint8 blob[kSettingsCanonicalLen];
+    Settings_SetDefaults(&sh);
+    Settings_CanonicalSerialize(&sh, blob);
+    if (blob[29] != 0) {
+      fprintf(stderr, "Settings_SelfCheck: default [29] must stay 0x00 (shopsanity off)\n");
+      exit(2);
+    }
+    sh.shopsanity = 1;
+    sh.grass_shuffle = kTerrainShuffle_All;
+    Settings_CanonicalSerialize(&sh, blob);
+    if (blob[29] != (uint8)((kTerrainShuffle_All << kGrassShuffleAxis_Shift) |
+                            kShopsanityAxis_Enabled) ||
+        Settings_CanonicalDeserialize(blob, &round) != 0 ||
+        round.shopsanity != 1 || round.grass_shuffle != kTerrainShuffle_All) {
+      fprintf(stderr, "Settings_SelfCheck: shopsanity round-trip mismatch\n");
+      exit(2);
+    }
+    blob[29] |= 0x80;  // bit 7 = the last refused-undefined [29] bit
+    if (Settings_CanonicalDeserialize(blob, &round) == 0) {
+      fprintf(stderr, "Settings_SelfCheck: undefined canonical [29] bits must be refused\n");
+      exit(2);
+    }
+    Settings_SetDefaults(&sh);
+    if (Settings_ParseCsv("shopsanity=true", &sh) != 0 || sh.shopsanity != 1) {
+      fprintf(stderr, "Settings_SelfCheck: shopsanity CSV parse mismatch\n");
+      exit(2);
+    }
+  }
+
+  // add-rando-random-crystals — the requested sentinel (8) round-trips in
+  // bytes [2]/[3], the CSV `random` keyword parses, and 9+ stays refused.
+  {
+    RandoSettings cr, round;
+    uint8 blob[kSettingsCanonicalLen];
+    Settings_SetDefaults(&cr);
+    cr.crystals_ganon = kCrystalsRandom;
+    cr.crystals_tower = 5;
+    Settings_CanonicalSerialize(&cr, blob);
+    if (blob[2] != kCrystalsRandom || blob[3] != 5 ||
+        Settings_CanonicalDeserialize(blob, &round) != 0 ||
+        round.crystals_ganon != kCrystalsRandom || round.crystals_tower != 5) {
+      fprintf(stderr, "Settings_SelfCheck: crystals sentinel round-trip mismatch\n");
+      exit(2);
+    }
+    Settings_SetDefaults(&cr);
+    if (Settings_ParseCsv("crystals.ganon=random,crystals.tower=random", &cr) != 0 ||
+        cr.crystals_ganon != kCrystalsRandom ||
+        cr.crystals_tower != kCrystalsRandom) {
+      fprintf(stderr, "Settings_SelfCheck: crystals `random` CSV parse mismatch\n");
+      exit(2);
+    }
+    Settings_SetDefaults(&cr);
+    if (Settings_ParseCsv("crystals.ganon=9", &cr) == 0) {
+      fprintf(stderr, "Settings_SelfCheck: crystals.ganon=9 must be refused\n");
+      exit(2);
+    }
+    // Numeric 8 stays refused on the CSV surface (keyword-only sentinel; the
+    // legacy vector above also pins this).
+    Settings_SetDefaults(&cr);
+    if (Settings_ParseCsv("crystals.tower=8", &cr) == 0) {
+      fprintf(stderr, "Settings_SelfCheck: numeric crystals.tower=8 must be refused\n");
+      exit(2);
+    }
+  }
+
+  // add-rando-bonk-sanity — [29] bits 5-6 round-trip alongside the other
+  // byte-29 axes, and the CSV tier keyword parses.
+  {
+    RandoSettings bk, round;
+    uint8 blob[kSettingsCanonicalLen];
+    Settings_SetDefaults(&bk);
+    bk.bonk_shuffle = kTerrainShuffle_All;
+    bk.shopsanity = 1;
+    bk.grass_shuffle = kTerrainShuffle_Junk;
+    Settings_CanonicalSerialize(&bk, blob);
+    if (blob[29] != (uint8)((kTerrainShuffle_Junk << kGrassShuffleAxis_Shift) |
+                            kShopsanityAxis_Enabled |
+                            (kTerrainShuffle_All << kBonkShuffleAxis_Shift)) ||
+        Settings_CanonicalDeserialize(blob, &round) != 0 ||
+        round.bonk_shuffle != kTerrainShuffle_All || round.shopsanity != 1 ||
+        round.grass_shuffle != kTerrainShuffle_Junk) {
+      fprintf(stderr, "Settings_SelfCheck: bonk_shuffle round-trip mismatch\n");
+      exit(2);
+    }
+    Settings_SetDefaults(&bk);
+    if (Settings_ParseCsv("bonk_shuffle=junk", &bk) != 0 ||
+        bk.bonk_shuffle != kTerrainShuffle_Junk) {
+      fprintf(stderr, "Settings_SelfCheck: bonk_shuffle CSV parse mismatch\n");
       exit(2);
     }
   }
@@ -2406,6 +2519,8 @@ enum {
   KEY_rock_shuffle,
   KEY_key_rings,       // add-rando-key-rings-skeleton-key
   KEY_skeleton_key,
+  KEY_shopsanity,      // add-rando-shopsanity
+  KEY_bonk_shuffle,    // add-rando-bonk-sanity
 };
 
 static int handle_kv(const char *key, int klen, const char *val, int vlen,
@@ -2428,14 +2543,26 @@ static int handle_kv(const char *key, int klen, const char *val, int vlen,
     if (s->goal == kGoal_Completionist) s->accessibility = kAccessibility_Locations;
   } else if (csv_str_eq(key, klen, "crystals.ganon")) {
     MARK_SEEN(KEY_crystals_ganon);
-    uint32 v;
-    if (parse_uint(val, vlen, &v) != 0 || v > 7) goto bad_value;
-    s->crystals_ganon = (uint8)v;
+    // add-rando-random-crystals: the `random` KEYWORD maps to the requested
+    // sentinel (effective count seed-resolved at generation/load). Numeric 8
+    // stays rejected — the CSV surface keeps its historical 0..7 numeric
+    // contract (Settings_SelfCheck pins it); the sentinel is keyword-only.
+    if (csv_str_eq(val, vlen, "random")) {
+      s->crystals_ganon = kCrystalsRandom;
+    } else {
+      uint32 v;
+      if (parse_uint(val, vlen, &v) != 0 || v > 7) goto bad_value;
+      s->crystals_ganon = (uint8)v;
+    }
   } else if (csv_str_eq(key, klen, "crystals.tower")) {
     MARK_SEEN(KEY_crystals_tower);
-    uint32 v;
-    if (parse_uint(val, vlen, &v) != 0 || v > 7) goto bad_value;
-    s->crystals_tower = (uint8)v;
+    if (csv_str_eq(val, vlen, "random")) {
+      s->crystals_tower = kCrystalsRandom;
+    } else {
+      uint32 v;
+      if (parse_uint(val, vlen, &v) != 0 || v > 7) goto bad_value;
+      s->crystals_tower = (uint8)v;
+    }
   } else if (csv_str_eq(key, klen, "item_pool") || csv_str_eq(key, klen, "item.pool")) {
     MARK_SEEN(KEY_item_pool);
     if (parse_pool_diff(val, vlen, &s->item_pool_difficulty) != 0) goto bad_value;
@@ -2648,6 +2775,14 @@ static int handle_kv(const char *key, int klen, const char *val, int vlen,
   } else if (csv_str_eq(key, klen, "skeleton_key")) {
     MARK_SEEN(KEY_skeleton_key);
     if (parse_bool(val, vlen, &s->skeleton_key) != 0) goto bad_value;
+  } else if (csv_str_eq(key, klen, "shopsanity")) {
+    // add-rando-shopsanity — shop slots as one-time purchase checks.
+    MARK_SEEN(KEY_shopsanity);
+    if (parse_bool(val, vlen, &s->shopsanity) != 0) goto bad_value;
+  } else if (csv_str_eq(key, klen, "bonk_shuffle")) {
+    // add-rando-bonk-sanity — placed OW bonk sprites as checks (off/junk/all).
+    MARK_SEEN(KEY_bonk_shuffle);
+    if (parse_terrain_shuffle(val, vlen, &s->bonk_shuffle) != 0) goto bad_value;
   } else if (csv_str_eq(key, klen, "instant_flute")) {
     // Randomizer QoL — seed-burned flute activation behavior. Default true.
     MARK_SEEN(KEY_instant_flute);
