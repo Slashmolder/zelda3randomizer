@@ -41,6 +41,16 @@ overrides:
     Single light rock (row 12 col 12) = the Glove rock on the Zora river bank
     walk (ALTTPR KingZora: canLiftRocks || flippers). NE region + the
     CanLiftRocks class gate model it exactly.
+- screen: 0x10
+  ranges:
+  # Four bushes surrounding the permanent DW portal north of Kakariko (warp at
+  # row 22 col 23). The pocket's direct entrances are the north Hammer pegs and
+  # south heavy-rock pile. Outside Inverted, the corresponding screen-0x50
+  # coordinate is walkable from the north, supplying an independent mirror route.
+  - {lo: 0x0A2E, hi: 0x0A2E, gate: 'CanReachNorthKakPortalPocket()'}
+  - {lo: 0x0B28, hi: 0x0B28, gate: 'CanReachNorthKakPortalPocket()'}
+  - {lo: 0x0BAA, hi: 0x0BAA, gate: 'CanReachNorthKakPortalPocket()'}
+  - {lo: 0x0BB2, hi: 0x0BB2, gate: 'CanReachNorthKakPortalPocket()'}
 - screen: 0x18
   ranges:
   # Kakariko east peg pocket: the map16 0x21B Hammer peg at 0x0AF6 is the

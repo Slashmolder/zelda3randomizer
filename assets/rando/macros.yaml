@@ -102,6 +102,19 @@ macros:
     source: "app/Region/Standard/LightWorld/NorthWest.php:108-122; fork terrain screen 0x22"
 
   # ===========================================================================
+  # CanReachNorthKakPortalPocket — the four Light-World bushes surrounding the
+  # permanent Dark-World portal north of Kakariko. Enter directly through the
+  # north Hammer pegs or the south heavy-rock pile. Outside Inverted, Link can
+  # instead approach the corresponding screen-0x50 coordinate from the north
+  # through bushes and mirror into the pocket without either direct-entry item.
+  # Inverted's Mirror goes LW -> DW and cannot enter this Light-World pocket.
+  # ===========================================================================
+  - name: CanReachNorthKakPortalPocket
+    parameters: []
+    body: "HAS_ITEM(Hammer) OR CanLiftDarkRocks() OR ((NOT WORLDSTATE_EQ(inverted)) AND HAS_ITEM(MagicMirror) AND HAS_ITEM(MoonPearl) AND OP_REGION_REACHABLE(DarkWorld_NorthWest))"
+    source: "app/Region/Standard/DarkWorld/NorthWest.php:143-164; fork terrain screens 0x10/0x50"
+
+  # ===========================================================================
   # CanReachLakeHyliaIsland — the heart-piece island and its adjacent bush.
   # Standard reaches it by swimming in northeast Dark World and mirroring;
   # Inverted reaches the Light-World island directly with Pearl + Flippers.

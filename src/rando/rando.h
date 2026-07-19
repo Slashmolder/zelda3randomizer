@@ -35,7 +35,9 @@
 // bush share their canonical world-state-aware routes.
 // 152: the two southeast castle-ground bushes inherit the Power Glove gate
 // from the diagonal light-rock barrier that encloses them.
-#define kGeneratorVersion 152u  // gate castle-ground rock-pocket bushes
+// 153: the four bushes surrounding the north-Kakariko portal inherit their
+// Hammer-or-Titan's-Mitts direct routes plus the non-Inverted mirror route.
+#define kGeneratorVersion 153u  // gate north-Kakariko portal-pocket bushes
 // The share-string binary layout packs version into 1 byte
 // (rando_share.h: ShareString.version is uint8). Compile-time enforce
 // kGeneratorVersion ≤ 255 so silent truncation can't ship.

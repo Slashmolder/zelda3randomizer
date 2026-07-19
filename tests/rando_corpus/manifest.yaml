@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 152  # bump_rando_corpus.py --apply - gate castle-ground rock-pocket bushes
+generator_version: 153  # bump_rando_corpus.py --apply - gate north-Kakariko portal-pocket bushes
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -1154,12 +1154,12 @@ entries:
     seed: "0x4752415353000001"
     label: "terrain-grass-junk"
     expected_digest: "0d9ff914f77393165823fbb8e0f6e5fe5e2afeef28bf63ceffe09958171135bd"
-    expected_sphere_digest: "4b58af3a4fb50b4c86cec67399c8a911ba58ef12cc749c5e4510ad53e3c8649d"
+    expected_sphere_digest: "1c9fc9da5b8fb7e5138ce586d7acc59064a01bece91fdfc869314fda9140fd0e"
   - settings: { mode.state: open, goal: fast_ganon, grass_shuffle: all, accessibility: items }
     seed: "0x4752415353000002"
     label: "terrain-grass-all"
-    expected_digest: "6719bf564a4cc2be43a971fee4341d9f431ae8554ee8f90a1eadec0b9ca050ad"
-    expected_sphere_digest: "b259c7d2a9e9e40603aa3bbd7f7c5d827df86de7e3e431ce13e5161a857f4c36"
+    expected_digest: "7507c12a6e5d7e58741e77f4187134e72f41004284d220bc1fcf40e11fbbe787"
+    expected_sphere_digest: "bba1b11fe5294d7a454feccdcc6f8bd4495dfbbd26934b76d97264d653d4a57c"
   - settings: { mode.state: open, goal: fast_ganon, rock_shuffle: junk, accessibility: items }
     seed: "0x524F434B00000001"
     label: "terrain-rock-junk"
@@ -1173,13 +1173,13 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, grass_shuffle: all, rock_shuffle: all, accessibility: items }
     seed: "0x4752524F434B0003"
     label: "terrain-grass-rock-all"
-    expected_digest: "ad252118fee460e6b731ee8121bab3bd0f456be6576df9b50fc7cb1c5ca98e4d"
-    expected_sphere_digest: "38804d044b3994270ae5f2ddc3db61c56b72d1696178cfa33b626e0439394856"
+    expected_digest: "3d5ad26f2f25e4a0cdc8bcf2f6c489a2293abb50296088e3c2453aff9af34a72"
+    expected_sphere_digest: "0578c8d454912ef91b831f38cd01fdc1b5ad5356da584a974c50cde68652f7fd"
   - settings: { mode.state: retro, goal: ganon, grass_shuffle: all, rock_shuffle: all }
     seed: "0x4752524F434B0004"
     label: "terrain-retro"
-    expected_digest: "22c9f992cefe376779469fd3d72a1bfc631d1d84208880ef49871499cd3f6fb4"
-    expected_sphere_digest: "7c90717cbfd16fc7e81dc9dadaa6824516b737acd487f70e139da3dfe2fba674"
+    expected_digest: "5cdd1c7a5401feebe8e7cff39fd5d7f8361f83fe75a74388cd4e8a3c09fd63cd"
+    expected_sphere_digest: "cbcdf33bdffe79b0c1d9d63979c78db5411051f3e7e1ee04d406193c35c2f423"
   - settings: { mode.state: inverted, goal: fast_ganon, grass_shuffle: all, rock_shuffle: all, accessibility: items }
     seed: "0x4752524F434B0005"
     label: "terrain-inverted"
@@ -1188,23 +1188,23 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, door_shuffle: basic, grass_shuffle: all, rock_shuffle: all }
     seed: "0x4752524F434B0006"
     label: "terrain-door-basic-composes"
-    expected_digest: "35b2ddbdeaa633fe312464fc4bce3df41f9af3f2b2dab67a394c377aa6dc25d6"
-    expected_sphere_digest: "f9e7998f37d45ce4945132ab910b9ac9d861c0802c34d205cc96ec3e62104cc7"
+    expected_digest: "a53ea6801aea5f07be6131bba232c1f916cc173b6e21ff1341130a2c6cce1142"
+    expected_sphere_digest: "3b5b8efd2576cc7c25e30f932f8e47596eca1f67eeffc351312a307c17907bcd"
   - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, grass_shuffle: all, rock_shuffle: all }
     seed: "0x4752524F434B0007"
     label: "terrain-cave-entrance-composes"
-    expected_digest: "77d786a52a1db75660696297c38b426de4b1282462785835afa08a1db2d07e53"
-    expected_sphere_digest: "4823b5e3e57a95aa858c5e84e1f781d986b3e9c576ea236fd1a7cd9c77785e62"
+    expected_digest: "f4ba9510a3a709046d1306a75d46bbee3ca80ec9b13981921832bc0303e14ac0"
+    expected_sphere_digest: "57f041f26445ebe1b042b69e815d527d956f483b81a988bc0c4ece5a98feaa68"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, enemy_drop_checks: keys, grass_shuffle: all, rock_shuffle: all }
     seed: "0x4752524F434B0008"
     label: "terrain-enemy-drop"
-    expected_digest: "4d42717e7af5b7759556bfe14381cc12586c2810ff8985ecbd991107bb4a0539"
-    expected_sphere_digest: "b63df767c0caa5fac714dcc42b31db05d2ff296b0f51fbeb1fd099caba63f373"
+    expected_digest: "efcfd4c433480a14efd019a054fd0c5b189d1bb77fd12435c34ca9e1d0c27dc6"
+    expected_sphere_digest: "d088cae9b6f35e82f85089afe5236ce1bed11828ffd239dc1dff1427ba5d46e7"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, pot_shuffle: all, grass_shuffle: all, rock_shuffle: all }
     seed: "0x4752524F434B0009"
     label: "terrain-pot-shuffle"
-    expected_digest: "f5f05b85b8df282a0f164e3b264c55c913e8e53e77f30d231f260f3b704ed383"
-    expected_sphere_digest: "a45da7469589578a294a467f260311ee5c48f250993c94a51d788493a9f6da14"
+    expected_digest: "63c9682e639c3dbce693455c6993cad8449e88ae0e0fd350565d258cde80bb00"
+    expected_sphere_digest: "19f132ce6b7c9ce1c366bb8479fa2fe11ee919b9e8f2ea47cebe42739642d1c0"
   - settings: { mode.state: standard, goal: "triforce-hunt", pieces_required: 20, pieces_placed: 30, grass_shuffle: all, rock_shuffle: all, accessibility: none }
     seed: "0x4752524F434B0015"
     label: "terrain-hunt-all-none"
@@ -1218,8 +1218,8 @@ entries:
     # rock-pocket gates then tipped 0014. 0015 generates
     # the same composition successfully. Same class as any marginal hunt seed
     # — reselect on a future re-roll (see the hunt-goal note above).
-    expected_digest: "f815d1b850e48eb2be0d2e66ebaeb745c9ddc83a62ebb0d46d7b973bd0534252"
-    expected_sphere_digest: "90d1006d85d3e855e899f1cd195c999034f47aaf22e9e9fd43fce1b9a81bf8f2"
+    expected_digest: "ed4edd53de5d239291096a9c14c3f557b9697e3f53dc99d0d2cb24a932e97af6"
+    expected_sphere_digest: "dc93a2ae725c59b0a44f8fb8917165bfe914eec3aab81ff1388cbf177aa3a3e3"
 
   # All-features-audit coverage rows (2026-07): the pairings the audit found
   # uncovered, plus two regression rows that only generate at all because of
@@ -1258,8 +1258,8 @@ entries:
   - settings: { mode.state: open, grass_shuffle: all, rock_shuffle: all, shuffle_dungeon_entrances: true, accessibility: none }
     seed: "0x0000000000000207"
     label: "terrain-dungeon-entrance-composes"
-    expected_digest: "57a0411c5d1aa49052c7ed622d530d32cc202361f7da1069fef7ffd64d9b32d9"
-    expected_sphere_digest: "90bc7b2708e0ade9b7899ff0484b64bfe75576542adb182de7359cee92f68f04"
+    expected_digest: "1b453144c3bf6c99b5b7e47f7826de9e87aabe2e170eddabe454f444543e9b61"
+    expected_sphere_digest: "d5181536cd0930be7350a22a8d8a6302b85255c3ae1261d9e02f27ecad7bd284"
   # Exercises the door-oracle collect-model key subtraction (door x npc_souls
   # with credited key-source rows active). pot=keys (not all) keeps the row
   # inside the per-row runtime budget while still exercising the same path:
