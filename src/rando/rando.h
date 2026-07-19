@@ -33,7 +33,9 @@
 // 151: isolated Hammer-peg, mirror-ledge, and water-island terrain gains its
 // physical access gates; the Smithy pocket/Magic Bat and Lake Hylia Island
 // bush share their canonical world-state-aware routes.
-#define kGeneratorVersion 151u  // gate isolated terrain and restore mirror routes
+// 152: the two southeast castle-ground bushes inherit the Power Glove gate
+// from the diagonal light-rock barrier that encloses them.
+#define kGeneratorVersion 152u  // gate castle-ground rock-pocket bushes
 // The share-string binary layout packs version into 1 byte
 // (rando_share.h: ShareString.version is uint8). Compile-time enforce
 // kGeneratorVersion ≤ 255 so silent truncation can't ship.

@@ -49,9 +49,15 @@ overrides:
   - {lo: 0x0AF8, hi: 0x0AFA, gate: 'HAS_ITEM(Hammer)'}
 - screen: 0x1B
   confirmed: >-
-    Castle-grounds bushes are open LightWorld_NorthEast ground. Standard's
+    Most castle-grounds bushes are open LightWorld_NorthEast ground. Standard's
     rain state only delays collection (over-gate direction, safe); the walls
     walkway is stair-walkable from the same region.
+  ranges:
+  # Two bushes at the southeast edge of the castle grounds sit directly behind
+  # the diagonal pair of light rocks at 0x1D70 and 0x1DF2. The fence closes the
+  # remaining approaches, so each bush requires the Power Glove rock-lift gate.
+  - {lo: 0x1D72, hi: 0x1D72, gate: 'CanLiftRocks()'}
+  - {lo: 0x1DF4, hi: 0x1DF4, gate: 'CanLiftRocks()'}
 - screen: 0x1D
   confirmed: Castle east field; plain LightWorld_NorthEast.
 - screen: 0x22
