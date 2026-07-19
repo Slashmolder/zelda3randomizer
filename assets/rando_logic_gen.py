@@ -456,6 +456,13 @@ def _bonk_registry_digest(rows) -> int:
     # _terrain_registry_digest. Bonk rows are world-state-universal (the OW
     # sprite tables are selected by sram_progress_indicator only), so there
     # is no ws_mask component.
+    #
+    # STRUCTURAL-ONLY caveat: predicate content is invisible to this digest,
+    # and normal builds (Makefile/vcxproj) only CONSUME bonk.gen.yaml — they
+    # never regenerate it. A stale-predicate registry therefore compiles
+    # silently under a matching sidecar/snapshot guard; run_rando_local_checks
+    # regenerates it before codegen (round-2 fix) and a local corpus run
+    # catches the drift via digest mismatch, but a build alone does not.
     if not rows:
         return 0
     h = 0x811C9DC5

@@ -19,6 +19,7 @@
 #include "util.h"
 #include "rando/rando_asset_decisions.h"  // Rando_RegisterAssetDecisionFromIni
 #include "rando/rando_settings.h"          // kSettingsCanonicalLen
+#include "rando/rando.h"                   // Rando_ActiveSeedU64 (cosmetic live-apply)
 #include "rando/shuffle_cosmetic.h"        // Cosmetic_ParsePaletteMode
 #if !defined(_WIN32)
 #include <unistd.h>   // fsync
@@ -1809,10 +1810,12 @@ uint32 Config_ApplyLive(const Config *prev, const Config *now) {
 
   // Cosmetic shuffles: the palette mode + music toggle are read live at their
   // point of use each frame, so they apply immediately. A changed cosmetic_seed
-  // needs the derived palette/music tables rebuilt (seed 0 here resolves to the
-  // slot seed on the next slot load). The sprite-folder pick happens at launch.
+  // needs the derived palette/music tables rebuilt; pass the ACTIVE slot's seed
+  // (0 when none) so changing CosmeticSeed back to 0 mid-run resumes tracking
+  // the slot immediately instead of literal seed 0 until the next slot load.
+  // The sprite-folder pick happens at launch.
   if (prev->cosmetic_seed != now->cosmetic_seed)
-    Cosmetic_SetSeed(now->cosmetic_seed, 0);
+    Cosmetic_SetSeed(now->cosmetic_seed, Rando_ActiveSeedU64());
   if (prev->cosmetic_sprite_dir != now->cosmetic_sprite_dir)
     restart |= kCfgRestart_Video;
 

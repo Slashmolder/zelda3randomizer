@@ -4,8 +4,12 @@
 // One row per slot 0..9 with Save / Load / Replay buttons; the on-disk files are
 // "saves/save%d.sav" (same path the F1-F10 keys use, slot = key index).
 //
-// SaveLoadSlot does file IO + state load synchronously on the main thread; calling
-// it directly here is fine — the keybind path invokes it the same way.
+// SaveLoadSlot serializes/loads live APU+DSP state that the SDL audio-callback
+// thread concurrently mutates, so every call must hold the audio mutex — the
+// keybind path wraps HandleCommand_Locked in SDL_LockMutex(g_audio_mutex)
+// (main.c: "Everything that might access audio state (like SaveLoad and Reset)
+// must have the lock"). This panel renders on the main thread OUTSIDE that
+// lock, so it takes ZeldaApuLock() around each call itself.
 #ifdef Z3R_NATIVE_SETTINGS_WINDOW
 
 #include "imgui.h"
@@ -16,6 +20,16 @@
 // Minimal C-side surface — avoid pulling in zelda_rtl.h's full include graph.
 extern "C" {
   void SaveLoadSlot(int cmd, int which);
+  void ZeldaApuLock(void);    // main.c — audio-callback mutex
+  void ZeldaApuUnlock(void);
+}
+
+// Audio-safe wrapper: hold the audio mutex across the snapshot IO + state
+// swap, matching the F1-F10 keybind path.
+static void SaveLoadSlotLocked(int cmd, int which) {
+  ZeldaApuLock();
+  SaveLoadSlot(cmd, which);
+  ZeldaApuUnlock();
 }
 enum { kSaveLoad_Save = 0, kSaveLoad_Load = 1, kSaveLoad_Replay = 2 };
 
@@ -51,12 +65,24 @@ extern "C" void DbgSnapshots_Render(void) {
     ImGui::TableSetupColumn("Actions");
     ImGui::TableHeadersRow();
 
+    // Slot-info cache: stat()ing all 10 files every rendered frame is needless
+    // per-frame IO (can stutter on cold/AV-scanned disks). Refresh ~1x/second
+    // and immediately after a Save.
+    static bool s_exists[kSnapshotSlotCount];
+    static long s_size[kSnapshotSlotCount];
+    static int s_refresh;
+    if (s_refresh-- <= 0) {
+      s_refresh = 60;
+      for (int i = 0; i < kSnapshotSlotCount; i++)
+        s_exists[i] = SnapshotSlotInfo(i, &s_size[i]);
+    }
+
     for (int slot = 0; slot < kSnapshotSlotCount; slot++) {
       ImGui::PushID(slot);
       ImGui::TableNextRow();
 
-      long size = 0;
-      bool exists = SnapshotSlotInfo(slot, &size);
+      long size = s_size[slot];
+      bool exists = s_exists[slot];
 
       ImGui::TableNextColumn();
       ImGui::Text("Slot %d", slot);
@@ -72,17 +98,19 @@ extern "C" void DbgSnapshots_Render(void) {
       }
 
       ImGui::TableNextColumn();
-      if (ImGui::SmallButton("Save"))
-        SaveLoadSlot(kSaveLoad_Save, slot);
+      if (ImGui::SmallButton("Save")) {
+        SaveLoadSlotLocked(kSaveLoad_Save, slot);
+        s_refresh = 0;  // pick up the new file next frame
+      }
 
       ImGui::SameLine();
       if (!exists)
         ImGui::BeginDisabled();
       if (ImGui::SmallButton("Load"))
-        SaveLoadSlot(kSaveLoad_Load, slot);
+        SaveLoadSlotLocked(kSaveLoad_Load, slot);
       ImGui::SameLine();
       if (ImGui::SmallButton("Replay"))
-        SaveLoadSlot(kSaveLoad_Replay, slot);
+        SaveLoadSlotLocked(kSaveLoad_Replay, slot);
       if (!exists)
         ImGui::EndDisabled();
 

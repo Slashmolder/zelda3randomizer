@@ -959,25 +959,34 @@ static bool encode_interactive_dialogue_hint(
       resolution->status != kDialogueHintRedirect_Active)
     return false;
 
+  // Encode into a local buffer and copy out only on FULL success. The header
+  // contract is "returns false without modifying the buffer": out_buffer is
+  // the live messaging text buffer holding the decoded vanilla prompt, and a
+  // partial write followed by a false return would clobber it — losing the
+  // Choose command, so the Yes/No branch would run on a stale selection.
+  // (Today the overflow guard below is unreachable — the 3-row envelope caps
+  // hint output well under it — but the contract must not depend on that.)
+  uint8 tmp[256];
   bool used_id_fallback = false;
-  if (!encode_item_location_hint(resolution, out_buffer, &used_id_fallback))
+  if (!encode_item_location_hint(resolution, tmp, &used_id_fallback))
     return false;
 
   int w = 0;
-  while (w < 239 && out_buffer[w] != kHintFontCmdEnd) w++;
+  while (w < 239 && tmp[w] != kHintFontCmdEnd) w++;
   if (w >= 200) return false;  // ample room for the fixed choice page below.
-  out_buffer[w++] = kHintFontCmdWaitkey;
-  out_buffer[w++] = kHintFontCmdScroll;
+  tmp[w++] = kHintFontCmdWaitkey;
+  tmp[w++] = kHintFontCmdScroll;
   // Scroll leaves the VWF cursor on the bottom row. Explicitly jump back to
   // row 0 or the prompt would be drawn on row 2 and then overwritten by No way.
-  out_buffer[w++] = kHintFontCmdLine0;
-  w = append_hint_ascii(out_buffer, w, "Can you help?");
-  out_buffer[w++] = kHintFontCmdLine1;
-  w = append_hint_ascii(out_buffer, w, "> Yes");
-  out_buffer[w++] = kHintFontCmdLine2;
-  w = append_hint_ascii(out_buffer, w, "  No way");
-  out_buffer[w++] = kHintFontCmdChoose;
-  out_buffer[w] = kHintFontCmdEnd;
+  tmp[w++] = kHintFontCmdLine0;
+  w = append_hint_ascii(tmp, w, "Can you help?");
+  tmp[w++] = kHintFontCmdLine1;
+  w = append_hint_ascii(tmp, w, "> Yes");
+  tmp[w++] = kHintFontCmdLine2;
+  w = append_hint_ascii(tmp, w, "  No way");
+  tmp[w++] = kHintFontCmdChoose;
+  tmp[w] = kHintFontCmdEnd;
+  memcpy(out_buffer, tmp, (size_t)(w + 1));
   return true;
 }
 

@@ -100,10 +100,17 @@ static uint8 RemapMsuDeluxeTrack(MsuPlayer *mp, uint8 track) {
   }
 }
 
+// MSU-Deluxe arm: resume_info.actual_track derives from the id AFTER the
+// cosmetic music-shuffle remap (ZeldaPlayMsuAudioTrack remaps before
+// MsuPlayer_Open), so the query must remap its vanilla id the SAME way or a
+// shuffled song never compares equal and consumers (overworld.c/messaging.c
+// "already playing?" checks) re-issue — restarting — the track on every area
+// transition. The non-MSU arms compare music_unk1/last_music_control, which
+// the caller set from the ORIGINAL id — vanilla ids on both sides, no remap.
 bool ZeldaIsPlayingMusicTrack(uint8 track) {
   MsuPlayer *mp = &g_msu_player;
   if (mp->state != kMsuState_Idle && mp->enabled & kMsuEnabled_MsuDeluxe)
-    return RemapMsuDeluxeTrack(mp, track) == mp->resume_info.actual_track;
+    return RemapMsuDeluxeTrack(mp, Cosmetic_RemapSong(track)) == mp->resume_info.actual_track;
   else
     return track == music_unk1;
 }
@@ -111,7 +118,7 @@ bool ZeldaIsPlayingMusicTrack(uint8 track) {
 bool ZeldaIsPlayingMusicTrackWithBug(uint8 track) {
   MsuPlayer *mp = &g_msu_player;
   if (mp->state != kMsuState_Idle && mp->enabled & kMsuEnabled_MsuDeluxe)
-    return RemapMsuDeluxeTrack(mp, track) == mp->resume_info.actual_track;
+    return RemapMsuDeluxeTrack(mp, Cosmetic_RemapSong(track)) == mp->resume_info.actual_track;
   else
     return track == (enhanced_features0 & kFeatures0_MiscBugFixes ? music_unk1 : last_music_control);
 }

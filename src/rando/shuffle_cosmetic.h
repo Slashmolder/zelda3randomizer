@@ -52,8 +52,11 @@ const char *Cosmetic_PickSpriteFile(void);
 // unchanged for control codes (high nibble 0xf), value 0, songs outside the
 // shuffled band, or when music shuffle is off. The remap is a bijection within
 // the band so no song is silenced or duplicated. Game-facing music state
-// (last_music_control, ZeldaIsPlayingMusicTrack) is unaffected — only the
-// audible SPC/MSU output changes.
+// (last_music_control, music_unk1) stays vanilla — only the audible SPC/MSU
+// output changes. One query-side exception: ZeldaIsPlayingMusicTrack's
+// MSU-Deluxe arm compares against resume_info.actual_track, which derives
+// from the REMAPPED id, so that arm applies this remap to its vanilla-id
+// argument symmetrically (see audio.c).
 uint8 Cosmetic_RemapSong(uint8 music_ctrl);
 
 // Determinism + structural self-check (called from Rando_RunAllSelfChecks; aborts

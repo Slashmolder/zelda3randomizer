@@ -3148,9 +3148,15 @@ static void SelectFile_Settings_Activate(uint8 target_slot,
     g_settings_seed_prepopulated = true;
     g_settings_prepopulated_seed = g_alphabet_decoded_seed;
     // Write the seed value into the text field as decimal.
+    // TextField_PasteString hard-gates on tf->active (a paste must never land
+    // in an unfocused field), and this field was just initialized inactive —
+    // raise active around the programmatic fill or the paste is a silent no-op
+    // and the seed row shows "AUTO"/empty instead of the imported seed.
     char buf[32];
     snprintf(buf, sizeof(buf), "%llu", (unsigned long long)g_alphabet_decoded_seed);
+    g_settings_seed_field.active = true;
     TextField_PasteString(&g_settings_seed_field, buf);
+    g_settings_seed_field.active = false;  // not focused by default
   } else {
     g_settings_seed_prepopulated = false;
     g_settings_prepopulated_seed = 0;

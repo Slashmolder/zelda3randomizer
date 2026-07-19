@@ -1432,6 +1432,19 @@ entries:
     label: "bonk-all-swordless-quake"
     expected_digest: "4f478063040b13ff724e2f8864be7a98b3ebcc47dba6b9199321d02f9fc0d6ce"
     expected_sphere_digest: "1a0e93203c8a81d1df3aaa52fc1b2a9a5aa776c500529cc12365abad92d8e799"
+  # Round-4 coverage rows: Retro world-flag interplay with the bonk terrain
+  # gates, and bonk x door-shuffle composition (both previously uncovered).
+  # (Digests below regenerated at kGen 152 after the terrain-gating rebase.)
+  - settings: { mode.state: retro, goal: ganon, bonk_shuffle: all }
+    seed: "0x424F4E4B00000007"
+    label: "bonk-all-retro"
+    expected_digest: "90382249f0decdb6f8d84fd8eaf7759cdeac62041d62cad6c1c65f00539c33fa"
+    expected_sphere_digest: "6d6c3ebb69df596193481788fdaf69c50354d3efb83461e045865d974419c5e5"
+  - settings: { mode.state: open, goal: fast_ganon, bonk_shuffle: all, door_shuffle: basic }
+    seed: "0x424F4E4B00000008"
+    label: "bonk-door-composes"
+    expected_digest: "3268daa9a13911d4aae7f921ce4a8bbb28cd2fc1d962a18a3e0fc05a2e2fa5b5"
+    expected_sphere_digest: "19056bbafcdab7e2be7274d1b8352a0686666650f88d29de79080e90020a5c8b"
   - settings: { mode.state: open, goal: fast_ganon, crystals.ganon: random }
     seed: "0x4352595300000001"
     label: "crystals-random-ganon"
@@ -1452,6 +1465,13 @@ entries:
     label: "crystals-random-both-ganon-goal"
     expected_digest: "1b12e0248368f12d94c008da1215975eaabfaff0be410e0cea24ede33297d4b5"
     expected_sphere_digest: "883deb914fd979a65a51ba680732332bc9469a38fdcd9a2a85c37af7889c7e80"
+  # Round-4 coverage row: random crystals outside Open (all prior random-
+  # crystal rows were Open-world; Inverted has its own GT/pyramid topology).
+  - settings: { mode.state: inverted, goal: fast_ganon, crystals.ganon: random, crystals.tower: random }
+    seed: "0x4352595300000005"
+    label: "crystals-random-inverted"
+    expected_digest: "21991cde32c70df7f0acbcba271e183e707bad1d3582c6261becfd88ca07bec4"
+    expected_sphere_digest: "d9d4c8b7947b9f3b05f2f292f110fcbfc3da15e7112b8fb88f23ed871dba5c44"
   - settings: { mode.state: open, goal: ganon, crystals.ganon: random, dungeon_items.small_keys: wild, item_pool: expert, accessibility: none }
     seed: "0xA1"
     label: "crystals-random-retry-pin"

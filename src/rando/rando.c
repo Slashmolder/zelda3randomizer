@@ -3931,6 +3931,12 @@ static bool g_rando_active_settings_valid = false;
 // shops displayed AND charged seed-0 prices. Every settings_valid writer
 // populates this; deactivation and the snapshot settings-clear zero it.
 static uint64 g_rando_active_seed_u64;
+
+// Read-only accessor for the live-apply path (config.c re-seeds the cosmetic
+// tables on an INI CosmeticSeed change and must pass the active slot's seed —
+// 0 when no slot is active — so a change back to 0 keeps tracking the slot).
+uint64 Rando_ActiveSeedU64(void) { return g_rando_active_seed_u64; }
+
 // add-rando-random-crystals — the active slot's RESOLVED crystal counts,
 // cached at activation from Crystals_Resolve(settings, base seed). 7/7
 // fail-closed when no valid slot (vanilla-equivalent). All runtime

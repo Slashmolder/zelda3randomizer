@@ -2256,8 +2256,13 @@ static bool rando_shop_icon_decode(uint8 gfx, uint8 *dst) {
 // player is literally watching — while any receipt ancilla is alive, custom
 // shop icons defer to the sparkle cue (vanilla-bundle icons keep their own
 // stable rows and are unaffected).
+// Per-frame arbitration state for rando_shop_icon_palette_ok below. File-scope
+// so Rando_ShopIconSlotsInvalidate can reset the claim after a snapshot load
+// (a restored frame_counter can equal the stale s_frame, letting a stale class
+// claim suppress one custom icon for a frame).
+static uint8 s_shop_pal_frame, s_shop_pal_class;
+
 static bool rando_shop_icon_palette_ok(uint8 gfx) {
-  static uint8 s_frame, s_class;
   if (!(gfx & 0x80))
     return true;  // vanilla bundles use their own stable rows
   for (int i = 0; i < 5; i++) {
@@ -2266,13 +2271,13 @@ static bool rando_shop_icon_palette_ok(uint8 gfx) {
       return false;  // the receipt owns the custom row this frame
   }
   uint8 cls = (gfx == kRandoCustomGfx_Rupoor) ? 1 : 2;
-  if (s_frame != frame_counter) {
-    s_frame = frame_counter;
-    s_class = 0;
+  if (s_shop_pal_frame != frame_counter) {
+    s_shop_pal_frame = frame_counter;
+    s_shop_pal_class = 0;
   }
-  if (s_class != 0 && s_class != cls)
+  if (s_shop_pal_class != 0 && s_shop_pal_class != cls)
     return false;
-  s_class = cls;
+  s_shop_pal_class = cls;
   Rando_ApplyCustomItemGfxPalette(gfx);
   return true;
 }
@@ -2285,6 +2290,7 @@ void Rando_ShopIconSlotsInvalidate(void) {
   s_shop_icon_owner[0] = s_shop_icon_owner[1] = 0xFFFF;
   g_rando_shop_icon_upload_frames = 0;
   g_rando_glint_upload_frames = 0;
+  s_shop_pal_class = 0;  // drop the per-frame palette claim (round-4 review)
 }
 
 bool Rando_ShopIconSlotStage(uint8 pos, uint8 gfx) {
@@ -2296,11 +2302,15 @@ bool Rando_ShopIconSlotStage(uint8 pos, uint8 gfx) {
   if (pos == 2) {
     // Third column rides the SHARED recv-item slot (chars 0x24/0x34) — the
     // only remaining conflict is a live receipt animation repainting the
-    // same slot, so defer to the sparkle cue for those frames.
+    // same slot, so defer to the sparkle cue for those frames. Do NOT arm
+    // g_rando_shop_icon_upload_frames here: that countdown drives the NMI
+    // upload of the PRIVATE pos-0/1 quad buffers into the borrowed bird /
+    // page-1 chars, and pos 2 never stages those buffers — arming it with
+    // only column 3 active uploads whatever they last held (zeros at boot,
+    // the previous shop's icons). The recv slot has its own upload.
     if (!Rando_CanDrawRecvItemSlot())
       return false;
     Rando_EnsureRecvItemSlotGfx(gfx);
-    g_rando_shop_icon_upload_frames = 2;
     return true;
   }
   if (s_owner[pos] != gfx) {

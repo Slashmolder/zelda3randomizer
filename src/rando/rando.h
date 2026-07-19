@@ -470,9 +470,11 @@ void Rando_OverlayPaletteInvalidate(void);
 void Rando_ShopIconSlotsInvalidate(void);
 
 // Shared OW check-glint private sparkle tile (sprite.c): 4 hand-authored
-// animation frames NMI_DoUpdates uploads into char 0x0E (the travel-bird
-// char, unused outside flute flight) while the countdown is armed by a glint
-// pass. Area-sheet independent — see the sprite.c comment for the history.
+// animation frames NMI_DoUpdates uploads into char 0x0F (bird-block real
+// estate with ZERO draw-table references — deliberately NOT 0x0E, which
+// several overworld NPC draws reference; see the nmi.c upload comment)
+// while the countdown is armed by a glint pass. Area-sheet independent —
+// see the sprite.c comment for the history.
 extern const uint8 kRandoGlintTile4bpp[4][0x20];
 extern uint8 g_rando_glint_upload_frames;
 
@@ -611,6 +613,10 @@ uint8 Rando_EffectiveCrystalsTower(void);
 // drift; never stored. Only meaningful for LOCTYPE_Shop slots on a
 // shopsanity=true seed — every other slot keeps its vanilla price literal.
 uint16 Rando_ShopPrice(uint64 seed_u64, uint16 loc_id);
+
+// Active slot's seed_u64 (0 when no slot is active). For the config live-apply
+// path — see the g_rando_active_seed_u64 declaration in rando.c.
+uint64 Rando_ActiveSeedU64(void);
 
 // add-rando-bonk-sanity — bonk registry identity (activation guard, same
 // shape as pot/terrain/enemy-check) + the dash-wake check resolver used by

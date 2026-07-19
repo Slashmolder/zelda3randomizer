@@ -6,6 +6,8 @@
 #include "imgui.h"
 #include "game_cheats.h"
 
+#include <cstdio>   // snprintf (ComboVals unknown-value preview)
+
 extern "C" {
 #include "../../features.h"   // kFeatures0_*, kFeatures1_RandomizerActive
 extern uint8 g_ram[0x20000];  // game-state RAM (zelda_rtl.c)
@@ -72,9 +74,19 @@ extern "C" void Cheats_Combo(const char *label, uint32 addr, const char *const *
 }
 extern "C" void Cheats_ComboVals(const char *label, uint32 addr, const char *const *items,
                                  const int *vals, int count) {
-  int cur = g_ram[addr], idx = 0;
+  // idx -1 = the live byte matches no listed value. Falling back to items[0]
+  // would both LIE (display a state the game is not in) and make selecting
+  // entry 0 a silent no-op (the i != idx guard) — render an explicit unknown
+  // preview instead, and let ANY selection write.
+  int cur = g_ram[addr], idx = -1;
   for (int i = 0; i < count; i++) if (vals[i] == cur) idx = i;
-  if (ImGui::BeginCombo(label, items[idx])) {
+  char unknown[24];
+  const char *preview = items[idx >= 0 ? idx : 0];
+  if (idx < 0) {
+    snprintf(unknown, sizeof unknown, "(unknown 0x%02X)", cur);
+    preview = unknown;
+  }
+  if (ImGui::BeginCombo(label, preview)) {
     for (int i = 0; i < count; i++) {
       bool sel = (idx == i);
       if (ImGui::Selectable(items[i], sel) && i != idx) Cheats_PokeByte(addr, vals[i], 0, 255);

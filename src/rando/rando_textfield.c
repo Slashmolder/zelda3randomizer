@@ -52,8 +52,12 @@ void TextField_HandleChar(RandoTextField *tf, char c) {
     c = normalize_base32(c);
     if (!is_base32(c)) return;
   } else {
-    // Reject control chars (excluding the special keys handled by HandleKey).
-    if ((unsigned char)c < 0x20) return;
+    // Reject control chars (excluding the special keys handled by HandleKey)
+    // AND bytes >= 0x7F: SDL_TEXTINPUT delivers UTF-8, so a non-ASCII char
+    // arrives as multiple 0x80+ bytes — inserted byte-wise they become N
+    // garbage "chars" with per-byte cursor/backspace (mid-codepoint states).
+    // The only non-base32 field is the numeric seed field; ASCII suffices.
+    if ((unsigned char)c < 0x20 || (unsigned char)c >= 0x7f) return;
   }
 
   // Insert at cursor.
@@ -123,7 +127,8 @@ int TextField_PasteString(RandoTextField *tf, const char *s) {
       c = normalize_base32(c);
       if (!is_base32(c)) continue;
     } else {
-      if ((unsigned char)c < 0x20) continue;
+      // Mirror HandleChar's filter: printable ASCII only (see its comment).
+      if ((unsigned char)c < 0x20 || (unsigned char)c >= 0x7f) continue;
     }
     // Insert at cursor (mirror HandleChar but inline for the loop).
     if (tf->cursor < tf->len) {

@@ -40,6 +40,9 @@ extern "C" {
 extern uint8 g_ram[0x20000];          // game-state RAM (zelda_rtl.c)
 extern const uint8 *g_asset_ptrs[];   // asset 11 = kEntranceData_rooms (entrance->room map)
 extern uint32 g_asset_sizes[];        // bytes; /2 = entry count (uint16 rooms)
+void SaveDungeonKeys(void);           // dungeon.c — persist link_num_keys to its
+                                      // per-dungeon (or Retro generic) slot;
+                                      // no-op outside dungeons (idx 0xff).
 }
 
 // --- g_ram cells this panel touches (all verified against src/variables.h) ---
@@ -65,11 +68,42 @@ static const uint32 kFollowerIndicator= 0xF3CC;  // word 0xF3CC..0xF3CD
 
 // Common tail: route the module dispatcher to Module_PreDungeon (index 6) at a
 // clean submodule. Called only after the branch-select bytes are already set.
+// Mirrors the two state-saving steps every vanilla route into
+// Dungeon_LoadEntrance performs first:
+//   1. Persist small keys. Module_PreDungeon overwrites link_num_keys from the
+//      DESTINATION's per-dungeon slot right after the loader runs, so a warp
+//      out of a dungeon without SaveDungeonKeys() silently discards every key
+//      collected since entering (all vanilla routes — mirror, transitions,
+//      death — call it; see SaveDungeonKeys callers in dungeon.c/messaging.c).
+//   2. Suppress the exit-tableau snapshot for INDOOR origins. With
+//      WORD(death_var5)==0 the loader caches the CURRENT state (link/BG2/camera
+//      coords, scroll targets, tile themes) as the overworld exit; from a
+//      dungeon interior those values poison the tableau, and the next exterior
+//      door exit restores coordinates the masked-equality scroll terminators
+//      never match (the equality-latched-tableau class — see CLAUDE.md).
+//      Vanilla's only indoor start-point load (death respawn) sets death_var5
+//      nonzero for exactly this reason. Overworld origins keep 0: caching the
+//      pre-warp spot as the exit is correct there.
 static void HandOffToLoader() {
+  SaveDungeonKeys();               // no-op unless warping out of a dungeon
+  g_ram[kDeathVar5]     = g_ram[kPlayerIsIndoors] ? 1 : 0;
+  g_ram[kDeathVar5 + 1] = 0;
   g_ram[kPlayerIsIndoors] = 1;     // Dungeon_LoadEntrance sets this too; explicit here.
   g_ram[kSubSubModule]    = 0;
   g_ram[kSubModule]       = 0;
   g_ram[kMainModule]      = 6;     // Module_PreDungeon runs next frame.
+}
+
+// Follower handling, death-path parity (messaging.c): vanilla clears only the
+// disposable follower ids {6, 9, 10, 13} on respawn and keeps story escorts
+// (Zelda = 1, the old man = 4) attached. A blanket clear silently deletes an
+// escort mid-quest. The entrance path must ADDITIONALLY clear the old man (4):
+// WORD(follower_indicator)==4 would divert the loader into the start-point
+// branch.
+static void ClearDisposableFollowers(bool also_old_man) {
+  uint8 f = g_ram[kFollowerIndicator];
+  if (f == 6 || f == 9 || f == 10 || f == 13 || (also_old_man && f == 4))
+    g_ram[kFollowerIndicator] = 0;
 }
 
 // Warp to one of the spawn-select start points via the START-POINT branch of
@@ -79,33 +113,26 @@ static void HandOffToLoader() {
 static void DoWarpStartPoint(uint8 sp) {
   if (!Cheats_CanWarp()) return;   // defense in depth: re-check at the write site.
   g_ram[kWhichStartPoint] = sp;
-  // Clear death_var5 word so the loader's "save current exit state" path runs
-  // normally (death_var5 set would skip it — irrelevant for a warp, but keep it
-  // deterministic).
-  g_ram[kDeathVar5] = 0;
-  g_ram[kDeathVar5 + 1] = 0;
-  // Force the start-point branch: WORD(death_var4) truthy.
+  // Force the start-point branch: WORD(death_var4) truthy. (death_var5 is set
+  // by HandOffToLoader based on the warp ORIGIN — see its comment.)
   g_ram[kDeathVar4] = 1;
   g_ram[kDeathVar4 + 1] = 0;
-  // Clear any active follower (tagalong). Vanilla spawn-select reaches these
-  // points follower-free; warping with a stale follower can leave one wrongly
-  // placed in the destination. death_var4 still forces the start-point branch.
-  g_ram[kFollowerIndicator] = 0;
+  // Drop disposable followers only (death parity); story escorts stay attached.
+  // death_var4 forces the start-point branch regardless of follower id.
+  ClearDisposableFollowers(/*also_old_man=*/false);
   HandOffToLoader();
 }
 
 // Warp to a raw entrance id via the ENTRANCE branch. Forcing that branch needs
 // BOTH WORD(follower_indicator) != 4 AND WORD(death_var4) == 0, so we clear the
-// full death_var4 word, the death_var5 word, and the follower_indicator low byte
-// (low byte 0 makes WORD(follower_indicator) impossible to equal 4).
+// full death_var4 word and (only when it is the old man, id 4) the follower.
+// (death_var5 is set by HandOffToLoader based on the warp ORIGIN.)
 static void DoWarpEntrance(uint8 entrance) {
   if (!Cheats_CanWarp()) return;   // defense in depth.
   g_ram[kWhichEntrance] = entrance;
   g_ram[kDeathVar4] = 0;
   g_ram[kDeathVar4 + 1] = 0;
-  g_ram[kDeathVar5] = 0;
-  g_ram[kDeathVar5 + 1] = 0;
-  g_ram[kFollowerIndicator] = 0;   // WORD can no longer equal 4.
+  ClearDisposableFollowers(/*also_old_man=*/true);  // WORD can no longer equal 4.
   HandOffToLoader();
 }
 

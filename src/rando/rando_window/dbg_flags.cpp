@@ -20,6 +20,7 @@ extern "C" {
 extern uint8 g_ram[0x20000];          // game-state RAM (zelda_rtl.c)
 bool ZeldaIsReplaying(void);          // zelda_rtl.h
 bool ZeldaIsEmulatorAttached(void);   // zelda_rtl.h
+uint8 Rando_GetActiveWorldState(void);// rando.h; 1 == kWorldState_Standard (rando_settings.h)
 }
 
 extern "C" void DbgFlags_Render(void) {
@@ -45,15 +46,20 @@ extern "C" void DbgFlags_Render(void) {
     // -- Story stage (sram_progress_indicator 0xF3C5, a VALUE 0..3) ----------
     // Set to 1 alongside sram_progress_flags|=1 in Uncle_InPassage
     // (sprite_main.c:5872, "GiveSwordAndShield"). Rando Open/Inverted/Retro
-    // seeds start this at 0x02 (post-escape) — see rando_generate.c:77/82 —
-    // and softlock below 2 (the intro/escape never runs). So under rando we
-    // expose only {Zelda saved, Master Sword} via ComboVals (values {2,3}),
-    // which makes "below 2" unwritable; vanilla exposes the full 0..3.
+    // seeds start this at 0x02 (post-escape) — see the world-state switch in
+    // rando_generate.c — and softlock below 2 (the intro/escape never runs).
+    // So for those world states we expose only {Zelda saved, Master Sword}
+    // via ComboVals (values {2,3}), which makes "below 2" unwritable.
+    // STANDARD rando starts at 0 with the vanilla escape ("the vanilla intro
+    // IS the Standard start" — rando_generate.c; RandoGenerate_SelfCheck pins
+    // it), so it gets the full vanilla 0..3 list like non-rando — the
+    // restricted list would misrender the escape stages and make the one
+    // transition the widget exists for (jump past the escape) unwritable.
     // sram_progress_indicator (0xF3C5) also drives the pause/quest screen: it
     // shows PENDANTS while < 3 and CRYSTALS at 3 ("Master Sword"). This is the
     // flag to flip to preview pendants vs crystals.
     ImGui::SeparatorText("Story stage");
-    if (rando) {
+    if (rando && Rando_GetActiveWorldState() != 1 /* kWorldState_Standard */) {
       static const char *const k[] = {"Zelda saved", "Master Sword"};
       static const int v[] = {2, 3};
       Cheats_ComboVals("Story stage", 0xF3C5, k, v, 2);
