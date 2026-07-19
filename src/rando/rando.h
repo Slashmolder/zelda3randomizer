@@ -35,7 +35,9 @@
 // bush share their canonical world-state-aware routes.
 // 152: the two southeast castle-ground bushes inherit the Power Glove gate
 // from the diagonal light-rock barrier that encloses them.
-#define kGeneratorVersion 152u  // gate castle-ground rock-pocket bushes
+// 153: runtime grant transactions and validation/performance diagnostics are
+// version-locked; placement and sphere digests remain byte-identical.
+#define kGeneratorVersion 153u  // grant transactions + validation diagnostics
 // The share-string binary layout packs version into 1 byte
 // (rando_share.h: ShareString.version is uint8). Compile-time enforce
 // kGeneratorVersion ≤ 255 so silent truncation can't ship.
@@ -59,10 +61,12 @@ _Static_assert(kGeneratorVersion <= 0xFFu,
 extern uint8 g_assets_hash[32];
 
 // ---------------------------------------------------------------------------
-// Rando_OnLocationCheck — the universal grant-site dispatcher
+// Rando_OnLocationCheck — legacy grant-core compatibility entry point
 // (tasks.md §6.1; randomizer-placement spec).
 //
-// Called from every registered vanilla grant site with:
+// Grant sites MUST use the public prepare/commit transaction API declared
+// below. This lower-level entry point remains exposed only for the transaction
+// core and compatibility self-tests. It accepts:
 //   - location_id : ALTTPR canonical numeric id (from location_registry.yaml)
 //   - vanilla_item_id : the item the vanilla game would have granted
 //
@@ -71,10 +75,6 @@ extern uint8 g_assets_hash[32];
 // knows), the dispatcher returns vanilla_item_id unchanged so the vanilla
 // grant path runs.
 //
-// Wrapped at each call site by:
-//   if (enhanced_features1 & kFeatures1_RandomizerActive) {
-//     item = Rando_OnLocationCheck(<location_id_const>, item);
-//   }
 // ---------------------------------------------------------------------------
 uint16 Rando_OnLocationCheck(uint16 location_id, uint16 vanilla_item_id);
 
@@ -114,35 +114,177 @@ struct RandoSlotHeader;
 void Rando_StampSlotRegistries(struct RandoSlotHeader *h);
 
 // ---------------------------------------------------------------------------
-// Rando_DispatchVanillaGrant — convenience for §6 grant-site wrappers that
-// route through the existing Link_ReceiveItem(uint8 lttp_code, ...) path.
+// Rando_DispatchVanillaGrant — legacy grant-core compatibility wrapper.
 //
-// At every grant site that grants a vanilla LttP item code, wrap the call:
-//
-//     uint8 lttp_code = 0x16;  // BottleEmpty
-//     if (enhanced_features1 & kFeatures1_RandomizerActive) {
-//       lttp_code = Rando_DispatchVanillaGrant(LOC_<X>, ITEM_<vanilla>, lttp_code);
-//     }
-//     Link_ReceiveItem(lttp_code, 0);
-//
-// `vanilla_registry_id` is the rando registry id of the vanilla item this
+// Production grant sites MUST use Rando_PrepareGrant/Rando_CommitPreparedGrant
+// or Rando_GrantLocation so retry, capacity, presentation, and checked-state
+// ordering remain explicit. This wrapper is retained for grant-core compatibility
+// and its exhaustive semantic self-tests. `vanilla_registry_id` is the rando
+// registry id of the vanilla item this
 // site would have granted (looked up via item_ids.h's ITEM_<Name>).
 // `vanilla_lttp_code` is the LttP receive-item code the site would have
 // passed to Link_ReceiveItem in vanilla play (e.g. 0x16 for a bottle).
 //
-// Returns the LttP code to actually grant. If the placed item has no
-// vanilla LttP dispatch (progressive / dungeon-item / prize / virtual),
-// returns `vanilla_lttp_code` unchanged — those item classes need
-// per-class handlers (§6.2 work) that the universal dispatcher cannot
-// emit through the existing receive-item path.
-//
-// §6.2 sentinel return: `kRandoLttpSkip` (0xFE) means "the rando subsystem
-// has already granted the placed item via a direct write; caller MUST NOT
-// invoke Link_ReceiveItem". This signals to the caller that all bookkeeping
-// is done. Use the convenience wrapper `Rando_ShouldSkipReceive(code)` to
-// test the return value.
+// Returns the generated plan's effective LttP receive code, or
+// `kRandoLttpSkip` (0xFE) when the plan was direct-written, was an accepted
+// no-op, was invalid/virtual, or could not currently be accepted (for example,
+// a full bottle inventory). Callers MUST NOT invoke Link_ReceiveItem for the
+// sentinel. Retryable failures are deliberately not marked checked; the
+// compatibility byte cannot otherwise represent them. Use
+// Rando_ShouldSkipReceive(code) to test the return value.
 // ---------------------------------------------------------------------------
 #define kRandoLttpSkip 0xFEu
+
+// Side-effect-free semantic plan for one placed item. The generated grant
+// metadata says WHAT an item means; the snapshot supplies only the inventory
+// state needed to resolve progressive tiers, finite-capacity pickups, and
+// deterministic trap presentation. A plan is value-owned so grant, draw, and
+// confirmation consumers can use the exact same pre-grant decision even after
+// gameplay state changes.
+typedef enum RandoGrantDisposition {
+  kRandoGrantDisposition_Invalid = 0,       // unknown/virtual: never grant fallback
+  kRandoGrantDisposition_Receive = 1,       // route receive_code to ItemReceipt
+  kRandoGrantDisposition_Direct = 2,        // execute the generated direct opcode
+  kRandoGrantDisposition_AcceptedNoOp = 3,  // intentional item, already at cap/Nothing
+  kRandoGrantDisposition_RetryableFailure = 4,  // e.g. no compatible bottle slot
+} RandoGrantDisposition;
+
+typedef struct RandoGrantState {
+  uint8 sword;
+  uint8 shield;
+  uint8 armor;
+  uint8 gloves;
+  uint8 bow;
+  uint8 bow_owned;
+  uint8 boomerang;
+  uint8 boomerang_owned;
+  uint8 magic_consumption;
+  uint8 bottle[4];
+  uint8 heart_pieces;
+  uint8 health_capacity;
+  uint8 health_current;
+  uint8 hearts_filler;
+  uint8 magic_power;
+  uint8 magic_filler;
+  uint8 bombs;
+  uint8 bomb_filler;
+  uint8 bomb_upgrades;
+  uint8 arrows;
+  uint8 arrow_filler;
+  uint8 arrow_upgrades;
+  uint64 trap_seed;
+} RandoGrantState;
+
+typedef struct RandoGrantPlan {
+  uint16 location_id;
+  uint16 item_id;
+  uint16 payload;
+  uint8 opcode;       // RandoGrantOpcode, kept byte-sized for stable value copies
+  uint8 disposition;  // RandoGrantDisposition
+  uint8 receive_code; // effective LttP code; direct magic/capacity frozen target; else 0xFF
+  uint8 display_code; // receive graphic code, or 0xFF for custom/direct art
+  uint8 display_gfx;
+  uint8 display_big;
+  uint8 display_oam_flags;
+  uint8 display_valid;
+} RandoGrantPlan;
+
+typedef enum RandoGrantResult {
+  kRandoGrantResult_NotActive = 0,
+  kRandoGrantResult_AlreadyChecked = 1,
+  kRandoGrantResult_Accepted = 2,
+  kRandoGrantResult_Retryable = 3,
+  kRandoGrantResult_Invalid = 4,
+} RandoGrantResult;
+
+typedef enum RandoGrantPresentation {
+  kRandoGrantPresentation_Animated = 0,
+  kRandoGrantPresentation_Quiet = 1,
+  kRandoGrantPresentation_None = 2,
+} RandoGrantPresentation;
+
+// Pointer-free, fixed-width deferred value. Callers that store this in g_ram
+// must copy it with memcpy (do not cast potentially unaligned RAM). A prepared
+// token freezes progressive/shared-byte/display resolution. `reserved` carries
+// an integrity tag over version + all 14 plan bytes; commit checks that tag
+// before consulting placement/check state. Commit then validates that the same
+// (location,item) is still installed and that it is unchecked, but deliberately
+// does not re-resolve inventory state.
+#define kRandoDeferredGrantTokenVersion 1u
+typedef struct RandoDeferredGrantToken {
+  uint16 version;
+  uint16 reserved;  // CRC-16 integrity tag; retained name preserves the 18-byte ABI
+  RandoGrantPlan plan;
+} RandoDeferredGrantToken;
+#ifdef __cplusplus
+static_assert(sizeof(RandoGrantPlan) == 14,
+              "RandoGrantPlan layout changed; update deferred-token integrity ABI");
+static_assert(sizeof(RandoDeferredGrantToken) == 18,
+#else
+_Static_assert(sizeof(RandoGrantPlan) == 14,
+               "RandoGrantPlan layout changed; update deferred-token integrity ABI");
+_Static_assert(sizeof(RandoDeferredGrantToken) == 18,
+#endif
+              "RandoDeferredGrantToken layout changed; update ancilla storage ABI");
+
+// Capture the live inputs used by the pure resolver. Capture itself is a read-
+// only operation. Rando_ResolveGrantPlan is deterministic for equal arguments
+// and never reads or writes live gameplay state.
+void Rando_CaptureGrantState(RandoGrantState *out);
+bool Rando_ResolveGrantPlan(uint16 location_id, uint16 item_id,
+                            const RandoGrantState *state,
+                            RandoGrantPlan *out);
+bool Rando_ResolveLiveGrantPlan(uint16 location_id, uint16 item_id,
+                                RandoGrantPlan *out);
+
+// Revalidate only whether a frozen plan can be accepted by live finite-capacity
+// receipt state (currently bottle slots). This never re-resolves progressive or
+// shared-byte semantics and has no side effects.
+bool Rando_CanAcceptGrantPlanNow(const RandoGrantPlan *plan);
+
+// Prepare is presence-aware and mutation-free. An absent placement returns
+// NotActive; checked locations, retryable capacity failures, and invalid/virtual
+// items return their explicit result without producing a commit token.
+RandoGrantResult Rando_PrepareGrant(uint16 location_id,
+                                    uint16 vanilla_registry_id,
+                                    uint8 vanilla_lttp_code,
+                                    RandoDeferredGrantToken *out);
+
+// Commit a frozen plan. Animated uses a receive ancilla when the plan is a
+// receive item; Quiet applies the inventory write immediately and queues the
+// lightweight confirmation; None applies without presentation. Direct and
+// accepted-no-op plans use the same commit ordering. receipt_method and
+// chest_position are used only by Animated receive plans.
+RandoGrantResult Rando_CommitPreparedGrant(
+    const RandoDeferredGrantToken *token,
+    RandoGrantPresentation presentation,
+    uint8 receipt_method, uint16 chest_position);
+
+// Immediate prepare+commit convenience.
+RandoGrantResult Rando_GrantLocation(uint16 location_id,
+                                     uint16 vanilla_registry_id,
+                                     uint8 vanilla_lttp_code,
+                                     RandoGrantPresentation presentation,
+                                     uint8 receipt_method,
+                                     uint16 chest_position);
+
+// Explicit post-success sibling forfeit. It marks a present unchecked location
+// without granting or recording ownership of its item.
+RandoGrantResult Rando_ForfeitLocation(uint16 location_id);
+
+// Capacity-upgrade shops perform their identity grant themselves and remain
+// repeatable after their tracker location is checked. Call this only after that
+// caller-owned +5 operation succeeds. It validates a present identity placement
+// and the generated bomb/arrow-capacity opcode, then records the check; repeated
+// successful calls return Accepted without applying the capacity grant again.
+RandoGrantResult Rando_CommitRepeatableCapacityIdentity(
+    uint16 location_id, uint16 vanilla_registry_id);
+
+// Bespoke standing-PoH handlers own the vanilla quarter-heart counter but use
+// this to atomically validate and commit the prepared identity transaction.
+RandoGrantResult Rando_CommitStandingPieceOfHeartIdentity(
+    const RandoDeferredGrantToken *token);
+
 uint8 Rando_DispatchVanillaGrant(uint16 location_id,
                                  uint16 vanilla_registry_id,
                                  uint8 vanilla_lttp_code);
@@ -160,8 +302,8 @@ bool Rando_RenderTrapMessage(uint16 msg_id, uint8 *out_buffer);
 #define kRandoSoulDialogueId 0x0221u
 bool Rando_RenderSoulMessage(uint16 msg_id, uint8 *out_buffer);
 
-// Returns the item id resolved by the most recent Rando_DispatchVanillaGrant
-// (or Rando_ChestDispatch) call. Used by direct-grant
+// Returns the item id resolved by the most recent compatibility dispatch or
+// explicit transaction commit. Used by direct-grant
 // confirmation sites to feed the per-item icon lookup. Returns 0xFFFF when
 // no dispatch has run yet this slot.
 uint16 Rando_LastDispatchedItemId(void);
@@ -328,6 +470,7 @@ void Rando_ReceiveOrConfirm(uint8 lttp_code, uint8 item_id);
 enum {
   kRandoPot_Vanilla = 0,   // let RevealPotItem run its normal vanilla path
   kRandoPot_Suppress = 1,  // hook handled it; RevealPotItem must spawn no secret
+  kRandoPot_Retry = 2,     // leave the pot intact; no grant was committed
 };
 // NOTE: the first param is named `room` (not `dungeon_room_index`) — the latter
 // is a variables.h g_ram-accessor MACRO and can't be a parameter name. Callers
@@ -344,6 +487,7 @@ uint8 Rando_PotBreakHook(uint16 room, uint16 pos4);
 enum {
   kRandoTerrain_Vanilla = 0,   // let the caller run its normal vanilla path
   kRandoTerrain_Suppress = 1,  // hook granted the check; suppress the vanilla secret
+  kRandoTerrain_Retry = 2,     // leave the terrain intact; no grant was committed
 };
 uint8 Rando_TerrainRevealHook(uint16 screen, uint16 pos);
 uint16 Rando_GetTerrainLocation(uint16 screen, uint16 pos);
@@ -544,60 +688,23 @@ enum {
 // and a sprite that stays on screen must repaint it. Implemented in sprite.c.
 void Rando_ApplyCustomItemGfxPalette(uint8 gfx);
 
-// ---------------------------------------------------------------------------
-// Rando_ChestDispatch — universal chest grant-site hook.
-//
-// Hooked at Link_PerformOpenChest, AFTER OpenChestForItem returns the item
-// to give. Maps (dungeon_room_index, chest_ordinal) to an ALTTPR location_id
-// via a generated lookup table, then invokes Rando_DispatchVanillaGrant.
-//
-// `dungeon_room` is the global dungeon room index (matches ALTTPR's room id).
-// `chest_ordinal` is the 0-based index of this chest within the room (0..5).
-// `vanilla_lttp_code` is the LttP receive-item code OpenChestForItem returned.
-//
-// Returns the LttP code to grant. When the (room, ordinal) pair isn't in the
-// lookup table (universal hook covers chests we haven't enumerated yet), the
-// vanilla code is returned — the chest grants its vanilla item, as if rando
-// were inactive for that specific chest.
-//
-// Lookup table (src/rando/chest_lookup.h) is generated by rando_logic_gen.py
-// from the chest_table.gen.bin artifact, cross-referenced with ALTTPR names +
-// location_registry.yaml. 164 entries; the 165th ("Chest Game") is the
-// minigame path handled at §6.8.
-// ---------------------------------------------------------------------------
-uint8 Rando_ChestDispatch(uint16 dungeon_room, uint8 chest_ordinal,
-                          uint8 vanilla_lttp_code);
+// Explicit chest transaction used by the runtime chest handlers. Unmapped
+// chests return NotActive so the caller can execute the exact vanilla path.
+RandoGrantResult Rando_ChestGrant(uint16 dungeon_room, uint8 chest_ordinal,
+                                  uint8 vanilla_lttp_code,
+                                  RandoGrantPresentation presentation,
+                                  uint8 receipt_method,
+                                  uint16 chest_position);
 
-// ---------------------------------------------------------------------------
-// Rando_ShopDispatch — Retro-world-state shop-purchase grant hook (#53).
-//
-// Hooked at ShopItem_HandleReceipt (src/sprite_main.c), the universal
-// shop-item grant point. Maps a shop purchase to an ALTTPR shop-slot
-// location_id via the (room, entrance-door, slot-position) disambiguation
-// contract, then routes through Rando_DispatchVanillaGrant.
-//
-// Disambiguation mirrors ALTTPR's SpritePrep_ShopKeeper (z3randomizer
-// shopkeeper.asm): vanilla LttP reuses one physical shop room for several
-// overworld entrances (e.g. low-byte room 0x0F backs the DW Potion,
-// Lumberjack, Outcasts, and Lake-Hylia shops; room 0x12 backs both the DW
-// Death-Mountain and LW Lake-Hylia shops). Room alone is ambiguous, so the
-// entrance door (`which_entrance`, g_ram+0x10E — ALTTPR's
-// PreviousOverworldDoor) selects the specific shop, and `pos` (0..2) selects
-// the slot within it.
-//
-// `room` is BYTE(dungeon_room_index); `entrance` is `which_entrance`;
-// `pos` is the 0-based slot index the shopkeeper spawned the item at.
-// `vanilla_lttp_code` is the LttP receive code the shop would grant in vanilla.
-//
-// Returns the LttP code to grant. When (room, entrance, pos) isn't a known
-// shop slot — every non-shop ShopItem_HandleReceipt caller (gift thief,
-// bomb shop) and every non-Retro seed (shop slots absent from the placement
-// table) — the vanilla code is returned unchanged, so behavior is identical
-// to vanilla. May return kRandoLttpSkip (test with Rando_ShouldSkipReceive)
-// for direct-grant placements.
-// ---------------------------------------------------------------------------
-uint8 Rando_ShopDispatch(uint8 room, uint8 entrance, uint8 pos,
-                         uint8 vanilla_lttp_code);
+// Explicit shop transaction. Shopsanity-off slots and checked shopsanity
+// slots return NotActive so repeat purchases restock with the vanilla item.
+RandoGrantResult Rando_ShopGrant(uint8 room, uint8 entrance, uint8 pos,
+                                 uint8 vanilla_lttp_code,
+                                 RandoGrantPresentation presentation,
+                                 uint8 receipt_method,
+                                 uint8 chest_position);
+RandoGrantResult Rando_CommitRepeatableShopIdentity(
+    uint8 room, uint8 entrance, uint8 pos, uint8 vanilla_lttp_code);
 
 // add-rando-random-crystals — the active slot's RESOLVED crystal
 // requirements (0..7), cached at slot activation from the seed-taking
@@ -747,11 +854,13 @@ uint8 Rando_TakeAnyHostByDoorIndex(uint8 lx);
 // (BYTE(dungeon_room_index)) is a sanity cross-check against the host room.
 uint16 Rando_TakeAnyLiveSlot(uint8 room, uint8 door_id, uint8 pos);
 
-// On taking a take-any item at (door_id, pos): grant the placed item and LOCK
-// the whole cave (mark every active slot LOC checked, matching the asm
-// ShopState|=$07). Returns the LttP code (caller drives Rando_ReceiveOrConfirm).
-uint8 Rando_TakeAnyDispatch(uint8 room, uint8 door_id, uint8 pos,
-                            uint8 vanilla_lttp_code);
+// Explicit take-any transaction. The sibling slot is forfeited only after the
+// chosen slot commits successfully; retryable/invalid results preserve both.
+RandoGrantResult Rando_TakeAnyGrant(uint8 room, uint8 door_id, uint8 pos,
+                                    uint8 vanilla_lttp_code,
+                                    RandoGrantPresentation presentation,
+                                    uint8 receipt_method,
+                                    uint8 chest_position);
 
 // Icon kind (shop-item subtype2) for a take-any slot's placed item: 14 = heart,
 // 15 = potion (generic). Both tiles are present in every host room's shop GFX.
@@ -792,6 +901,12 @@ extern uint8 g_rando_checked_bitmap[kRandoCheckedBitmapBytes];
 void Rando_MarkLocationChecked(uint16 location_id);
 // Test the bit for `location_id`. Returns false for OOB or no slot active.
 bool Rando_IsLocationChecked(uint16 location_id);
+bool Rando_HasLocationPlacement(uint16 location_id);
+// Presence-aware completion predicate for spawn/visibility guards. A mapped
+// randomizer location uses its checked bit; an absent row uses the caller's
+// exact vanilla completion proxy.
+bool Rando_IsLocationCheckedOrVanilla(uint16 location_id,
+                                      bool vanilla_completed);
 
 // Rando Mushroom/Powder decouple. The two share link_item_mushroom (0xF344):
 // 1=mushroom, 2=powder. Vanilla never holds both (the Witch trade consumes the
@@ -1007,10 +1122,10 @@ void Rando_OnGameSave(int slot_index, const uint8 *paired_sram_slot, uint32 pair
 // ---------------------------------------------------------------------------
 uint16 Rando_GetBossHeartLocation(uint8 dungeon_id);
 uint16 Rando_GetBossPrizeLocation(uint8 dungeon_id);
-// Dispatches the current dungeon's boss-prize location when the falling
-// pendant/crystal is actually received. This preserves vanilla Moldorm-style
-// retry behavior: falling before pickup leaves the prize uncollected.
-uint8 Rando_DispatchBossPrizeReceipt(uint8 dungeon_id, uint8 vanilla_lttp_code);
+RandoGrantResult Rando_GrantBossPrizeReceipt(
+    uint8 dungeon_id, uint8 vanilla_lttp_code,
+    RandoGrantPresentation presentation,
+    uint8 receipt_method, uint8 chest_position);
 
 // ---------------------------------------------------------------------------
 // Active per-seed shuffle assignments. The predicate VM's OP_HAS_PRIZE and
@@ -1281,9 +1396,16 @@ void Rando_DrawHashIcons(int x, int y,
 
 // ---------------------------------------------------------------------------
 // Self-tests (tasks.md §2.2, §13.x). Always linked; CI invokes via
-// `--rando-selftest`. Exits with code 2 on any failure.
+// `--rando-selftest`. The named group API is discoverable in stable order:
+// config, grant, logic, generation, runtime, persistence, ui. Unknown names
+// return false without running anything. The grant group deliberately runs
+// twice in one process to catch leaked RAM/process-local fixture state.
+// Individual failures exit with code 2.
 // ---------------------------------------------------------------------------
 void Rando_SelfCheck(void);            // SHA-256 NIST vectors
-void Rando_RunAllSelfChecks(void);     // SHA-256 + RNG (+ future subsystems)
+uint8 Rando_SelfCheckGroupCount(void);
+const char *Rando_SelfCheckGroupName(uint8 index);  // NULL when out of range
+bool Rando_RunSelfCheckGroup(const char *name);
+void Rando_RunAllSelfChecks(void);     // complete historical-order suite once
 
 #endif  // ZELDA3_RANDO_H_

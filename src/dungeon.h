@@ -1,6 +1,7 @@
 #pragma once
 
 #include "types.h"
+#include "rando/rando.h"
 
 typedef struct RoomBounds RoomBounds;
 
@@ -254,9 +255,11 @@ int RandoPot_OverlayOamSelfCheck(void);
 void Dungeon_UpdateTileMapWithCommonTile(int x, int y, uint8 v);
 void Dungeon_PrepSpriteInducedDma(int x, int y, uint8 v);
 void Dungeon_DeleteRupeeTile(uint16 x, uint16 y);
-uint8 OpenChestForItem(uint8 tile, int *chest_position);
+uint8 OpenChestForItem(uint8 tile, int *chest_position,
+                       RandoGrantResult *grant_result);
 void OpenBigChest(uint16 loc, int *chest_position);
-uint8 OpenMiniGameChest(int *chest_position);
+uint8 OpenMiniGameChest(int *chest_position,
+                        RandoGrantResult *grant_result);
 uint16 RoomTag_BuildChestStripes(uint16 pos, uint16 y);
 void Dungeon_SetAttrForActivatedWaterOff();
 void Dungeon_FloodSwampWater_PrepTileMap();

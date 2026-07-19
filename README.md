@@ -112,26 +112,33 @@ Determinism self-tests (no ROM/assets required — they run before asset load):
 
 ```sh
 ./zelda3 --rando-selftest
+./zelda3 --rando-selftest=list
+./zelda3 --rando-selftest=grant
 ```
 
 For contributors: the regression corpus, the logic-VM benchmark
-(`./zelda3 --rando-bench-logic`), the init-order replay guard
+(`./zelda3 --rando-bench-logic`), the initialization + vanilla-snapshot WRAM guard
 (`assets/scripts/check_init_order.py`), and a set of pure-Python source guards
 (`assets/scripts/check_*.py`) run in CI. See
 [`docs/randomizer.md`](docs/randomizer.md) ("Source-level CI guards") for the
 full list and the generator-version bump policy.
 
-Local pre-merge checks can exercise artifact-dependent guards that public CI
-cannot, including a fresh `--dump-pot-table`, local pot-registry regeneration,
-and the full pot-shuffle corpus:
+Contributors have one fail-closed validation entry point. Use `quick` while
+iterating and `full` before review:
 
 ```sh
-python assets/scripts/run_rando_local_checks.py --binary=./bin/x64-Release/zelda3.exe
+python assets/scripts/run_rando_validation.py quick
+python assets/scripts/run_rando_validation.py full
 ```
 
-On Linux/macOS with a normal `make` build, `make rando-local-checks` runs a
-two-pass flow: build once, refresh local pot codegen from assets, rebuild if
-generated rando sources changed, then run the full local checks.
+`full` bootstraps/verifies all ROM-derived registries, builds, refreshes local
+pot/enemy/terrain/soul/bonk data, rebuilds mandatorily, then runs the source,
+runtime (including the dedicated grant-check alias), corpus, and performance
+gates. The `ci` and `full` source contracts automatically diff generator
+version policy from the merge-base with `origin/main` (or `main`) to `HEAD` and
+fail if that range cannot be resolved. See [`CONTRIBUTING.md`](CONTRIBUTING.md)
+for profiles and prerequisites. Automated success does not replace gameplay
+playtesting for runtime or presentation changes.
 
 ### Native game-settings window (PC)
 
@@ -230,12 +237,10 @@ enemy/boss-souls kill-room table). Both the `zelda3` executable and
 > empty — the game runs but *every randomizer chest grants its vanilla item*.
 > Always run extraction first.
 
-> **Advanced shuffle modes need one extra step.** `pot_shuffle`,
-> `enemy_drop_checks`, and their registries are derived by *dumping from a built
-> binary* (a chicken-and-egg the one-shot extraction can't resolve), so they are
-> not produced above. After your first build, run the two-pass refresh:
-> `make rando-local-checks` (Linux/macOS) or, on Windows,
-> `python assets/scripts/run_rando_local_checks.py --binary=bin/x64-Release/zelda3.exe`.
+> **Advanced shuffle modes need one extra step.** Pot, enemy-check, and terrain
+> registries are derived by *dumping from a built binary* (a chicken-and-egg the
+> one-shot extraction can't resolve), so they are not all produced above. After
+> your first build, run `python assets/scripts/run_rando_validation.py full`.
 > Until then, enabling those modes makes the generator *refuse the seed with a
 > loud error* (not silent corruption). `souls_shuffle` needs no extra step — its
 > table is produced by extraction above.
@@ -246,14 +251,12 @@ enemy/boss-souls kill-room table). Both the `zelda3` executable and
 3. Run `python -m pip install --upgrade pip pillow pyyaml`.
 4. Close the command prompt.
 
-## Compiling on Windows with TCC (1 MB Tiny C Compiler)
-1. Download the project ("Code > Download ZIP" on GitHub) and extract it.
-2. Place the USA ROM named `zelda3.sfc` in the root directory.
-3. Double-click `extract_assets.bat` to create `zelda3_assets.dat`.
-4. Download [TCC](https://github.com/FitzRoyX/tinycc/releases/download/tcc_20221020/tcc_20221020.zip) and extract to `third_party/`.
-5. Download [SDL2](https://github.com/libsdl-org/SDL/releases/download/release-2.32.10/SDL2-devel-2.32.10-VC.zip) and extract to `third_party/`.
-6. Double-click `run_with_tcc.bat` to create `zelda3.exe`.
-7. Configure via `zelda3.ini` in the main dir.
+## TCC build path (deprecated)
+
+The historical `run_with_tcc.bat` path is unsupported: it omits recursive
+randomizer sources and cannot build the C++ Dear ImGui settings window. Use the
+Visual Studio build below on Windows. The batch file exits with this same
+diagnostic instead of producing an incomplete executable.
 
 ## Compiling on Windows with Visual Studio (4.5 GB IDE and compiler)
 Same asset-extraction steps as above, then:

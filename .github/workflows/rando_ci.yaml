@@ -29,95 +29,35 @@ jobs:
     - name: Install Python deps
       run: pip install pyyaml
 
-    # Repo hygiene — generated/extracted data belongs in gitignored artifacts,
-    # not inlined into source as hex.
-    - name: check_no_embedded_data
-      run: python assets/scripts/check_no_embedded_data.py
-
-    # Task 1.0b — Determinism-grep on src/rando/*.[ch]
-    - name: check_determinism (1.0b)
-      run: python assets/scripts/check_determinism.py
-
-    # Door-shuffle tables — committed reference-derived artifacts; counts must
-    # stay consistent with the frozen registry (door ids are save-affecting).
-    - name: check_door_tables
-      run: python assets/scripts/check_door_tables.py
-
-    # Pot-sanity table freshness is local-only: pots.gen.yaml and
-    # pot_key_depth.gen.yaml are gitignored ROM-derived artifacts. Run
-    # assets/scripts/run_rando_local_checks.py with local assets before merging
-    # pot-table work.
-    - name: check_pot_overrides_static
-      run: python assets/scripts/gen_pot_tables.py --check-overrides-static
-
-    # Task 1.0c — Byte-order pin grep on src/rando/*.[ch]
-    - name: check_byte_order (1.0c)
-      run: python assets/scripts/check_byte_order.py
-
-    # Task 1.0g / §6.10 — Audit guard. Now in --strict mode: every grant-site
-    # write to inventory state MUST be either dispatched via Rando_OnLocationCheck
-    # or carry an explicit `// rando-exempt: <reason>` comment.
-    - name: check_audit_guard (1.0g + 6.10, strict)
-      run: python assets/scripts/check_audit_guard.py --strict
-
-    # Task 1.6b — Codegen-wiring parity across Makefile / MSVC / Switch
-    - name: check_codegen_wiring (1.6b)
-      run: python assets/scripts/check_codegen_wiring.py
-
-    # Task 1.0e — kGeneratorVersion PR-gate (needs base/head shas; only meaningful on PRs)
-    - name: check_generator_version (1.0e)
+    # The workflow delegates the source contract to the same fail-closed runner
+    # contributors use. PRs use their exact base/head commits.
+    - name: Run authoritative CI source profile (PR)
       if: github.event_name == 'pull_request'
       run: |
-        python assets/scripts/check_generator_version.py \
+        python assets/scripts/run_rando_validation.py ci \
+          --phase=source \
+          --build-mode=prebuilt \
           --base-sha "${{ github.event.pull_request.base.sha }}" \
-          --head-sha "${{ github.event.pull_request.head.sha }}"
+          --head-sha "${{ github.event.pull_request.head.sha }}" \
+          --timings-json artifacts/rando-validation-source.json
 
-    - name: check_generator_version (1.0e, push event — diff vs before)
+    # Push/workflow-dispatch events normally use the push's before SHA. A zero
+    # or absent before value occurs for a newly-created ref; use HEAD's parent,
+    # or HEAD itself only for a true root commit where no older version exists.
+    - name: Run authoritative CI source profile (push)
       if: github.event_name != 'pull_request'
-      # On a direct push (e.g. a merge that lands via push) diff the push range
-      # so a bump-trigger edit without a version bump fails HERE too, not only on
-      # the PR event (audit L20). github.event.before is 000…0 on the first push
-      # / a force-push; the script's git diff then errors and the check degrades
-      # to presence-only (returns 0), so this can never false-fail.
       run: |
-        python assets/scripts/check_generator_version.py \
-          --base-sha "${{ github.event.before }}" \
-          --head-sha "${{ github.sha }}"
-
-    # Task 1.0a — Regression-corpus manifest schema check. This job does NOT
-    # build, so run schema-only; the full corpus (with --binary) runs in the
-    # rando-determinism job below.
-    - name: run_rando_corpus (1.0a, manifest schema)
-      run: python assets/scripts/run_rando_corpus.py --schema-only
-
-    # Corpus-version sync — the manifest's generator_version must equal
-    # kGeneratorVersion in src/rando/rando.h. Catches a version bump that
-    # forgot to re-stamp the corpus manifest (incl. digest-neutral bumps).
-    - name: check_corpus_version_sync
-      run: python assets/scripts/check_corpus_version_sync.py
-
-    # Placer determinism (static prong) — the --generate-seed default budget must
-    # be 0. A positive default puts a wall-clock cutoff on Place_AssumedFill's
-    # retry loop (clock() is wall-clock on Windows), making placement
-    # machine-speed-dependent. The runtime prong runs in the rando-determinism
-    # job below (needs the binary).
-    - name: check_placer_determinism (static)
-      run: python assets/scripts/check_placer_determinism.py --source-only
-
-    # Logic-graph silent-override guard — a later base-level logic YAML must not
-    # silently change a location/macro/region declared in an earlier one
-    # (the King-Zora / Eastern-Palace weaker-predicate regression class).
-    - name: check_logic_overrides
-      run: python assets/scripts/check_logic_overrides.py
-
-    # Codegen well-formedness in --strict mode. The build invokes
-    # rando_logic_gen.py in non-strict mode (warnings logged but
-    # build proceeds). CI runs it strictly so any new well-formedness
-    # warning (e.g., the region-binding silent-bypass guard added
-    # post-King-Zora-regression) fails CI instead of being a build
-    # log warning that a maintainer might miss.
-    - name: rando_logic_gen --strict
-      run: python assets/rando_logic_gen.py --strict
+        base="${{ github.event.before }}"
+        head="${{ github.sha }}"
+        if [[ -z "$base" || "$base" =~ ^0+$ ]]; then
+          base="$(git rev-parse "${head}^" 2>/dev/null || printf '%s' "$head")"
+        fi
+        python assets/scripts/run_rando_validation.py ci \
+          --phase=source \
+          --build-mode=prebuilt \
+          --base-sha "$base" \
+          --head-sha "$head" \
+          --timings-json artifacts/rando-validation-source.json
 
   # --------------------------------------------------------------------------
   # Cross-platform determinism property tests (tasks.md §2.2). Builds the
@@ -141,8 +81,8 @@ jobs:
           object_dir: .
         - name: Windows
           os: windows-latest
-          binary: .\bin\x64-Release\zelda3.exe
-          object_dir: obj\x64-Release
+          binary: ./bin/x64-Release/zelda3.exe
+          object_dir: obj/x64-Release
     steps:
     - uses: actions/checkout@v5
     - uses: actions/setup-python@v6
@@ -206,61 +146,28 @@ jobs:
       if: matrix.name == 'Windows'
       run: msbuild Zelda3.sln /m /p:Configuration=Release /p:Platform=x64
 
-    # Task 1.0f — Link-time symbol blocklist. An ARTIFACT check: scans the
-    # just-built src/rando/*.o via `nm -u` for forbidden non-deterministic
-    # symbols (rand/time/...), so it must run AFTER the build.
-    # --require-objects: zero objects here means the guard is broken, not
-    # clean — fail instead of the local-ergonomics pass.
-    - name: check_link_symbols (1.0f, post-build)
-      run: python assets/scripts/check_link_symbols.py --object-dir="${{ matrix.object_dir }}" --require-objects
-
-    - name: Run --rando-selftest
-      env:
-        DISPLAY: ''  # confirm headless: no display server required
-      run: ${{ matrix.binary }} --rando-selftest
-
-    # Door-shuffle generation net (add-rando-door-shuffle): stitches + proves
-    # every shuffleable dungeon across N seeds (connectivity / prover /
-    # determinism / oracle==stitcher cross-checks). Like --rando-selftest it
-    # runs from committed tables BEFORE LoadAssets (see main.c argv handling),
-    # so no zelda3_assets.dat is needed.
-    - name: Run --door-selftest
+    # Run the exact public runtime contract through the same central profile on
+    # every platform. Linux alone adds wall-time budgets and depfile behavior;
+    # all three retain digest, self-test, slot, invariant, and RAM coverage.
+    - name: Run authoritative CI runtime profile
+      shell: bash
       env:
         DISPLAY: ''
-      run: ${{ matrix.binary }} --door-selftest
+      run: |
+        python assets/scripts/run_rando_validation.py ci \
+          --phase=runtime \
+          --build-mode=prebuilt \
+          --binary="${{ matrix.binary }}" \
+          --object-dir="${{ matrix.object_dir }}" \
+          --timings-json="artifacts/rando-validation-runtime-${{ matrix.name }}.json" \
+          --artifacts-dir="artifacts/runtime-${{ matrix.name }}"
 
-    # Task 1.2 / 11.2 init-order replay guard (D7). Replays each
-    # saves/ref/Chapter*.sav via the binary's --vanilla-ram-check CLI mode
-    # in vanilla mode (no rando slot active) and asserts every newly-added
-    # kRam_* offset retained its init-zero value. Proves that no existing
-    # vanilla game code writes to the addresses claimed for randomizer state.
-    - name: Run init-order replay guard (1.2 / 11.2)
-      run: python assets/scripts/check_init_order.py --binary="${{ matrix.binary }}" --strict
-
-    # Cross-platform digest determinism: the corpus manifest digests were
-    # captured against a Windows build. Every runner must reproduce public,
-    # assetless rows byte-for-byte per `randomizer-core / Deterministic
-    # cross-platform placement`. Local ROM-derived pot/enemy/soul/terrain data
-    # rows are exercised by run_rando_local_checks.py instead.
-    - name: Run regression corpus (cross-platform digest check)
-      run: python assets/scripts/run_rando_corpus.py --binary="${{ matrix.binary }}" --skip-pot-shuffle --skip-enemy-drop-checks --skip-enemy-souls --skip-terrain-shuffle
-
-    - name: Run slot-path generation guard
-      run: python assets/scripts/check_rando_slot_path.py --binary="${{ matrix.binary }}"
-
-    - name: Run rando invariant sweep
-      run: python assets/scripts/check_rando_invariants.py --binary="${{ matrix.binary }}"
-
-    # Placer determinism (runtime prong) — the corpus only exercises seeds that
-    # complete on the first attempt, so it never guards the retry loop where
-    # non-determinism hides. This runs a deliberately HARD seed (one that
-    # exhausts the retry loop) several times and asserts byte-identical
-    # placement + sphere digests, catching any run-to-run non-determinism the
-    # all-easy corpus seeds miss.
-    - name: Run placer determinism canary (runtime)
-      run: python assets/scripts/check_placer_determinism.py --binary="${{ matrix.binary }}"
-
-    # Benchmark gate (tasks.md §3.11 / spec: "Default-settings benchmark < 2s").
-    # Runs the binary 10 times at default settings; asserts median <= 2000ms.
-    - name: Run benchmark (default-settings < 2s)
-      run: python assets/scripts/run_rando_benchmarks.py --binary="${{ matrix.binary }}" --samples=10
+    - name: Upload runtime validation telemetry
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: rando-validation-runtime-${{ matrix.name }}
+        path: |
+          artifacts/rando-validation-runtime-${{ matrix.name }}.json
+          artifacts/runtime-${{ matrix.name }}
+        if-no-files-found: warn

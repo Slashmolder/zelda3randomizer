@@ -263,6 +263,13 @@ const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
 const RandoReachability *Logic_ExpandReachability(const RandoCounts *counts,
                                                   const RandoSettings *settings);
 
+// Diagnostic-only generation work counter. The generator brackets one run
+// with Begin/Freeze; the fixed-point loop counts completed expansion passes
+// while active. This state is intentionally absent from every canonical seed,
+// spoiler, share-string, and digest structure.
+void Logic_WorkCounterBegin(void);
+uint64 Logic_WorkCounterFreeze(void);
+
 bool Reachability_HasLocation(const RandoReachability *r, uint16 location_id);
 bool Reachability_HasRegion(const RandoReachability *r, uint16 region_id);
 
@@ -532,15 +539,50 @@ const char *Rando_GetRegionName(uint16 region_id);
 const char *Rando_GetLocationName(uint16 location_id);
 const char *Rando_GetItemName(uint16 item_id);
 
-// Translate a rando registry item_id to the LttP Link_ReceiveItem dispatch
-// code. Used by §6 grant-site dispatch wrappers (rando dispatches via
-// Rando_OnLocationCheck which returns a registry id; the existing
-// Link_ReceiveItem path expects the LttP receive-item code byte).
-//
-// Returns 0xFF when no vanilla dispatch exists (progressive items, dungeon
-// items, prize items, virtual items). Callers SHOULD fall back to the
-// vanilla item that this grant site would have emitted; the rando subsystem
-// will eventually grow per-item-class handlers (§6.2) for these cases.
+// Semantic grant metadata generated from every `dispatch:` token in
+// assets/rando/item_registry.yaml. `payload` is the receive code for Receive,
+// the registry item id for identity-sensitive direct classes, or zero when the
+// opcode fully describes the operation. Grant planning uses this table instead
+// of parallel hand-maintained item-id ranges.
+typedef enum RandoGrantOpcode {
+  kRandoGrantOp_Invalid = 0,
+  kRandoGrantOp_Receive,
+  kRandoGrantOp_ProgressiveSword,
+  kRandoGrantOp_ProgressiveShield,
+  kRandoGrantOp_ProgressiveArmor,
+  kRandoGrantOp_ProgressiveGlove,
+  kRandoGrantOp_ProgressiveBow,
+  kRandoGrantOp_DungeonSmallKey,
+  kRandoGrantOp_DungeonBigKey,
+  kRandoGrantOp_DungeonMap,
+  kRandoGrantOp_DungeonCompass,
+  kRandoGrantOp_DirectTriforcePiece,
+  kRandoGrantOp_DirectMagicUpgrade,
+  kRandoGrantOp_DirectPrize,
+  kRandoGrantOp_DirectKeyRing,
+  kRandoGrantOp_DirectSkeletonKey,
+  kRandoGrantOp_DirectGenericKey,
+  kRandoGrantOp_DirectRupoor,
+  kRandoGrantOp_DirectTrap,
+  kRandoGrantOp_DirectNothing,
+  kRandoGrantOp_DirectSoul,
+  kRandoGrantOp_DirectBombCapacity,
+  kRandoGrantOp_DirectArrowCapacity,
+  kRandoGrantOp_Virtual,
+} RandoGrantOpcode;
+
+typedef struct RandoItemGrantMetadata {
+  uint8 opcode;
+  uint16 payload;
+} RandoItemGrantMetadata;
+
+extern const RandoItemGrantMetadata kRandoItemGrantMetadata[];
+extern const uint16 kRandoItemGrantMetadataCount;
+
+// Compatibility accessor for semantic plans whose generated opcode is
+// kRandoGrantOp_Receive. Returns 0xFF for progressive/direct/no-op/virtual
+// plans and for out-of-range ids. Gameplay transaction code must never treat
+// 0xFF as permission to grant the source location's vanilla item.
 uint8 Rando_VanillaItemForRegistryId(uint16 registry_item_id);
 
 // Start region per world_state. Indexed by WorldState enum (Open=0,

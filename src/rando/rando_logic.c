@@ -1486,6 +1486,18 @@ typedef struct LogicProfileCounters {
 
 static LogicProfileCounters g_logic_profile;
 static bool g_logic_profile_active;
+static uint64 g_logic_generation_passes;
+static bool g_logic_generation_counter_active;
+
+void Logic_WorkCounterBegin(void) {
+  g_logic_generation_passes = 0;
+  g_logic_generation_counter_active = true;
+}
+
+uint64 Logic_WorkCounterFreeze(void) {
+  g_logic_generation_counter_active = false;
+  return g_logic_generation_passes;
+}
 
 static void logic_profile_dump(void) {
   if (!g_logic_profile_active) return;
@@ -1744,6 +1756,7 @@ static const RandoReachability *logic_compute_reachability_internal(
   // depth is well under 32 in practice (per ALTTPR's region nesting).
   for (int iter = 0; iter < 64; iter++) {
     if (g_logic_profile_active) g_logic_profile.reach_iterations++;
+    if (g_logic_generation_counter_active) g_logic_generation_passes++;
     bool changed = false;
     // Door shuffle: invalidate the oracle memo each pass — counts are fixed
     // for this whole call, but the region bitset (portal availability) grows

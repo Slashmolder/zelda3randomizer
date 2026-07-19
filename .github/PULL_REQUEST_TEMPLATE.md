@@ -19,11 +19,15 @@ confirm:
       RNG, logic.yaml, registries, `RandoSettings` serialization order),
       `kGeneratorVersion` in `src/rando/rando.h` is bumped per
       `docs/randomizer.md` § "Generator version bump policy".
-- [ ] New writes to inventory cells (`link_item_*`, `link_bottle_info[*]`,
-      etc.) flow through `Rando_OnLocationCheck` **or** carry an explicit
-      `// rando-exempt: <reason>` comment per `docs/randomizer.md` § "Audit
-      comment convention".
-- [ ] Self-checks (`./zelda3 --rando-selftest`) still pass.
+- [ ] Grant sites use the public grant transaction API; any low-level
+      resolver/delivery call is in the narrow source-guard allowlist with a
+      reason.
+- [ ] `python assets/scripts/run_rando_validation.py quick` passes while
+      iterating, and `full` passes before review when local artifacts apply.
+- [ ] Placement-affecting changes include a reviewed corpus regeneration with
+      explained digest movement; corpus baselines were not blindly replaced.
+- [ ] Runtime/rendering changes record owner gameplay playtest coverage
+      separately; automated checks are not presented as completing that gate.
 
 Reviewers SHALL refuse PRs where implementation drifts silently from a
 referenced spec scenario without an accompanying amendment.

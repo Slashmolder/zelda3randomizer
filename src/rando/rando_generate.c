@@ -65,6 +65,43 @@ typedef struct GenerateProfileCounters {
 
 static GenerateProfileCounters g_generate_profile;
 static bool g_generate_profile_active;
+static RandoGenerationWorkCounters g_generation_work_live;
+static RandoGenerationWorkCounters g_generation_work_last;
+static bool g_generation_work_active;
+
+void Rando_WorkCountersBeginGeneration(void) {
+  memset(&g_generation_work_live, 0, sizeof(g_generation_work_live));
+  g_generation_work_active = true;
+  Logic_WorkCounterBegin();
+}
+
+void Rando_WorkCountersEndGeneration(void) {
+  if (!g_generation_work_active)
+    return;
+  g_generation_work_live.reachability_expansion_passes =
+      Logic_WorkCounterFreeze();
+  g_generation_work_last = g_generation_work_live;
+  g_generation_work_active = false;
+}
+
+const RandoGenerationWorkCounters *Rando_GetLastGenerationWorkCounters(void) {
+  return &g_generation_work_last;
+}
+
+static bool rando_place_assumed_fill_counted(const RandoSettings *settings,
+                                             uint64 seed_u64,
+                                             int budget_seconds,
+                                             RandoPlacementTable *table) {
+  bool ok = Place_AssumedFill(settings, seed_u64, budget_seconds, table);
+  if (g_generation_work_active) {
+    uint32 attempts = Placement_GetLastStats()->attempts_used;
+    if (UINT32_MAX - g_generation_work_live.placement_attempts < attempts)
+      g_generation_work_live.placement_attempts = UINT32_MAX;
+    else
+      g_generation_work_live.placement_attempts += attempts;
+  }
+  return ok;
+}
 
 static void generate_profile_dump(void) {
   if (!g_generate_profile_active) return;
@@ -339,6 +376,71 @@ void RandoGenerate_SelfCheck(void) {
     }
     Rando_ClearGenerationLogicOverlays();
   }
+
+  // Diagnostic work telemetry must be deterministic in-process and must not
+  // perturb canonical placement output when disabled. Use a plain seed so the
+  // probe stays fast while still exercising placement and reachability passes.
+  {
+    RandoSettings settings;
+    Settings_SetDefaults(&settings);
+    RandoPlacement entries[kRandoLocationCapacity];
+    RandoPlacementTable table = { entries, 0 };
+    uint8 digest[3][32];
+    RandoGenerationWorkCounters observed[2];
+
+    for (int run = 0; run < 2; run++) {
+      table.count = 0;
+      Rando_ClearGenerationLogicOverlays();
+      RandoEntranceRegen reg;
+      memset(&reg, 0, sizeof reg);
+      Rando_WorkCountersBeginGeneration();
+      bool placed = Rando_PlaceWithEntrances(&settings, 0x574F524B434E5452ull,
+                                             /*budget_seconds=*/0, &table, &reg);
+      if (placed) {
+        RandoSpheres spheres;
+        memset(&spheres, 0, sizeof spheres);
+        (void)Logic_ComputeSpheres(&settings, &table, &spheres);
+      }
+      Rando_WorkCountersEndGeneration();
+      if (!placed) {
+        Rando_ClearGenerationLogicOverlays();
+        fprintf(stderr, "RandoGenerate_SelfCheck: work-counter placement failed\n");
+        exit(2);
+      }
+      observed[run] = *Rando_GetLastGenerationWorkCounters();
+      PlacementTable_ComputeDigest(&table, digest[run]);
+    }
+    if (memcmp(&observed[0], &observed[1], sizeof observed[0]) != 0 ||
+        memcmp(digest[0], digest[1], sizeof digest[0]) != 0 ||
+        observed[0].placement_attempts == 0 ||
+        observed[0].reachability_expansion_passes == 0) {
+      Rando_ClearGenerationLogicOverlays();
+      fprintf(stderr, "RandoGenerate_SelfCheck: work counters are not deterministic\n");
+      exit(2);
+    }
+
+    // A third run with counters disabled must preserve the placement digest
+    // and leave the frozen diagnostic record unchanged.
+    table.count = 0;
+    Rando_ClearGenerationLogicOverlays();
+    RandoEntranceRegen reg;
+    memset(&reg, 0, sizeof reg);
+    if (!Rando_PlaceWithEntrances(&settings, 0x574F524B434E5452ull,
+                                  /*budget_seconds=*/0, &table, &reg)) {
+      Rando_ClearGenerationLogicOverlays();
+      fprintf(stderr, "RandoGenerate_SelfCheck: counter-disabled placement failed\n");
+      exit(2);
+    }
+    PlacementTable_ComputeDigest(&table, digest[2]);
+    if (memcmp(digest[0], digest[2], sizeof digest[0]) != 0 ||
+        memcmp(&observed[1], Rando_GetLastGenerationWorkCounters(),
+               sizeof observed[1]) != 0) {
+      Rando_ClearGenerationLogicOverlays();
+      fprintf(stderr, "RandoGenerate_SelfCheck: counters changed canonical output\n");
+      exit(2);
+    }
+    Rando_ClearGenerationLogicOverlays();
+  }
   fprintf(stderr, "[RandoGenerate_SelfCheck] OK\n");
 }
 
@@ -398,7 +500,8 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
         reg->cross_decoupled_count = Entrance_ComputeCrossDecoupledExit(settings, seed_u64, (uint8)att, reg->cross_decoupled_assign);
       }
       table->count = 0;
-      if (Place_AssumedFill(settings, seed_u64, budget_seconds, table)) {
+      if (rando_place_assumed_fill_counted(settings, seed_u64,
+                                           budget_seconds, table)) {
         // Accept this permutation only if it meets the active accessibility tier
         // (always beatable, plus per-tier reachability). Rejects a π that strands
         // placements beyond the tier's bar (e.g. a gated door leading to the very
@@ -427,6 +530,8 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
     // are persisted (@76-79) so activation can regenerate + drift-check.
     for (uint32 datt = 0; datt < 16; datt++) {
       if (g_generate_profile_active) g_generate_profile.door_attempts++;
+      if (g_generation_work_active)
+        g_generation_work_live.door_generation_attempts++;
       if (!DoorShuffle_Generate(seed_u64, datt, kDoorShuffle_MvpDungeonMask,
                                 Settings_DoorPotTier(settings),
                                 door_enemy_drop_keys_for_settings(settings),
@@ -437,7 +542,8 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
       }
       Rando_SetDoorLogicLayout(&g_door_gen_layout, g_door_gen_layout.shuffled_mask);
       table->count = 0;
-      if (Place_AssumedFill(settings, seed_u64, budget_seconds, table) &&
+      if (rando_place_assumed_fill_counted(settings, seed_u64,
+                                           budget_seconds, table) &&
           Accessibility_SeedAcceptable(settings, seed_u64, table)) {
         placed = true;
         g_door_gen_attempt = (uint8)datt;
@@ -471,7 +577,8 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
       }
       Chains_ApplyEdgeOverrides(&chains_layout);
       table->count = 0;
-      if (Place_AssumedFill(settings, seed_u64, budget_seconds, table) &&
+      if (rando_place_assumed_fill_counted(settings, seed_u64,
+                                           budget_seconds, table) &&
           Accessibility_SeedAcceptable(settings, seed_u64, table)) {
         placed = true;
         reg->chains_active = true;
@@ -495,7 +602,8 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
       Entrance_ClearEdgeOverrides();
   } else {
     if (g_generate_profile_active) g_generate_profile.plain_calls++;
-    placed = Place_AssumedFill(settings, seed_u64, budget_seconds, table);
+    placed = rando_place_assumed_fill_counted(settings, seed_u64,
+                                              budget_seconds, table);
     if (placed && !Accessibility_SeedAcceptable(settings, seed_u64, table)) {
       placed = false;
     }
@@ -627,6 +735,7 @@ bool Rando_GenerateSlotWithShapeFilter(const RandoSettings *settings, uint64 see
   RandoEntranceRegen reg;
   memset(&reg, 0, sizeof reg);
   bool placed = false;
+  Rando_WorkCountersBeginGeneration();
   for (int shape_attempt = 0; shape_attempt < shape_search_limit; shape_attempt++) {
     uint64 candidate_seed = seed_u64 + (uint64)shape_attempt;
     table.count = 0;
@@ -667,6 +776,7 @@ bool Rando_GenerateSlotWithShapeFilter(const RandoSettings *settings, uint64 see
     shape_attempts_used = (uint32)(shape_attempt + 1);
     break;
   }
+  Rando_WorkCountersEndGeneration();
   if (!placed) {
     // clear the logic overlays on the failure path too (the
     // success path clears after the spoiler block; a failed generation would

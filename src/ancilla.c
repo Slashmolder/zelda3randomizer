@@ -14,6 +14,7 @@
 #include "features.h"
 #include "zelda_rtl.h"
 #include "rando/rando.h"
+#include "rando/rando_placement.h"
 #include "rando/item_ids.h"
 #include "rando/location_ids.h"
 
@@ -3830,6 +3831,132 @@ void ObjectSplash_Draw(int k) {  // 88ca22
   }
 }
 
+// A type-0x29 tablet prize owns one frozen 18-byte grant token in otherwise
+// unused per-ancilla bytes. Keep this bytewise and explicit: g_ram is not
+// guaranteed to align a C struct, and ancilla_arr4 is live receive-item draw
+// state and must never be part of this ABI.
+static void Ancilla29_ClearRandoGrantToken(int k) {
+  ancilla_U[k] = 0;
+}
+
+static void Ancilla29_StoreRandoGrantToken(
+    int k, const RandoDeferredGrantToken *token) {
+  uint8 b[sizeof(*token)];
+  memcpy(b, token, sizeof(b));
+  ancilla_U[k] = b[0];
+  ancilla_K[k] = b[1];
+  ancilla_A[k] = b[2];
+  ancilla_B[k] = b[3];
+  ancilla_arr1[k] = b[4];
+  ancilla_S[k] = b[5];
+  ancilla_arr26[k] = b[6];
+  ancilla_arr25[k] = b[7];
+  ancilla_arr22[k] = b[8];
+  ancilla_H[k] = b[9];
+  ancilla_arr23[k] = b[10];
+  ancilla_T[k] = b[11];
+  ancilla_arr24[k] = b[12];
+  ancilla_tile_attr[k] = b[13];
+  ancilla_R[k] = b[14];
+  ancilla_dir[k] = b[15];
+  ancilla_floor2[k] = b[16];
+  ancilla_objprio[k] = b[17];
+}
+
+static bool Ancilla29_LoadRandoGrantToken(
+    int k, RandoDeferredGrantToken *token) {
+  if (ancilla_U[k] != (uint8)kRandoDeferredGrantTokenVersion)
+    return false;
+  uint8 b[sizeof(*token)];
+  b[0] = ancilla_U[k];
+  b[1] = ancilla_K[k];
+  b[2] = ancilla_A[k];
+  b[3] = ancilla_B[k];
+  b[4] = ancilla_arr1[k];
+  b[5] = ancilla_S[k];
+  b[6] = ancilla_arr26[k];
+  b[7] = ancilla_arr25[k];
+  b[8] = ancilla_arr22[k];
+  b[9] = ancilla_H[k];
+  b[10] = ancilla_arr23[k];
+  b[11] = ancilla_T[k];
+  b[12] = ancilla_arr24[k];
+  b[13] = ancilla_tile_attr[k];
+  b[14] = ancilla_R[k];
+  b[15] = ancilla_dir[k];
+  b[16] = ancilla_floor2[k];
+  b[17] = ancilla_objprio[k];
+  memcpy(token, b, sizeof(b));
+  return true;
+}
+
+static OamEnt *Ancilla29_DrawRandoGrant(
+    int k, int x, int y, const RandoDeferredGrantToken *token) {
+  const RandoGrantPlan *plan = &token->plan;
+  if (!plan->display_valid)
+    return Ancilla_ReceiveItem_Draw(k, x, y);
+  if ((plan->display_gfx & 0x80) &&
+      g_recv_item_slot_owner == plan->display_gfx)
+    Rando_ApplyCustomItemGfxPalette(plan->display_gfx);
+  OamEnt *oam = GetOamCurPtr();
+  Ancilla_SetOam(oam++, x, y, 0x24, plan->display_oam_flags,
+                 plan->display_big);
+  if (plan->display_big == 0)
+    Ancilla_SetOam(oam++, x, y + 8, 0x34, plan->display_oam_flags, 0);
+  return oam;
+}
+
+static bool Ancilla29_CommitStoredRandoGrant(
+    int k, RandoGrantPresentation presentation, RandoGrantResult *out_result) {
+  RandoDeferredGrantToken token;
+  if (!Ancilla29_LoadRandoGrantToken(k, &token))
+    return false;
+  uint8 saved_custom_spell = flag_custom_spell_anim_active;
+  uint8 saved_force_sword = link_force_hold_sword_up;
+  uint8 saved_handler = link_player_handler_state;
+  uint8 saved_damage_disable = link_disable_sprite_damage;
+  uint8 saved_immobilized = flag_is_link_immobilized;
+  uint8 saved_menu_block = flag_block_link_menu;
+
+  // Match the vanilla handoff order: tear down tablet ownership before the
+  // receive transaction creates its own hold-up state. If commit cannot
+  // accept, restore the cutscene byte-for-byte and leave the prize retryable.
+  flag_custom_spell_anim_active = 0;
+  link_force_hold_sword_up = 0;
+  link_player_handler_state = 0;
+  link_disable_sprite_damage = 0;
+  flag_is_link_immobilized = 0;
+  flag_block_link_menu = 0;
+  RandoGrantResult result = Rando_CommitPreparedGrant(
+      &token, presentation, 3, 0);
+  if (out_result != NULL)
+    *out_result = result;
+  if (result == kRandoGrantResult_Accepted ||
+      result == kRandoGrantResult_AlreadyChecked) {
+    ancilla_type[k] = 0;
+    Ancilla29_ClearRandoGrantToken(k);
+  } else if (result == kRandoGrantResult_Retryable) {
+    // Capacity/resource pressure can change on a later frame. Preserve the
+    // exact tablet state and frozen token so collision can retry losslessly.
+    flag_custom_spell_anim_active = saved_custom_spell;
+    link_force_hold_sword_up = saved_force_sword;
+    link_player_handler_state = saved_handler;
+    link_disable_sprite_damage = saved_damage_disable;
+    flag_is_link_immobilized = saved_immobilized;
+    flag_block_link_menu = saved_menu_block;
+  } else {
+    // Invalid/corrupt tokens and vanished placements cannot become valid by
+    // colliding again. Fail closed (no grant/check mutation) but release every
+    // tablet-owned lock and discard the poisoned ancilla/token so the player
+    // cannot be trapped in an infinite collision retry.
+    ancilla_type[k] = 0;
+    Ancilla29_ClearRandoGrantToken(k);
+    button_b_frames = 0;
+    link_delay_timer_spin_attack = 0;
+  }
+  return true;
+}
+
 void Ancilla29_MilestoneItemReceipt(int k) {  // 88ca8c
   if (ancilla_item_to_link[k] != 0x10 && ancilla_item_to_link[k] != 0x0f) {
     // This whole block sequences the BOSS-PRIZE falling sprite behind the
@@ -3889,25 +4016,30 @@ void Ancilla29_MilestoneItemReceipt(int k) {  // 88ca8c
   if (submodule_index == 0) {
     CheckPlayerCollOut coll_out;
     if (ancilla_z[k] < 24 && Ancilla_CheckLinkCollision(k, 2, &coll_out) && related_to_hookshot == 0 && link_auxiliary_state == 0) {
-      ancilla_type[k] = 0;
-      if (link_player_handler_state == kPlayerState_ReceivingEther || link_player_handler_state == kPlayerState_ReceivingBombos) {
-        flag_custom_spell_anim_active = 0;
-        link_force_hold_sword_up = 0;
-        link_player_handler_state = 0;
-      }
-      item_receipt_method = 3;
+      if (Ancilla29_CommitStoredRandoGrant(
+              k, kRandoGrantPresentation_Animated, NULL))
+        return;
+
       uint8 receive_item = ancilla_item_to_link[k];
       if (player_is_indoors &&
           (receive_item == 0x20 || receive_item == 0x37 ||
            receive_item == 0x38 || receive_item == 0x39)) {
-        uint8 dispatched = Rando_DispatchBossPrizeReceipt(
-            BYTE(cur_palace_index_x2) >> 1, receive_item);
-        if (!Rando_ShouldSkipReceive(dispatched))
-          receive_item = dispatched;
+        RandoGrantResult result = Rando_GrantBossPrizeReceipt(
+            BYTE(cur_palace_index_x2) >> 1, receive_item,
+            kRandoGrantPresentation_Animated, 3, 0);
+        if (result == kRandoGrantResult_Accepted ||
+            result == kRandoGrantResult_AlreadyChecked) {
+          ancilla_type[k] = 0;
+          return;
+        }
+        if (result != kRandoGrantResult_NotActive)
+          return;
       }
       // Most falling-prize ancillas determine their LttP code upstream at the
       // spawn site. Boss prizes are the exception under rando: dispatch at
       // receipt time so falling before pickup leaves the prize uncollected.
+      ancilla_type[k] = 0;
+      item_receipt_method = 3;
       Link_ReceiveItem(receive_item, 0);
       return;
     }
@@ -3927,7 +4059,10 @@ void Ancilla29_MilestoneItemReceipt(int k) {  // 88ca8c
 
   Point16U pt;
   Ancilla_PrepAdjustedOamCoord(k, &pt);
-  OamEnt *oam = Ancilla_ReceiveItem_Draw(k, pt.x, pt.y - ancilla_z[k]);
+  RandoDeferredGrantToken token;
+  OamEnt *oam = Ancilla29_LoadRandoGrantToken(k, &token)
+      ? Ancilla29_DrawRandoGrant(k, pt.x, pt.y - ancilla_z[k], &token)
+      : Ancilla_ReceiveItem_Draw(k, pt.x, pt.y - ancilla_z[k]);
 
   if (sign8(--ancilla_aux_timer[k])) {
     ancilla_aux_timer[k] = 9;
@@ -4198,26 +4333,16 @@ void Ancilla36_Flute(int k) {  // 88cfaa
     } else {
       CheckPlayerCollOut coll_out;
       if (Ancilla_CheckLinkCollision(k, 2, &coll_out) && !related_to_hookshot && link_auxiliary_state == 0) {
-        ancilla_type[k] = 0;
-        item_receipt_method = 0;
-        // Anti-re-grant guard (rando): the Flute Spot dig has no vanilla
-        // "already dug" bit. Vanilla relies on the dig flipping link_item_flute
-        // to 2 (flute selected) so the shovel can no longer dig this tile. Under
-        // the flute/shovel decouple the player keeps the shovel selectable — and
-        // a NON-flute placed item never flips the byte at all — so re-digging
-        // would re-dispatch this NON-idempotent grant (duplicate item /
-        // re-ticked Triforce counter / re-written prize bit), a trivial dupe
-        // when a Triforce piece or progressive item sits here. Once
-        // LOC_Flute_Spot is checked, despawn (above) without re-granting.
-        // Vanilla always grants the (fixed) flute, so leave it alone. Mirrors
-        // the Ether/Bombos tablet anti-re-grant guard (player.c).
-        if (!(enhanced_features1 & kFeatures1_RandomizerActive) ||
-            !Rando_IsLocationChecked(LOC_Flute_Spot)) {
-          uint8 lttp_code = 0x14;  // OcarinaInactive (Flute from FluteBoy duck)
-          if (enhanced_features1 & kFeatures1_RandomizerActive) {
-            lttp_code = Rando_DispatchVanillaGrant(LOC_Flute_Spot, ITEM_OcarinaInactive, lttp_code);
-          }
-          Rando_ReceiveOrConfirm(lttp_code, (uint8)Rando_LastDispatchedItemId());  // §7.6 + Slice 9 — confirmation cue with placed-item icon when sentinel
+        RandoGrantResult grant = Rando_GrantLocation(
+            LOC_Flute_Spot, ITEM_OcarinaInactive, 0x14,
+            kRandoGrantPresentation_Animated, 0, 0);
+        if (grant == kRandoGrantResult_NotActive) {
+          ancilla_type[k] = 0;
+          item_receipt_method = 0;
+          Link_ReceiveItem(0x14, 0);
+        } else if (grant == kRandoGrantResult_Accepted ||
+                   grant == kRandoGrantResult_AlreadyChecked) {
+          ancilla_type[k] = 0;
         }
         return;
       }
@@ -6220,6 +6345,9 @@ int AncillaAdd_FallingPrize(uint8 a, uint8 item_idx, uint8 yv) {  // 898bc1
   int k = Ancilla_AddAncilla(a, yv);
   if (k < 0)
     return k;
+  // Type 0x29 slots can be reused after a deferred tablet grant. A vanilla
+  // falling prize must clear the token marker before any handler frame.
+  Ancilla29_ClearRandoGrantToken(k);
   uint8 item_type = kFallingItem_Type[item_idx];
   ancilla_item_to_link[k] = item_type;
   if (item_type == 0x10 || item_type == 0xf)
@@ -6261,16 +6389,190 @@ int AncillaAdd_FallingPrize(uint8 a, uint8 item_idx, uint8 yv) {  // 898bc1
 //
 // Used by Ether/Bombos tablet handlers — lets rando place arbitrary items
 // at the tablet slots without losing the dash-cutscene visual.
-int AncillaAdd_FallingPrizeRando(uint8 a, uint8 lttp_code, uint8 fallback_idx, uint8 yv) {
+int AncillaAdd_FallingPrizeRando(uint8 a,
+                                 const RandoDeferredGrantToken *token,
+                                 uint8 fallback_idx, uint8 yv) {
+  if (token == NULL)
+    return -1;
   if (fallback_idx >= 7) fallback_idx = 0;
   int k = AncillaAdd_FallingPrize(a, fallback_idx, yv);
   if (k >= 0) {
-    ancilla_item_to_link[k] = lttp_code;
-    link_receiveitem_index = lttp_code;
-    if (lttp_code < 76 && kReceiveItemGfx[lttp_code] != 0xff)
-      Rando_EnsureRecvItemSlotGfx(kReceiveItemGfx[lttp_code]);
+    Ancilla29_StoreRandoGrantToken(k, token);
+    if (token->plan.disposition == kRandoGrantDisposition_Receive &&
+        token->plan.receive_code < 76) {
+      ancilla_item_to_link[k] = token->plan.receive_code;
+      link_receiveitem_index = token->plan.receive_code;
+    }
+    if (token->plan.display_valid)
+      Rando_EnsureRecvItemSlotGfx(token->plan.display_gfx);
   }
   return k;
+}
+
+int Ancilla_RandoFallingPrizeSelfCheck(void) {
+  static uint8 saved_ram[sizeof(g_ram)], snapshot_ram[sizeof(g_ram)];
+  uint8 saved_checked[kRandoCheckedBitmapBytes];
+  const RandoPlacementTable *saved_placement = Placement_GetActive();
+  const char *failure = NULL;
+  RandoPlacement entry = {7000, ITEM_Rupee1};
+  RandoPlacementTable table = {&entry, 1};
+  RandoDeferredGrantToken token, loaded, reparsed;
+  int k = 2;
+
+#define TABLET_CHECK(expr, message) \
+  do { if (!(expr)) { failure = (message); goto cleanup; } } while (0)
+
+  memcpy(saved_ram, g_ram, sizeof(saved_ram));
+  memcpy(saved_checked, g_rando_checked_bitmap, sizeof(saved_checked));
+  Placement_Install(&table);
+  memset(g_rando_checked_bitmap, 0, sizeof(g_rando_checked_bitmap));
+  memset(ancilla_type, 0, 10);
+  link_rupees_goal = 0;
+  TABLET_CHECK(Rando_PrepareGrant(7000, ITEM_Rupee1, 0x34, &token) ==
+                    kRandoGrantResult_Accepted,
+                "prepare fixture failed");
+
+  // Scatter ABI: all 18 bytes round-trip through the audited field list and
+  // the live receive-item animation byte remains untouched.
+  ancilla_arr4[k] = 0x5a;
+  Ancilla29_StoreRandoGrantToken(k, &token);
+  memset(&loaded, 0, sizeof(loaded));
+  TABLET_CHECK(Ancilla29_LoadRandoGrantToken(k, &loaded) &&
+                    memcmp(&loaded, &token, sizeof(token)) == 0 &&
+                    ancilla_arr4[k] == 0x5a,
+                "scatter round-trip or arr4 isolation failed");
+
+  // Base-snapshot/RAM round-trip: no process-local pointer or sidecar is
+  // needed to recover the token.
+  memcpy(snapshot_ram, g_ram, sizeof(g_ram));
+  memset(g_ram, 0, sizeof(g_ram));
+  memcpy(g_ram, snapshot_ram, sizeof(g_ram));
+  memset(&loaded, 0, sizeof(loaded));
+  TABLET_CHECK(Ancilla29_LoadRandoGrantToken(k, &loaded) &&
+                    memcmp(&loaded, &token, sizeof(token)) == 0,
+                "snapshot RAM round-trip failed");
+
+  // Cancelling the falling visual never commits. A later tablet interaction
+  // can prepare the same location again from current state.
+  ancilla_type[k] = 0;
+  Ancilla29_ClearRandoGrantToken(k);
+  TABLET_CHECK(!Rando_IsLocationChecked(7000) &&
+                    Rando_PrepareGrant(7000, ITEM_Rupee1, 0x34, &reparsed) ==
+                        kRandoGrantResult_Accepted,
+                "cancel/reprepare changed the check");
+
+  // A capacity change between prepare and collision leaves both the token and
+  // tablet cutscene state intact; no vanilla item is substituted.
+  entry.item_id = ITEM_BottleEmpty;
+  memset(link_bottle_info, 0, 4);
+  TABLET_CHECK(Rando_PrepareGrant(7000, ITEM_BottleEmpty, 0x16, &reparsed) ==
+                    kRandoGrantResult_Accepted,
+                "retry collision fixture did not prepare");
+  ancilla_type[k] = 0x29;
+  Ancilla29_StoreRandoGrantToken(k, &reparsed);
+  memset(link_bottle_info, 3, 4);
+  flag_custom_spell_anim_active = 7;
+  link_force_hold_sword_up = 6;
+  link_player_handler_state = 5;
+  link_disable_sprite_damage = 4;
+  flag_is_link_immobilized = 3;
+  flag_block_link_menu = 2;
+  RandoGrantResult retry_result = kRandoGrantResult_Invalid;
+  TABLET_CHECK(Ancilla29_CommitStoredRandoGrant(
+                    k, kRandoGrantPresentation_None, &retry_result) &&
+                    retry_result == kRandoGrantResult_Retryable &&
+                    !Rando_IsLocationChecked(7000) &&
+                    ancilla_type[k] == 0x29 &&
+                    ancilla_U[k] == (uint8)kRandoDeferredGrantTokenVersion &&
+                    flag_custom_spell_anim_active == 7 &&
+                    link_force_hold_sword_up == 6 &&
+                    link_player_handler_state == 5 &&
+                    link_disable_sprite_damage == 4 &&
+                    flag_is_link_immobilized == 3 &&
+                    flag_block_link_menu == 2,
+                "retry collision consumed or changed tablet state");
+
+  // A one-byte shared-field clobber must be rejected without granting or
+  // marking, then deterministically tear down the tablet state. Unlike a
+  // Retryable capacity failure above, retaining this poisoned token would
+  // repeat Invalid forever and strand Link in the collision handler.
+  entry.item_id = ITEM_Rupee1;
+  memset(link_bottle_info, 0, 4);
+  link_rupees_goal = 0;
+  TABLET_CHECK(Rando_PrepareGrant(7000, ITEM_Rupee1, 0x34, &reparsed) ==
+                    kRandoGrantResult_Accepted,
+                "corrupt collision fixture did not prepare");
+  ancilla_type[k] = 0x29;
+  Ancilla29_StoreRandoGrantToken(k, &reparsed);
+  ancilla_arr1[k] ^= 1;  // corrupt one plan byte while retaining the marker
+  flag_custom_spell_anim_active = 7;
+  link_force_hold_sword_up = 6;
+  link_player_handler_state = 5;
+  link_disable_sprite_damage = 4;
+  flag_is_link_immobilized = 3;
+  flag_block_link_menu = 2;
+  button_b_frames = 1;
+  link_delay_timer_spin_attack = 9;
+  RandoGrantResult invalid_result = kRandoGrantResult_Accepted;
+  TABLET_CHECK(Ancilla29_CommitStoredRandoGrant(
+                    k, kRandoGrantPresentation_None, &invalid_result) &&
+                    invalid_result == kRandoGrantResult_Invalid &&
+                    !Rando_IsLocationChecked(7000) && link_rupees_goal == 0 &&
+                    ancilla_type[k] == 0 && ancilla_U[k] == 0 &&
+                    flag_custom_spell_anim_active == 0 &&
+                    link_force_hold_sword_up == 0 &&
+                    link_player_handler_state == 0 &&
+                    link_disable_sprite_damage == 0 &&
+                    flag_is_link_immobilized == 0 &&
+                    flag_block_link_menu == 0 && button_b_frames == 0 &&
+                    link_delay_timer_spin_attack == 0,
+                "invalid collision token granted, marked, or retained tablet state");
+
+  entry.item_id = ITEM_Rupee1;
+  memset(link_bottle_info, 0, 4);
+  TABLET_CHECK(Rando_PrepareGrant(7000, ITEM_Rupee1, 0x34, &reparsed) ==
+                    kRandoGrantResult_Accepted,
+                "accepted collision fixture did not reprepare");
+
+  // Collision consumes the stored token exactly once, grants the frozen plan,
+  // marks the location, and clears both the ancilla and marker.
+  ancilla_type[k] = 0x29;
+  Ancilla29_StoreRandoGrantToken(k, &reparsed);
+  RandoGrantResult collision_result = kRandoGrantResult_Invalid;
+  TABLET_CHECK(Ancilla29_CommitStoredRandoGrant(
+                    k, kRandoGrantPresentation_None, &collision_result),
+                "collision token was not recognized");
+  TABLET_CHECK(collision_result == kRandoGrantResult_Accepted,
+                "collision token was not accepted");
+  if (!Rando_IsLocationChecked(7000) || link_rupees_goal != 1) {
+    fprintf(stderr, "tablet collision state: checked=%d rupees_goal=%u\n",
+            Rando_IsLocationChecked(7000) ? 1 : 0,
+            (unsigned)link_rupees_goal);
+    failure = "collision did not grant and mark";
+    goto cleanup;
+  }
+  TABLET_CHECK(ancilla_type[k] == 0 && ancilla_U[k] == 0,
+                "collision did not clear ancilla and marker");
+
+  // A vanilla/base falling prize clears a stale token marker on slot reuse.
+  memset(ancilla_type, 0, 10);
+  for (int i = 0; i < 5; i++)
+    ancilla_U[i] = (uint8)kRandoDeferredGrantTokenVersion;
+  k = AncillaAdd_FallingPrize(0x29, 1, 4);
+  TABLET_CHECK(k >= 0 && ancilla_U[k] == 0,
+                "base falling prize retained a token marker");
+
+cleanup:
+  Placement_Install(saved_placement);
+  memcpy(g_rando_checked_bitmap, saved_checked, sizeof(saved_checked));
+  memcpy(g_ram, saved_ram, sizeof(saved_ram));
+#undef TABLET_CHECK
+  if (failure != NULL) {
+    fprintf(stderr, "Ancilla_RandoFallingPrizeSelfCheck: %s\n", failure);
+    return 1;
+  }
+  fprintf(stderr, "[Ancilla_RandoFallingPrizeSelfCheck] OK\n");
+  return 0;
 }
 
 void AncillaAdd_ChargedSpinAttackSparkle() {  // 898cb1

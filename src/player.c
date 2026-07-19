@@ -610,6 +610,14 @@ void LinkState_HoldingBigRock() {  // 878481
 }
 
 void EtherTablet_StartCutscene() {  // 87855a
+  if (enhanced_features1 & kFeatures1_RandomizerActive) {
+    RandoDeferredGrantToken token;
+    RandoGrantResult result = Rando_PrepareGrant(
+        LOC_Ether_Tablet, ITEM_Ether, 0x10, &token);
+    if (result != kRandoGrantResult_Accepted &&
+        result != kRandoGrantResult_NotActive)
+      return;
+  }
   button_b_frames = 0xc0;
   link_delay_timer_spin_attack = 0;
   link_player_handler_state = kPlayerState_ReceivingEther;
@@ -645,37 +653,35 @@ void LinkState_ReceivingEther() {  // 878570
     AncillaAdd_EtherSpell(0x18, 0);
     link_x_coord = x, link_y_coord = y;
   } else if (i == 0) {
-    // §6.5: dispatch the placed item at LOC_Ether_Tablet. The vanilla item
-    // is Ether (LttP code 0x10); rando can swap to any LttP code or trigger
-    // a direct-write sentinel. AncillaAdd_FallingPrizeRando handles both:
-    //   - LttP code matches a kFallingItem_Type entry → use that index
-    //   - otherwise → use fallback_idx=0 (Ether's visual coords) and
-    //     override the granted item via ancilla_item_to_link.
-    // If the dispatch returned kRandoLttpSkip (direct-write done), skip
-    // the FallingPrize spawn entirely.
-    // Anti-re-grant guard: tablets have no vanilla "already read" bit, so
-    // re-reading would re-dispatch Rando_DispatchVanillaGrant — which is NOT
-    // idempotent (re-runs Link_ReceiveItem / re-ticks the Triforce counter /
-    // re-writes prize bits), minting a duplicate item. SpritePrep_MedallionTable
-    // already fast-forwards the tablet to inert once LOC_Ether_Tablet is checked
-    // (so a revisit can't reach this), but guard the grant directly too: if the
-    // location is already checked under rando, end the cutscene without dispatch.
-    // Vanilla re-reads are idempotent (Ether is fixed), so leave vanilla alone.
-    if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
-        Rando_IsLocationChecked(LOC_Ether_Tablet)) {
+    RandoDeferredGrantToken token;
+    RandoGrantResult result = Rando_PrepareGrant(
+        LOC_Ether_Tablet, ITEM_Ether, 0x10, &token);
+    if (result == kRandoGrantResult_AlreadyChecked) {
       Link_EndTabletDirectGrantCutscene();
       return;
     }
-    uint8 lttp_code = 0x10;  // vanilla Ether
-    if (enhanced_features1 & kFeatures1_RandomizerActive) {
-      lttp_code = Rando_DispatchVanillaGrant(LOC_Ether_Tablet, ITEM_Ether, lttp_code);
+    if (result == kRandoGrantResult_Retryable ||
+        result == kRandoGrantResult_Invalid) {
+      button_b_frames = 1;  // preserve and retry; never substitute vanilla
+      return;
     }
-    if (Rando_ShouldSkipReceive(lttp_code)) {
-      // §7.6 + Slice 9 — Ether tablet direct-grant cue with placed-item icon.
-      Rando_ShowDirectGrantConfirmation((uint8)Rando_LastDispatchedItemId());
-      Link_EndTabletDirectGrantCutscene();
+    if (result == kRandoGrantResult_NotActive) {
+      AncillaAdd_FallingPrize(0x29, 0, 4);
+      flag_is_link_immobilized = 1;
+      flag_block_link_menu = 0;
+      return;
+    }
+
+    int prize = AncillaAdd_FallingPrizeRando(0x29, &token, 0, 4);
+    if (prize < 0) {
+      result = Rando_CommitPreparedGrant(
+          &token, kRandoGrantPresentation_Quiet, 0, 0);
+      if (result == kRandoGrantResult_Accepted ||
+          result == kRandoGrantResult_AlreadyChecked)
+        Link_EndTabletDirectGrantCutscene();
+      else
+        button_b_frames = 1;
     } else {
-      AncillaAdd_FallingPrizeRando(0x29, lttp_code, 0, 4);
       flag_is_link_immobilized = 1;
       flag_block_link_menu = 0;
     }
@@ -683,6 +689,14 @@ void LinkState_ReceivingEther() {  // 878570
 }
 
 void BombosTablet_StartCutscene() {  // 8785e5
+  if (enhanced_features1 & kFeatures1_RandomizerActive) {
+    RandoDeferredGrantToken token;
+    RandoGrantResult result = Rando_PrepareGrant(
+        LOC_Bombos_Tablet, ITEM_Bombos, 0x0f, &token);
+    if (result != kRandoGrantResult_Accepted &&
+        result != kRandoGrantResult_NotActive)
+      return;
+  }
   button_b_frames = 0xe0;
   link_delay_timer_spin_attack = 0;
   link_player_handler_state = kPlayerState_ReceivingBombos;
@@ -707,27 +721,34 @@ void LinkState_ReceivingBombos() {  // 8785fb
     AncillaAdd_BombosSpell(0x19, 0);
     link_x_coord = x, link_y_coord = y;
   } else if (i == 0) {
-    // §6.5: dispatch the placed item at LOC_Bombos_Tablet. Vanilla Bombos
-    // (LttP code 0x0f); item_idx=5 is the Bombos visual.
-    // Anti-re-grant guard (see LinkState_ReceivingEther for rationale): tablets
-    // have no vanilla "already read" bit, so re-reading would re-dispatch the
-    // non-idempotent Rando_DispatchVanillaGrant. SpritePrep_MedallionTable goes
-    // inert once LOC_Bombos_Tablet is checked; guard the grant directly too.
-    if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
-        Rando_IsLocationChecked(LOC_Bombos_Tablet)) {
+    RandoDeferredGrantToken token;
+    RandoGrantResult result = Rando_PrepareGrant(
+        LOC_Bombos_Tablet, ITEM_Bombos, 0x0f, &token);
+    if (result == kRandoGrantResult_AlreadyChecked) {
       Link_EndTabletDirectGrantCutscene();
       return;
     }
-    uint8 lttp_code = 0x0f;  // vanilla Bombos
-    if (enhanced_features1 & kFeatures1_RandomizerActive) {
-      lttp_code = Rando_DispatchVanillaGrant(LOC_Bombos_Tablet, ITEM_Bombos, lttp_code);
+    if (result == kRandoGrantResult_Retryable ||
+        result == kRandoGrantResult_Invalid) {
+      button_b_frames = 1;
+      return;
     }
-    if (Rando_ShouldSkipReceive(lttp_code)) {
-      // §7.6 + Slice 9 — Bombos tablet direct-grant cue with placed-item icon.
-      Rando_ShowDirectGrantConfirmation((uint8)Rando_LastDispatchedItemId());
-      Link_EndTabletDirectGrantCutscene();
+    if (result == kRandoGrantResult_NotActive) {
+      AncillaAdd_FallingPrize(0x29, 5, 4);
+      flag_is_link_immobilized = 1;
+      return;
+    }
+
+    int prize = AncillaAdd_FallingPrizeRando(0x29, &token, 5, 4);
+    if (prize < 0) {
+      result = Rando_CommitPreparedGrant(
+          &token, kRandoGrantPresentation_Quiet, 0, 0);
+      if (result == kRandoGrantResult_Accepted ||
+          result == kRandoGrantResult_AlreadyChecked)
+        Link_EndTabletDirectGrantCutscene();
+      else
+        button_b_frames = 1;
     } else {
-      AncillaAdd_FallingPrizeRando(0x29, lttp_code, 5, 4);
       flag_is_link_immobilized = 1;
     }
   }
@@ -2027,6 +2048,38 @@ void PlayerHandler_15_HoldItem() {  // 8799ac
 }
 
 void Link_ReceiveItem(uint8 item, int chest_position) {  // 8799ad
+  // The vanilla routine mutates Link into the hold-up state before it knows
+  // whether AncillaAdd_ItemReceipt can allocate. Keep that byte behavior when
+  // rando is inactive, but active-randomizer grants must establish acceptance
+  // first: on saturation, apply the completed receipt effects without touching
+  // Link's auxiliary/input/movement/pose/damage/dash state.
+  if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+      !ItemReceipt_CanAccept(item))
+    return;
+  if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+      !ItemReceipt_CanAllocate()) {
+    uint8 receipt_method = item_receipt_method;
+    uint8 health_capacity_before = link_health_capacity;
+    if (ItemReceipt_GrantWithoutAnimation(item)) {
+      uint8 receipt_sfx = 0x0f;
+      if (item == 0x3e)
+        receipt_sfx = link_health_capacity != health_capacity_before ? 0x0d : 0x2e;
+      else if ((item == 0x26 || item == 0x3f) &&
+               link_health_capacity != health_capacity_before)
+        receipt_sfx = 0x0d;
+      sound_effect_2 = Link_CalculateSfxPan() | receipt_sfx;
+      if (item != 0x20 && item != 0x37 && item != 0x38 && item != 0x39)
+        Hud_RefreshIcon();
+      // Method 3 is a falling-prize handoff whose caller already immobilized
+      // Link while the prize was in flight. A completed quiet fallback owns
+      // the same teardown as Ancilla22_ItemReceipt; preserving that receipt-
+      // owned flag would strand Link after an otherwise successful grant.
+      if (receipt_method == 3)
+        ItemReceipt_CompleteMethod3WithoutAnimation(item);
+    }
+    return;
+  }
+
   if (link_auxiliary_state) {
     link_auxiliary_state = 0;
     link_incapacitated_timer = 0;
@@ -4130,59 +4183,23 @@ void Link_PerformOpenChest() {  // 87b574
     return;
   bitfield_for_a_button = 0;
   int chest_position = -1;
-  uint8 item = OpenChestForItem(index_of_interacting_tile, &chest_position);
+  RandoGrantResult grant_result = kRandoGrantResult_NotActive;
+  uint8 item = OpenChestForItem(index_of_interacting_tile, &chest_position,
+                                &grant_result);
   if (sign8(item)) {
     item_receipt_method = 0;
     return;
   }
   assert(chest_position != -1);
+  if (grant_result == kRandoGrantResult_Accepted ||
+      grant_result == kRandoGrantResult_AlreadyChecked)
+    return;
   item_receipt_method = 1;
   uint8 alt = kReceiveItemAlternates[item];
   if (alt != 0xff) {
     uint16 ram_addr = kMemoryLocationToGiveItemTo[item];
     if (g_ram[ram_addr])
       item = alt;
-  }
-
-  // §6.3 universal chest dispatch hook. The (dungeon_room_index, chest
-  // ordinal) pair is fed through chest_lookup() in rando.c, backed by the
-  // codegen-emitted kRandoChestLookup table in src/rando/chest_lookup.h
-  // (164 entries covering all ALTTPR Chest/BigChest locations from
-  // audit.md §0.3.5). When rando is inactive the wrapper is a no-op.
-  //
-  // Chest ordinal = (chest tile id - 0x58). Tiles 0x58..0x5d encode the
-  // 6 possible chests within a room as ordinals 0..5; OpenChestForItem
-  // uses the same convention via `tile - 0x58`.
-  if (enhanced_features1 & kFeatures1_RandomizerActive) {
-    uint8 chest_ord = (uint8)(index_of_interacting_tile - 0x58);
-    if (chest_ord <= 5) {
-      item = Rando_ChestDispatch((uint16)dungeon_room_index, chest_ord, item);
-    }
-  }
-
-  // §6.2 sentinel: when the placement at this chest is a direct-grant
-  // item (TriforcePiece, HalfMagic/QuarterMagic, prize bits, dungeon-item
-  // bits), Rando_ChestDispatch returns kRandoLttpSkip. Passing 0xFE to
-  // Link_ReceiveItem would index 178 bytes past the end of the 76-entry
-  // dispatch tables in misc.c — arbitrary RAM corruption. The direct-grant
-  // has already been applied inside Rando_DispatchVanillaGrant.
-  //
-  // §7.6 — fire the generic confirmation cue here so the player gets a
-  // sound + HUD refresh; the chest opening itself is the visual.
-  //
-  // §7.6 audit follow-up: `item_receipt_method = 1` was set at line 3845
-  // and would normally be cleared by the AncillaAdd_ItemReceipt pipeline
-  // that Link_ReceiveItem starts. The skip-and-return path never enters
-  // that pipeline, so the field would leak — and line 3835's guard
-  // `... || item_receipt_method || ...` would block any further chest
-  // opening indefinitely. Clear it explicitly before returning.
-  if (Rando_ShouldSkipReceive(item)) {
-    // §7.6 + Slice 9 — chest direct-grant cue. The placed item id was set
-    // inside Rando_ChestDispatch -> Rando_DispatchVanillaGrant immediately
-    // above; retrieve it for the per-item icon lookup.
-    Rando_ShowDirectGrantConfirmation((uint8)Rando_LastDispatchedItemId());
-    item_receipt_method = 0;
-    return;
   }
 
   Link_ReceiveItem(item, chest_position);
@@ -4516,7 +4533,7 @@ label_3:
   if (tiledetect_key_lock_gravestones & 0x20) {
     uint16 bak = R14;
     int dummy;
-    OpenChestForItem(tiledetect_tile_type, &dummy);
+    OpenChestForItem(tiledetect_tile_type, &dummy, NULL);
     tiledetect_tile_type = 0;
     R14 = bak;
   }
@@ -7052,33 +7069,17 @@ void DiggingGameGuy_AttemptPrizeSpawn() {  // 9dfd5c
     if (beamos_x_hi[0] ||
         (!easy_minigames && (beamos_x_hi[1] < 25 || (GetRandomNumber() & 3))))
       return;
-    // Phase B Slice 8 §67 — Digging Game minigame dispatch. Case 4 is the
-    // "win" outcome (vanilla lttp code 0x17 — the quarter Piece of Heart;
-    // 0x26 is the full heart-container code, NOT a PoH). Under rando the placed
-    // item is granted via Rando_ReceiveOrConfirm: direct-grant items
-    // (HalfMagic/Triforce/prize/dungeon bits) are applied in-place by
-    // Rando_DispatchVanillaGrant and fire only the confirmation cue, while
-    // non-direct-grant placements (Bow/Sword/Bottle/Hookshot/...) are handed to
-    // Link_ReceiveItem. Either way we then RETURN without spawning the 0xeb PoH
-    // sprite, so the player gets exactly the placed item and never a stray PoH.
-    // (Earlier this branch only handled direct-grant items and fell through to
-    // the PoH sprite for everything else — that silently swapped a placed
-    // progression item for a Piece of Heart while marking the location checked,
-    // making the seed uncompletable. Mirrors the Hammer Pegs dispatch.)
     if (enhanced_features1 & kFeatures1_RandomizerActive) {
-      // Anti-farm guard: Rando_DispatchVanillaGrant -> Rando_OnLocationCheck is
-      // NOT idempotent (it re-marks the location and re-returns the placed item
-      // on every call). Sprite_D5_DigGameGuy case 1 resets the only re-roll
-      // guard (beamos_x_hi[0]=0) on each paid 80-rupee replay, so without this
-      // a Triforce piece / progressive / prize placed here would FARM. Once
-      // LOC_Digging_Game is checked, suppress the win outright: no re-dispatch,
-      // no 0xeb prize sprite. (Same rationale as the tablet guards above.)
-      if (Rando_IsLocationChecked(LOC_Digging_Game))
+      RandoGrantResult grant = Rando_GrantLocation(
+          LOC_Digging_Game, ITEM_PieceOfHeart, 0x17,
+          kRandoGrantPresentation_Animated, 0, 0);
+      if (grant == kRandoGrantResult_Accepted ||
+          grant == kRandoGrantResult_AlreadyChecked) {
+        beamos_x_hi[0] = 0xeb;
         return;
-      uint8 placed_lttp = Rando_DispatchVanillaGrant(LOC_Digging_Game, ITEM_PieceOfHeart, 0x17);
-      beamos_x_hi[0] = 0xeb;  // mark "win consumed" so we don't re-roll
-      Rando_ReceiveOrConfirm(placed_lttp, (uint8)Rando_LastDispatchedItemId());
-      return;
+      }
+      if (grant != kRandoGrantResult_NotActive)
+        return;  // preserve the session's win opportunity for a later retry
     }
     item_to_spawn = beamos_x_hi[0] = 0xeb;
     break;

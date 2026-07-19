@@ -996,12 +996,12 @@ void SaveLoadSlot(int cmd, int which) {
   }
 }
 
-// §11.2 / §1.2 init-order replay guard helper. Loads the savestate at
+// §11.2 / §1.2 initialization + snapshot guard helper. Loads the savestate at
 // `path` in replay mode — StateRecorder_Load restores g_ram from the
 // snapshot's base_snapshot without running any frames. Caller (main.c
-// --vanilla-ram-check CLI mode) then reads the new kRam_* offsets to
-// confirm they retained their init-zero value through the chapter
-// replay. Returns true on successful load, false if fopen failed.
+// --vanilla-ram-check CLI mode) then dumps the entire owned range to confirm
+// the committed base snapshot leaves it unused. No frames are stepped. Returns
+// true on successful load, false if fopen failed.
 bool ZeldaLoadSavestateForRamDump(const char *path) {
   FILE *f = fopen(path, "rb");
   if (!f) return false;

@@ -1,0 +1,86 @@
+# Versioned generation-performance scenarios. Settings and seeds stay owned by
+# tests/rando_corpus/manifest.yaml; each reference pins the placement digest so
+# a renamed, duplicated, or rebaselined corpus row cannot silently change what
+# this suite measures.
+format_version: 1
+generator_version: 153
+corpus_manifest: tests/rando_corpus/manifest.yaml
+
+scenarios:
+  - name: default-generation
+    suite: public
+    statistic: median
+    budget_ms: 2000
+    gating: true  # Existing cross-platform catastrophic budget.
+    samples:
+      - corpus_label: a1-open-fast-ganon-default
+        expected_digest: f2886e4576f7e048eaf4389f508d3f7da7e9dbdd387cbd9f2902b8756314f88b
+      - corpus_label: a1-seed-0xCAFE
+        expected_digest: d675da43aa5e088e193f222cafedf1f4bfc2a7767bbc31da69f0a7efd786ac77
+      - corpus_label: a1-seed-0x100
+        expected_digest: 11140d0dc3ad7d1d6dabb3c3d0f3a6cbe5cd593ecca5d769487bb813e877cbdb
+      - corpus_label: a1-seed-large
+        expected_digest: c983d2caabb83e788c930269d4ca1a2890d196322f9b1881faa870daca7d4a4e
+      - corpus_label: a1-seed-multibyte
+        expected_digest: 0755373bcba3bc6fd6912d200f138643631ba360cb65239bd34fd5921d9fc4c0
+      - corpus_label: a1-seed-prime
+        expected_digest: 354de7a03aac5dafb85bc5d557afaaf69a719860005539b9dc598fa2ead173f7
+      - corpus_label: a1-seed-zero
+        expected_digest: 2b0aac336a28444067abe2f5649f54e75ee11412918b292e02f06f0587ee1c14
+
+  - name: chains-hunt
+    suite: public
+    statistic: max
+    budget_ms: 10000
+    gating: false  # Telemetry until three clean hosted-Linux runs are recorded.
+    samples:
+      - corpus_label: chains-hunt-none
+        expected_digest: 0993696a4eb0fd32ae6f4471690a5be017b5ab5313e8e2e8a0e467b312a9459a
+
+  - name: door-shuffle
+    suite: public
+    statistic: max
+    budget_ms: 45000
+    gating: false  # Telemetry until three clean hosted-Linux runs are recorded.
+    samples:
+      - corpus_label: c-door-basic-open-ganon
+        expected_digest: 2fbd7ac1f5a21dcbfb1100e1f01886052bc212ed72f203c8d3b8f6e9df15233c
+
+  - name: key-rings-door-shuffle
+    suite: public
+    statistic: max
+    budget_ms: 90000
+    gating: false  # Telemetry until three clean hosted-Linux runs are recorded.
+    samples:
+      - corpus_label: key-rings-random-door-basic
+        expected_digest: 59979715b46671616a5748abede6f9935f0ae15f6566ec68ff2346d414946a0b
+
+  - name: terrain-dungeon-entrances
+    suite: local
+    statistic: max
+    budget_ms: 5000
+    # Gating after 2026-07-19 target-local calibration: 477/496/630 ms.
+    gating: true
+    samples:
+      - corpus_label: terrain-dungeon-entrance-composes
+        expected_digest: 57a0411c5d1aa49052c7ed622d530d32cc202361f7da1069fef7ffd64d9b32d9
+
+  - name: chains-pots-souls
+    suite: local
+    statistic: max
+    budget_ms: 10000
+    # Gating after 2026-07-19 target-local calibration: 1833/1845/2184 ms.
+    gating: true
+    samples:
+      - corpus_label: chains-pots-souls-compose
+        expected_digest: 80449400684cc24a32af50b286cea58a7f17dceb34a8405e048a7dcc2c857faf
+
+  - name: door-npc-souls-pot-keys
+    suite: local
+    statistic: max
+    budget_ms: 90000
+    # Gating after 2026-07-19 target-local calibration: 33704/35521/38013 ms.
+    gating: true
+    samples:
+      - corpus_label: door-npc-souls-pot-keys
+        expected_digest: c6cf84cf5734f9e8418fdc6cea4a3e0e8d1d689b088c1617d6e58e08140cb168

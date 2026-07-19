@@ -12,20 +12,20 @@ placement algorithm or RNG behavior changed. This tool:
      ``kGeneratorVersion``.
   4. Prints a summary of changed digests for inclusion in the commit message.
 
-**A0 status (scaffold)**: until task 1.6a's ``--generate-seed`` produces real
-spoiler JSON (Phase A1 single-seed path is wired but reads default settings),
-this script's "regenerate" step is a stub that reports which entries WOULD
-change. Once the generator stabilizes (task 14.1b acceptance), flip the
-``--apply`` flag on in CI to write the updates.
+Regeneration is fail-closed: a missing binary, failed generator invocation, or
+missing spoiler/digest aborts the entire operation before the manifest version
+or any row is written.
 
 Usage:
   python assets/scripts/bump_rando_corpus.py            # dry-run: report
   python assets/scripts/bump_rando_corpus.py --apply    # write updated manifest
+  python assets/scripts/bump_rando_corpus.py --binary=./zelda3 --apply
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -41,7 +41,11 @@ BINARY = REPO / "zelda3"
 
 def current_generator_version() -> int:
     """Read kGeneratorVersion from src/rando/rando.h."""
-    text = RANDO_H.read_text(encoding="utf-8")
+    try:
+        text = RANDO_H.read_text(encoding="utf-8")
+    except OSError as exc:
+        print(f"ERROR: cannot read {RANDO_H}: {exc}", file=sys.stderr)
+        sys.exit(2)
     match = re.search(r"#define\s+kGeneratorVersion\s+(\d+)u?\b", text)
     if not match:
         print("ERROR: kGeneratorVersion not found in src/rando/rando.h")
@@ -65,8 +69,24 @@ def version_line(version: int, note: str = "") -> str:
 
 
 def write_lf(path: Path, text: str) -> None:
-    with path.open("w", encoding="utf-8", newline="\n") as fp:
-        fp.write(text)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp",
+                                    dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fp:
+            fp.write(text)
+        os.replace(tmp_name, path)
+    except Exception:
+        try:
+            os.unlink(tmp_name)
+        except FileNotFoundError:
+            pass
+        raise
+
+
+def is_sha256_hex(value: object) -> bool:
+    return (isinstance(value, str) and len(value) == 64 and
+            all(ch in "0123456789abcdefABCDEF" for ch in value))
 
 
 # Matches the whole generator_version line (incl. any trailing comment) so the
@@ -179,9 +199,9 @@ def main(argv: list[str]) -> int:
                              "(e.g. --note 'Inverted Ganon override').")
     args = parser.parse_args(argv)
 
-    if not args.manifest.exists():
+    if not args.manifest.is_file():
         print(f"ERROR: {args.manifest} not found")
-        return 1
+        return 2
 
     # Use PyYAML if available; fall back to manual parse for the simple fields.
     try:
@@ -219,17 +239,26 @@ def main(argv: list[str]) -> int:
             print(f"\n[dry-run] Would write generator_version: {current}")
         return 0
 
+    binary = args.binary.resolve()
+    if not binary.is_file():
+        print(f"ERROR: binary {binary} not found; refusing to skip corpus rows. "
+              "Build it or pass --binary=<path>.", file=sys.stderr)
+        return 2
+
     # Regenerate digests.
     print("\nRegenerating placement digests...")
     changed: list[tuple[int, str, str, str]] = []  # (idx, label, old, new) — placement digest
     sphere_changes: list[tuple[int, str, str]] = []  # (idx, old, new) — sphere digest
+    failed: list[str] = []
     for i, entry in enumerate(entries):
         old = entry.get("expected_digest", "<absent>")
         old_sphere = entry.get("expected_sphere_digest", "")
-        new, new_sphere = regenerate_entry(args.binary, entry.get("settings", {}),
+        new, new_sphere = regenerate_entry(binary, entry.get("settings", {}),
                                             str(entry.get("seed", "")))
-        if new is None:
-            print(f"  [{i}] {entry.get('label', '?')}: SKIP (generator unavailable / failed)")
+        if not is_sha256_hex(new) or (old_sphere and not is_sha256_hex(new_sphere)):
+            label = str(entry.get("label", "?"))
+            failed.append(label)
+            print(f"  [{i}] {label}: FAIL (missing or malformed generated digest)")
             continue
         # NOTE: prior versions returned ("<ZRSR>", "<ZRSR>") for race-mode
         # entries and skipped here. The M3 fix at regenerate_entry now
@@ -248,12 +277,22 @@ def main(argv: list[str]) -> int:
             sphere_changes.append((i, old_sphere, new_sphere))
             entry["expected_sphere_digest"] = new_sphere
 
+    if failed:
+        print("\nERROR: corpus regeneration failed for " + ", ".join(failed),
+              file=sys.stderr)
+        print("Refusing to update generator_version or any digest until every "
+              "manifest row regenerates successfully.", file=sys.stderr)
+        return 1
+
     if args.apply:
         # Update generator_version + serialize back. The version line's comment is
         # regenerated (never preserved → never stale); entry digests are updated
         # in place below, which DOES preserve their surrounding comments/layout.
-        new_text = VERSION_LINE_RE.sub(
+        new_text, version_replacements = VERSION_LINE_RE.subn(
             lambda m: version_line(current, args.note), text, count=1)
+        replacement_failures: list[str] = []
+        if version_replacements != 1:
+            replacement_failures.append("generator_version line")
         # In-place digest update preserves the manifest's comments + layout.
         # Match each entry by label and replace only within that entry block,
         # so repeated placeholder digests cannot update the wrong row.
@@ -262,15 +301,19 @@ def main(argv: list[str]) -> int:
                 continue
             new_text, replaced = replace_entry_field(new_text, label, "expected_digest", new_d)
             if not replaced:
-                print(f"  WARNING: could not update expected_digest for {label}",
-                      file=sys.stderr)
+                replacement_failures.append(f"expected_digest for {label}")
         # Same in-place update for sphere digests.
         for (idx, old_s, new_s) in sphere_changes:
             label = entries[idx].get("label", "?") if idx < len(entries) else "?"
             new_text, replaced = replace_entry_field(new_text, label, "expected_sphere_digest", new_s)
             if not replaced:
-                print(f"  WARNING: could not update expected_sphere_digest for {label}",
-                      file=sys.stderr)
+                replacement_failures.append(f"expected_sphere_digest for {label}")
+        if replacement_failures:
+            print("\nERROR: manifest replacement plan was incomplete:", file=sys.stderr)
+            for failure in replacement_failures:
+                print(f"  - {failure}", file=sys.stderr)
+            print("Refusing to write a partially restamped corpus.", file=sys.stderr)
+            return 1
         write_lf(args.manifest, new_text)
         print(f"\nWrote updated manifest to {args.manifest}")
         print(f"  generator_version: {in_manifest} -> {current}")

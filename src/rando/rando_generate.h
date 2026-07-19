@@ -107,6 +107,19 @@ typedef struct RandoGenerateResult {
   RandoPlacementTable placement;  // OWNED malloc'd copy when requested (caller frees); {0} otherwise
 } RandoGenerateResult;
 
+// Noncanonical deterministic work telemetry for one generator run. These
+// counters are for performance diagnosis only and are never serialized into a
+// slot, spoiler, share string, race stamp, or placement digest.
+typedef struct RandoGenerationWorkCounters {
+  uint32 placement_attempts;
+  uint32 door_generation_attempts;
+  uint64 reachability_expansion_passes;
+} RandoGenerationWorkCounters;
+
+void Rando_WorkCountersBeginGeneration(void);
+void Rando_WorkCountersEndGeneration(void);
+const RandoGenerationWorkCounters *Rando_GetLastGenerationWorkCounters(void);
+
 // Game-thread only. Runs the full playable-slot generation: placement + share +
 // spoiler files + sidecar slot write + SRAM commit + recommended-features apply.
 // Does NOT call Placement_Install (install is slot-load-only). budget<0 => 0

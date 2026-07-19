@@ -53,7 +53,10 @@ The randomizer lives inside the same `zelda3` executable as the vanilla port.
 | `--allow-broken-seed` | Bypass the goal-completability refusal — writes a spoiler even when `goal_completable=false`. Diagnostic use only. |
 | `--customizer=<path>` | Customizer mode: load a manifest that PINS a subset of locations to chosen items; the assumed-fill placer completes the rest. See [Customizer mode](#customizer-mode). |
 | `--print-assets-hash` | Print the SHA-256 of the loaded `zelda3_assets.dat` and exit. Useful for baking the vanilla hash. |
-| `--rando-selftest` | Run subsystem self-tests (SHA-256 vectors, RNG, settings, logic, placement, prize/medallion shuffles, boss shuffle, drop shuffle, save, textfield, dispatch) and exit. CI invokes this on every Linux / macOS / Windows runner. |
+| `--rando-selftest` | Run the complete subsystem suite and exit. CI invokes it on every Linux / macOS / Windows runner. |
+| `--rando-selftest=list` | Print the stable focused groups: `config`, `grant`, `logic`, `generation`, `runtime`, `persistence`, and `ui`. |
+| `--rando-selftest=<group>` | Run one focused group. The `grant` group runs twice in one process to expose leaked fixture/RAM state. Unknown groups fail with exit 64. |
+| `--rando-grant-check` | Stable CI alias for `--rando-selftest=grant`; exercises generated item semantics, receipt saturation, transactions, presentation, representative production adapters/decision seams, and structural source enforcement. It does not frame-step every gameplay handler, physics path, or cutscene. |
 | `--race-mode` | Generate a race-mode seed. Overrides `--settings=race_mode=false`. The spoiler is written as a 141-byte suppressed `ZRSR` binary file at the same path (instead of full JSON + .txt sibling); reveal via `--reveal-spoiler` to expand. |
 | `--reveal-spoiler=<path>` | Read a suppressed `ZRSR` file at `<path>`, validate magic + CRC + version + stamp, regenerate the placement, and overwrite the file in place with the full JSON. Writes a sibling `.txt` text spoiler. Exits 0 on success; non-zero with a numeric `kRandoReveal_*` code on any failure (CrcMismatch, VersionMismatch, StampMismatch, ParseError, FileNotFound). Idempotent: a second invocation on an already-revealed file is a no-op success. |
 
@@ -62,7 +65,7 @@ Examples:
 # Print the asset hash to bake vanilla_assets_hash.h
 ./zelda3 --print-assets-hash
 
-# Run the regression-corpus self-tests
+# Run the complete subsystem suite (the placement corpus is a separate tool)
 ./zelda3 --rando-selftest
 
 # Generate a Completionist seed at hard pool difficulty with a 30-second budget
@@ -1471,7 +1474,9 @@ no-op stubs there, so the Switch build links cleanly with the server omitted.
 Per `audit.md` §0.9, every write to a tracked inventory cell (`link_item_*`,
 `link_bottle_info[*]`, `link_has_crystals`, etc.) MUST either:
 
-1. Flow through `Rando_OnLocationCheck` (the §6 dispatch path); OR
+1. Flow through the public prepare/commit transaction API
+   (`Rando_PrepareGrant` plus `Rando_CommitPreparedGrant`, or
+   `Rando_GrantLocation`); OR
 2. Carry an explicit `// rando-exempt: <reason>` comment immediately above
    the write line.
 
@@ -1491,11 +1496,29 @@ Example:
 link_bottle_info[btidx] = 2;
 ```
 
-`assets/scripts/check_audit_guard.py` enforces this convention in CI; it now
-runs in `--strict` mode (see `.github/workflows/rando_ci.yaml`), so an
-undispatched, un-exempted inventory write fails the build.
+`assets/scripts/check_audit_guard.py` enforces this convention in CI; it runs
+in `--strict` mode, so an inventory write outside the approved delivery layer
+or without an exemption fails. `check_grant_consumers.py` separately requires
+randomized grant sites to use the public transaction API and keeps raw
+resolution/delivery calls on a narrow reasoned allowlist.
 
 ## Source-level CI guards (for contributors)
+
+The supported entry point is:
+
+```sh
+python assets/scripts/run_rando_validation.py quick  # edit loop
+python assets/scripts/run_rando_validation.py ci     # public assetless contract
+python assets/scripts/run_rando_validation.py full   # local pre-review gate
+```
+
+All profiles fail closed when a requested binary, object tree, savestate, or
+artifact is absent. CI can split source and runtime jobs with `ci --phase=source`
+and `ci --phase=runtime --build-mode=prebuilt --binary=<path>`.
+The `ci` source and `full` profiles automatically run the generator-version
+guard over the merge-base of `origin/main` (or `main`) and `HEAD`; if Git cannot
+resolve that range, validation fails with instructions to fetch the base or
+provide both `--base-sha` and `--head-sha`.
 
 The `rando-source-guards` job in `.github/workflows/rando_ci.yaml` runs a set of
 pure-Python checks that need **no build, no ROM, and no assets** — they read the
@@ -1505,10 +1528,13 @@ regression while authoring logic or bumping the generator:
 
 | Guard | What it catches |
 |---|---|
-| `check_audit_guard.py --strict` | An inventory-cell write that neither dispatches through `Rando_OnLocationCheck` nor carries a `// rando-exempt:` reason. |
+| `check_audit_guard.py --strict` | An inventory-cell write outside the approved delivery layer that lacks a `// rando-exempt:` reason. |
+| `check_grant_consumers.py` | A randomized grant site bypassing the public transaction API, or a new low-level resolver/delivery call not in the narrow reasoned allowlist. |
 | `check_no_embedded_data.py` | A long inline hex/data blob that belongs in a gitignored generated artifact. |
 | `check_determinism.py` / `check_byte_order.py` | Non-deterministic calls (`rand()`, `time()`, float) or unpinned byte order in `src/rando/`. |
 | `check_codegen_wiring.py` | A generated file referenced in one build system but not all three (Makefile / MSVC / Switch). |
+| `check_make_depfiles.py` | Missing C/C++ depfile flags/include/clean wiring; its post-build behavioral mode derives exact consumers from `.d` files, rejects unrelated rebuilds, proves unchanged codegen is a no-op, and exercises `clean_obj` only on scratch artifacts. |
+| `check_validation_contract.py` | CI stops delegating its source/runtime jobs to the central runner, or invokes an authoritative phase with missing, extra, or incorrect orchestration arguments. |
 | `check_generator_version.py` | A change to a bump-trigger path (see the policy below) that forgot to advance `kGeneratorVersion` (PR-gated). |
 | `check_corpus_version_sync.py` | The corpus manifest's `generator_version` drifting out of sync with `kGeneratorVersion` — including a digest-neutral bump that forgot to re-stamp the manifest. |
 | `check_logic_overrides.py` | A later base-level logic YAML **silently overriding** a location / macro / region declared in an earlier one with a *different* predicate — the King-Zora / Eastern-Palace "weaker predicate silently wins" regression class. Intentional overrides are allowlisted in the script with a reason. |
@@ -1516,25 +1542,33 @@ regression while authoring logic or bumping the generator:
 `rando_logic_gen.py --strict` also runs here (well-formedness, including the
 `region: 0xFFFF` binding warning). Build-dependent guards (`check_init_order`,
 `check_link_symbols`, the corpus with `--binary`, the slot-path generation guard,
-the invariant sweep, and the benchmark gate) run in the separate
+the invariant sweep, and the benchmark suite) run in the separate
 build/determinism jobs.
 
 Some guards need ROM-derived local artifacts and therefore cannot run in public
-CI. Before merging pot-table or asset-generation work, run:
+CI. Before review, run:
 
 ```sh
-python assets/scripts/run_rando_local_checks.py --binary=./bin/x64-Release/zelda3.exe
+python assets/scripts/run_rando_validation.py full
 ```
 
-That local runner refreshes the gitignored `assets/rando/pot_dump.gen.txt` via
-`--dump-pot-table`, regenerates the gitignored local pot registries
-`assets/rando/pots.gen.yaml` and `assets/rando/pot_key_depth.gen.yaml`, runs the
-freshness checks against those local artifacts, regenerates rando codegen, then
-runs `--rando-selftest` and the full regression corpus. Public CI builds without
-those ROM-derived pot registries and skips corpus entries that request
-`pot_shuffle`, but it does run the ROM-free binary guard suite on
-Linux/macOS/Windows. Linux/macOS contributors can use `make rando-local-checks`
-for a two-pass build/prepare/rebuild/check flow.
+The full profile refreshes pot, enemy, terrain, soul-room, and bonk registries,
+checks their freshness, regenerates rando codegen, performs a mandatory second
+build, then runs focused/all self-tests plus the dedicated grant-check alias,
+slot/invariant/initialization-and-snapshot checks, the
+full corpus, and performance checks. Only scenarios marked `gating: true` in
+the benchmark manifest fail for exceeding their declared elapsed-time budget;
+new complex cases remain telemetry-only until three clean target-environment
+runs are recorded. Every sample still fails on correctness errors or the
+budget-independent five-minute infrastructure safety timeout. Public
+CI rejects local ignored registries,
+asserts their compiled counts are zero, and runs the assetless corpus rows on
+Linux/macOS/Windows. Step timings are recorded as JSON under `tmp/`.
+
+When public CI has no ROM-derived pot registry,
+`check_rando_slot_path.py --allow-missing-pot-registry` does not skip the pot
+rows. It requires both `--generate-slot` and `--generate-seed` to reject them
+with the semantic missing-registry diagnostic; acceptance by either path fails.
 
 ## Generator version (`kGeneratorVersion`) bump policy
 

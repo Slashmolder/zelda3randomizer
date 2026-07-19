@@ -2,6 +2,8 @@
 #include "types.h"
 #include "sprite.h"
 
+bool SpriteMain_GrantPresentationSelfCheck(void);
+
 void Sprite_PullSwitch_bounce(int k);
 void GiantMoldorm_DrawSegment_AB(int k, int lookback);
 void GiantMoldorm_DrawSegment_C_OrTail(int k, int lookback);

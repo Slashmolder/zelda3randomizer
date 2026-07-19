@@ -66,35 +66,55 @@ def read_version(header: Path) -> int | None:
 
 
 def read_version_at(header_relpath: str, sha: str) -> int | None:
-    """Read kGeneratorVersion as it was at a given git SHA. Returns None on missing."""
+    """Read kGeneratorVersion at ``sha``; return None only when the path is absent."""
     # `git show <sha>:<path>` always uses repository-style forward slashes.
     # Path.__str__ emits backslashes on Windows, which made this gate silently
     # treat the existing header as absent and skip the required bump check.
     header_relpath = header_relpath.replace("\\", "/")
     try:
-        out = subprocess.run(
-            ["git", "show", f"{sha}:{header_relpath}"],
-            capture_output=True,
-            text=True,
-            check=False,
+        tree = subprocess.run(
+            ["git", "ls-tree", "-r", "--name-only", sha, "--", header_relpath],
+            capture_output=True, text=True, check=False,
         )
-    except FileNotFoundError:
+    except OSError as exc:
+        raise RuntimeError(f"cannot run git while reading base version: {exc}") from exc
+    if tree.returncode != 0:
+        detail = tree.stderr.strip() or f"exit {tree.returncode}"
+        raise RuntimeError(f"cannot inspect base sha {sha!r}: {detail}")
+    paths = {line.strip() for line in tree.stdout.splitlines() if line.strip()}
+    if header_relpath not in paths:
         return None
+
+    out = subprocess.run(
+        ["git", "show", f"{sha}:{header_relpath}"],
+        capture_output=True, text=True, check=False,
+    )
     if out.returncode != 0:
-        return None
+        detail = out.stderr.strip() or f"exit {out.returncode}"
+        raise RuntimeError(
+            f"cannot read {header_relpath} at base sha {sha!r}: {detail}"
+        )
     match = VERSION_PATTERN.search(out.stdout)
-    return int(match.group(1)) if match else None
+    if match is None:
+        raise RuntimeError(
+            f"{header_relpath} exists at base sha {sha!r} but has no kGeneratorVersion"
+        )
+    return int(match.group(1))
 
 
 def changed_files(base_sha: str, head_sha: str) -> list[str]:
-    out = subprocess.run(
-        ["git", "diff", "--name-only", f"{base_sha}..{head_sha}"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        out = subprocess.run(
+            ["git", "diff", "--name-only", f"{base_sha}..{head_sha}"],
+            capture_output=True, text=True, check=False,
+        )
+    except OSError as exc:
+        raise RuntimeError(f"cannot run git diff for generator-version gate: {exc}") from exc
     if out.returncode != 0:
-        return []
+        detail = out.stderr.strip() or f"exit {out.returncode}"
+        raise RuntimeError(
+            f"cannot diff generator-version range {base_sha!r}..{head_sha!r}: {detail}"
+        )
     return [line.strip() for line in out.stdout.splitlines() if line.strip()]
 
 
@@ -173,13 +193,17 @@ def main(argv: list[str]) -> int:
         # Local-invocation mode: presence + well-formedness check only.
         return 0
 
-    base_version = read_version_at(str(header), args.base_sha)
+    try:
+        base_version = read_version_at(str(header), args.base_sha)
+        changed = changed_files(args.base_sha, args.head_sha)
+    except RuntimeError as exc:
+        print(f"check_generator_version: {exc}", file=sys.stderr)
+        return 2
     if base_version is None:
         if not args.quiet:
             print(f"check_generator_version: header didn't exist at base sha {args.base_sha[:8]}; treating as new file.")
         return 0
 
-    changed = changed_files(args.base_sha, args.head_sha)
     triggered_by = [p for p in changed if any(matches_glob(p, g) for g in BUMP_TRIGGER_GLOBS)]
     if not triggered_by:
         if not args.quiet:

@@ -679,6 +679,7 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   bool assets_must_be_vanilla = false;
   bool race_mode = false;
   bool allow_broken_seed = false;
+  bool emit_work_counters = false;
 
   for (int i = 0; i < argc; ++i) {
     const char *a = argv[i];
@@ -698,6 +699,7 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
     else if (strcmp(a, "--assets-must-be-vanilla") == 0) assets_must_be_vanilla = true;
     else if (strcmp(a, "--race-mode") == 0) race_mode = true;
     else if (strcmp(a, "--allow-broken-seed") == 0) allow_broken_seed = true;
+    else if (strcmp(a, "--rando-work-counters") == 0) emit_work_counters = true;
   }
 
   // Validate flag combinations.
@@ -905,6 +907,8 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
       !Settings_EffectiveDungeonChains(&settings) &&
       Settings_EffectiveDoorShuffle(&settings) == kDoorShuffle_Vanilla;
 
+  Rando_WorkCountersBeginGeneration();
+
   if (shape_filter.enabled) {
     char shape_desc[256];
     SeedShape_Describe(&shape_filter, shape_desc, sizeof shape_desc);
@@ -932,20 +936,25 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
       continue;
     }
 
-    spheres_ok = Logic_ComputeSpheres(&settings, &table, &spheres);
-    if (!spheres_ok) {
-      snprintf(last_shape_reject, sizeof last_shape_reject,
-               "%u unreachable placement(s)",
-               (unsigned)spheres.unreachable_count);
-    }
+    if (shape_filter.enabled) {
+      // Shape evaluation is part of accepting/rejecting the candidate and is
+      // therefore included in generation work telemetry. Ordinary spoiler
+      // sphere construction happens after the counter freezes below.
+      spheres_ok = Logic_ComputeSpheres(&settings, &table, &spheres);
+      if (!spheres_ok) {
+        snprintf(last_shape_reject, sizeof last_shape_reject,
+                 "%u unreachable placement(s)",
+                 (unsigned)spheres.unreachable_count);
+      }
 
-    char shape_reject[160];
-    if (!SeedShape_Evaluate(&shape_filter, &settings, &table, &spheres,
-                            Placement_GetLastStats(), &shape_metrics,
-                            shape_reject, sizeof shape_reject)) {
-      snprintf(last_shape_reject, sizeof last_shape_reject, "%s", shape_reject);
-      Rando_ClearGenerationLogicOverlays();
-      continue;
+      char shape_reject[160];
+      if (!SeedShape_Evaluate(&shape_filter, &settings, &table, &spheres,
+                              Placement_GetLastStats(), &shape_metrics,
+                              shape_reject, sizeof shape_reject)) {
+        snprintf(last_shape_reject, sizeof last_shape_reject, "%s", shape_reject);
+        Rando_ClearGenerationLogicOverlays();
+        continue;
+      }
     }
 
     ok = true;
@@ -956,6 +965,22 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   }
   if (ok)
     seed_u64 = accepted_seed_u64;
+  Rando_WorkCountersEndGeneration();
+  if (emit_work_counters) {
+    const RandoGenerationWorkCounters *work =
+        Rando_GetLastGenerationWorkCounters();
+    fprintf(stderr,
+            "rando_work_counters: placement_attempts=%u "
+            "reachability_expansion_passes=%llu door_generation_attempts=%u\n",
+            (unsigned)work->placement_attempts,
+            (unsigned long long)work->reachability_expansion_passes,
+            (unsigned)work->door_generation_attempts);
+  }
+  if (ok && !shape_filter.enabled) {
+    // Output-only sphere construction is intentionally outside the frozen
+    // placement/door/reachability work counters.
+    spheres_ok = Logic_ComputeSpheres(&settings, &table, &spheres);
+  }
   if (!ok) {
     const char *cerr = Customizer_LastError();
     if (cerr[0] != '\0')
@@ -1570,6 +1595,57 @@ static void ConsumeRandoWindowGenerateRequest(void) {
 #endif
 
 #undef main
+
+static void PrintRandoSelfCheckGroups(FILE *stream) {
+  for (uint8 i = 0; i < Rando_SelfCheckGroupCount(); i++)
+    fprintf(stream, "%s\n", Rando_SelfCheckGroupName(i));
+}
+
+static int RunRandoSelfCheckCli(const char *argument) {
+  const char *group = NULL;
+  if (strcmp(argument, "--rando-grant-check") == 0) {
+    group = "grant";
+  } else if (strcmp(argument, "--rando-selftest") == 0) {
+    Config_SelfCheckKeymap();
+    Config_SelfCheckIniWriter();
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+    Cheats_SelfCheck();
+    Panels_RenderSmokeCheck();
+#endif
+    Rando_RunAllSelfChecks();
+    return 0;
+  } else if (strncmp(argument, "--rando-selftest=", 17) == 0) {
+    group = argument + 17;
+  } else {
+    return -1;
+  }
+
+  if (strcmp(group, "list") == 0) {
+    PrintRandoSelfCheckGroups(stdout);
+    return 0;
+  }
+
+  // The config/UI checks owned by main.c live outside the randomizer module,
+  // so named runs compose those host checks with the module's named registry.
+  if (strcmp(group, "config") == 0) {
+    Config_SelfCheckKeymap();
+    Config_SelfCheckIniWriter();
+  }
+#ifdef Z3R_NATIVE_SETTINGS_WINDOW
+  if (strcmp(group, "ui") == 0) {
+    Cheats_SelfCheck();
+    Panels_RenderSmokeCheck();
+  }
+#endif
+  if (Rando_RunSelfCheckGroup(group))
+    return 0;
+
+  fprintf(stderr, "Unknown randomizer self-check group '%s'. Available groups:\n",
+          group);
+  PrintRandoSelfCheckGroups(stderr);
+  return 64;
+}
+
 int main(int argc, char** argv) {
   argc--, argv++;
 
@@ -1579,6 +1655,8 @@ int main(int argc, char** argv) {
   // setup can block on modal dialogs.
   for (int i = 0; i < argc; ++i) {
     if (strcmp(argv[i], "--rando-selftest") == 0 ||
+        strncmp(argv[i], "--rando-selftest=", 17) == 0 ||
+        strcmp(argv[i], "--rando-grant-check") == 0 ||
         strcmp(argv[i], "--door-selftest") == 0 ||
         strcmp(argv[i], "--rando-bench-logic") == 0 ||
         strcmp(argv[i], "--generate-seed") == 0 ||
@@ -1622,21 +1700,14 @@ int main(int argc, char** argv) {
     }
   }
 
-  // Check for --rando-selftest BEFORE any SDL_Init. Runs the sub-system
-  // self-tests (SHA-256 NIST vectors + xoshiro256** determinism + future
-  // checks) and exits. CI invokes this on every Linux/macOS/Windows runner
-  // to guard cross-platform byte-identity (tasks.md §2.2).
+  // Check for randomizer self-test modes BEFORE any SDL_Init. The unqualified
+  // form preserves the complete historical suite; named groups make focused
+  // local/CI checks discoverable, and --rando-grant-check is the stable alias
+  // for the twice-per-process grant/dispatch regression group.
   for (int i = 0; i < argc; ++i) {
-    if (strcmp(argv[i], "--rando-selftest") == 0) {
-      Config_SelfCheckKeymap();    // keybind-model <-> rebuilt-hash equivalence (game-config UI)
-      Config_SelfCheckIniWriter(); // in-place INI writer fidelity (game-config UI)
-#ifdef Z3R_NATIVE_SETTINGS_WINDOW
-      Cheats_SelfCheck();          // cheat-core gate + clamp invariants (debug panels)
-      Panels_RenderSmokeCheck();   // headless render of every Debug/Randomizer panel
-#endif
-      Rando_RunAllSelfChecks();
-      return 0;
-    }
+    int selfcheck_result = RunRandoSelfCheckCli(argv[i]);
+    if (selfcheck_result >= 0)
+      return selfcheck_result;
     if (strcmp(argv[i], "--door-selftest") == 0) {
       // Door-shuffle generation net: stitch + prove every shuffleable
       // dungeon across N seeds; connectivity / prover / determinism /
@@ -1823,14 +1894,12 @@ int main(int argc, char** argv) {
     }
   }
 
-  // --vanilla-ram-check=<savestate-path>: init-order replay guard
-  // (tasks.md §11.2 / §1.2 / §1.0d). Boots the engine in headless mode,
-  // loads the chapter savestate via the replay-mode StateRecorder path
-  // (which restores g_ram from the snapshot's base_snapshot without
-  // running any frames), then prints the post-load values of the new
-  // kRam_* offsets. The script that drives this asserts each cell is
-  // zero — proof that pre-rando code paths in the savestate didn't
-  // touch the addresses we've claimed for randomizer state.
+  // --vanilla-ram-check=<savestate-path>: initialization + vanilla snapshot
+  // ownership guard (tasks.md §11.2 / §1.2 / §1.0d). Boots the engine in
+  // headless mode, captures the post-ZeldaInitialize owned bytes, and then
+  // restores the chapter savestate's base snapshot without stepping frames.
+  // It prints both complete byte ranges. The Python driver independently parses
+  // the declared bounds and validates both exact byte counts and zero invariants.
   for (int i = 0; i < argc; ++i) {
     if (strncmp(argv[i], "--vanilla-ram-check=", 20) == 0) {
       const char *sav_path = argv[i] + 20;
@@ -1840,25 +1909,36 @@ int main(int argc, char** argv) {
       // require the asset blob. This lets the check run in CI without
       // zelda3_assets.dat (CI doesn't extract from the ROM).
       ZeldaInitialize();
+      enum { kRandoOwnedLength = kRam_RandoOwnedEnd - kRam_RandoOwnedBegin + 1 };
+      uint8 initializer_bytes[kRandoOwnedLength];
+      bool initializer_ok = true;
+      for (int offset = 0; offset < kRandoOwnedLength; offset++) {
+        initializer_bytes[offset] = g_ram[kRam_RandoOwnedBegin + offset];
+        initializer_ok &= initializer_bytes[offset] == 0;
+      }
       if (!ZeldaLoadSavestateForRamDump(sav_path)) {
         fprintf(stderr, "--vanilla-ram-check: unable to open savestate '%s'\n", sav_path);
         return 2;
       }
-      // Read the three new kRam_* offsets from g_ram. Format is keyed so
-      // the python driver can parse robustly.
-      uint32 features1 = (uint32)g_ram[kRam_Features1] |
-                         ((uint32)g_ram[kRam_Features1 + 1] << 8) |
-                         ((uint32)g_ram[kRam_Features1 + 2] << 16) |
-                         ((uint32)g_ram[kRam_Features1 + 3] << 24);
-      uint8 slot_active = g_ram[kRam_RandoSlotActive];
-      uint8 starting_inv = g_ram[kRam_RandoStartingInventoryGranted];
-      bool ok = (features1 == 0 && slot_active == 0 && starting_inv == 0);
+      bool snapshot_ok = true;
+      for (int addr = kRam_RandoOwnedBegin; addr <= kRam_RandoOwnedEnd; addr++)
+        snapshot_ok &= g_ram[addr] == 0;
+
+      // Keep the dump deliberately simple and lossless. The driver does not
+      // trust the *_ok values; it checks the source-declared range and decodes
+      // both complete byte strings itself.
       fprintf(stdout,
-        "ram_check savestate=%s ok=%d "
-        "features1=0x%08x slot_active=0x%02x starting_inv=0x%02x\n",
-        sav_path, ok ? 1 : 0,
-        (unsigned)features1, (unsigned)slot_active, (unsigned)starting_inv);
-      return ok ? 0 : 1;
+              "ram_check savestate=%s owned_begin=0x%03x owned_end=0x%03x initializer_bytes=",
+              sav_path, kRam_RandoOwnedBegin, kRam_RandoOwnedEnd);
+      for (int offset = 0; offset < kRandoOwnedLength; offset++)
+        fprintf(stdout, "%02x", (unsigned)initializer_bytes[offset]);
+      fprintf(stdout, " snapshot_bytes=");
+      for (int addr = kRam_RandoOwnedBegin; addr <= kRam_RandoOwnedEnd; addr++)
+        fprintf(stdout, "%02x", (unsigned)g_ram[addr]);
+      fprintf(stdout, " initializer_ok=%d snapshot_ok=%d ok=%d\n",
+              initializer_ok ? 1 : 0, snapshot_ok ? 1 : 0,
+              initializer_ok && snapshot_ok ? 1 : 0);
+      return initializer_ok && snapshot_ok ? 0 : 1;
     }
   }
 

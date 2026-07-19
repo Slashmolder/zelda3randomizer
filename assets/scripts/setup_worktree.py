@@ -30,6 +30,8 @@ Usage:
     python assets/scripts/setup_worktree.py --verify     # check, don't copy
     python assets/scripts/setup_worktree.py --verify --require-pot-artifacts
     python assets/scripts/setup_worktree.py --verify --require-enemy-artifacts
+    python assets/scripts/setup_worktree.py --verify --require-terrain-artifacts
+    python assets/scripts/setup_worktree.py --verify --require-all-artifacts
 
 Resolution order for the source:
     1. --from PATH command-line override
@@ -42,7 +44,9 @@ otherwise. On Windows, vendored SDL2 is required; on other platforms it is not.
 Pot-shuffle artifacts are optional by default because public/assetless builds
 intentionally omit them; use `--require-pot-artifacts` for a pot-ready worktree.
 Enemy-check artifacts follow the same rule; use `--require-enemy-artifacts` for
-an enemy-drop-check-ready worktree.
+an enemy-drop-check-ready worktree. Terrain has a matching flag. The
+`--require-all-artifacts` profile requires every local registry used by the
+full randomizer validation flow, including soul-room and bonk registries.
 """
 
 from __future__ import annotations
@@ -175,6 +179,14 @@ def has_enemy_artifacts(d: Path) -> bool:
     return not missing_enemy_artifacts(d)
 
 
+def missing_terrain_artifacts(d: Path) -> list[str]:
+    return [rel for rel in TERRAIN_ARTIFACT_RELS if not (d / rel).is_file()]
+
+
+def has_terrain_artifacts(d: Path) -> bool:
+    return not missing_terrain_artifacts(d)
+
+
 def print_missing_sdl2(prefix: str, d: Path) -> None:
     missing = [rel for rel in SDL2_REQUIRED_RELS if not (d / rel).is_file()]
     print(f"{prefix} missing vendored SDL2 under {d / SDL2_REL}", file=sys.stderr)
@@ -207,6 +219,44 @@ def print_missing_enemy_artifacts(prefix: str, d: Path, *, required: bool) -> No
     print("  prepare after a bootstrap build with: python "
           "assets/scripts/run_rando_local_checks.py "
           "--binary=<built zelda3.exe> --prepare-only", file=sys.stderr)
+
+
+def print_missing_terrain_artifacts(prefix: str, d: Path, *, required: bool) -> None:
+    missing = missing_terrain_artifacts(d)
+    if not missing:
+        return
+    label = "required" if required else "optional"
+    print(f"{prefix} missing {label} local terrain-shuffle artifacts under "
+          f"{d / 'assets' / 'rando'}", file=sys.stderr)
+    for rel in missing:
+        print(f"  missing: {rel}", file=sys.stderr)
+    print("  prepare with: python assets/scripts/run_rando_local_checks.py "
+          "--binary=<built zelda3.exe> --prepare-only", file=sys.stderr)
+
+
+def requested_local_artifacts_ok(d: Path, *, require_pots: bool,
+                                 require_enemies: bool,
+                                 require_terrain: bool,
+                                 require_all: bool,
+                                 prefix: str) -> bool:
+    ok = True
+    if (require_pots or require_all) and not has_pot_artifacts(d):
+        print_missing_pot_artifacts(prefix, d, required=True)
+        ok = False
+    if (require_enemies or require_all) and not has_enemy_artifacts(d):
+        print_missing_enemy_artifacts(prefix, d, required=True)
+        ok = False
+    if (require_terrain or require_all) and not has_terrain_artifacts(d):
+        print_missing_terrain_artifacts(prefix, d, required=True)
+        ok = False
+    if require_all:
+        for rel, label in ((SOUL_ROOMS_REL, "soul-room registry"),
+                           (BONK_REGISTRY_REL, "bonk registry")):
+            if not (d / rel).is_file():
+                print(f"{prefix} missing required {label}: {rel}",
+                      file=sys.stderr)
+                ok = False
+    return ok
 
 
 def asset_signature_ok(asset_file: Path, repo: Path, *, label: str) -> bool:
@@ -253,6 +303,10 @@ def main() -> int:
                         help="fail if local pot-shuffle artifacts are absent")
     parser.add_argument("--require-enemy-artifacts", action="store_true",
                         help="fail if local enemy-check artifacts are absent")
+    parser.add_argument("--require-terrain-artifacts", action="store_true",
+                        help="fail if local terrain-shuffle artifacts are absent")
+    parser.add_argument("--require-all-artifacts", action="store_true",
+                        help="fail unless every local randomizer artifact is present")
     args = parser.parse_args()
 
     cwd = Path.cwd().resolve()
@@ -266,6 +320,7 @@ def main() -> int:
     have_hash = (cwd / VANILLA_ASSETS_HASH_REL).is_file()
     have_pots = has_pot_artifacts(cwd)
     have_enemies = has_enemy_artifacts(cwd)
+    have_terrain = has_terrain_artifacts(cwd)
     # add-enemy-souls: soul_rooms.gen.yaml is gitignored/ROM-derived. Like pots,
     # it must gate the "nothing to do" early-exit below — otherwise a worktree
     # that already has rom+assets+hash+chest+pots bails BEFORE the soul block
@@ -283,22 +338,27 @@ def main() -> int:
 
     if args.verify:
         if required_ready:
-            if not have_pots and args.require_pot_artifacts:
-                print_missing_pot_artifacts("setup_worktree:", cwd, required=True)
-                return 1
-            if not have_enemies and args.require_enemy_artifacts:
-                print_missing_enemy_artifacts("setup_worktree:", cwd, required=True)
+            if not requested_local_artifacts_ok(
+                    cwd,
+                    require_pots=args.require_pot_artifacts,
+                    require_enemies=args.require_enemy_artifacts,
+                    require_terrain=args.require_terrain_artifacts,
+                    require_all=args.require_all_artifacts,
+                    prefix="setup_worktree:"):
                 return 1
             pot_note = " + pot artifacts" if have_pots else ""
             enemy_note = " + enemy artifacts" if have_enemies else ""
+            terrain_note = " + terrain artifacts" if have_terrain else ""
             if need_sdl2:
-                print(f"setup_worktree: OK (rom + assets + chest table + hash + SDL2{pot_note}{enemy_note} present)")
+                print(f"setup_worktree: OK (rom + assets + chest table + hash + SDL2{pot_note}{enemy_note}{terrain_note} present)")
             else:
-                print(f"setup_worktree: OK (rom + assets + chest table + hash{pot_note}{enemy_note} present)")
+                print(f"setup_worktree: OK (rom + assets + chest table + hash{pot_note}{enemy_note}{terrain_note} present)")
             if not have_pots:
                 print_missing_pot_artifacts("setup_worktree:", cwd, required=False)
             if not have_enemies:
                 print_missing_enemy_artifacts("setup_worktree:", cwd, required=False)
+            if not have_terrain:
+                print_missing_terrain_artifacts("setup_worktree:", cwd, required=False)
             if not have_souls:
                 print(f"setup_worktree: {SOUL_ROOMS_REL} absent -- souls_shuffle=all "
                       f"fails closed; run this without --verify to produce it.",
@@ -324,18 +384,22 @@ def main() -> int:
         if not have_enemies:
             print_missing_enemy_artifacts("setup_worktree:", cwd,
                                           required=args.require_enemy_artifacts)
+        if not have_terrain:
+            print_missing_terrain_artifacts(
+                "setup_worktree:", cwd,
+                required=(args.require_terrain_artifacts or args.require_all_artifacts))
         return 1
 
     if (have_rom and assets_ok and have_ini and have_chest and have_hash and
-            have_pots and have_enemies and have_souls and have_bonk and
+            have_pots and have_enemies and have_terrain and have_souls and have_bonk and
             (have_sdl2 or not need_sdl2)):
         if need_sdl2:
             print("setup_worktree: nothing to do (rom + assets + hash + ini + "
-                  "chest table + pot artifacts + enemy artifacts + soul rooms + "
+                  "chest table + pot artifacts + enemy artifacts + terrain + soul rooms + "
                   "SDL2 already present)")
         else:
             print("setup_worktree: nothing to do (rom + assets + hash + ini + "
-                  "chest table + pot artifacts + enemy artifacts + soul rooms "
+                  "chest table + pot artifacts + enemy artifacts + terrain + soul rooms "
                   "already present)")
         return 0
 
@@ -377,6 +441,14 @@ def main() -> int:
                     required=args.require_enemy_artifacts)
                 if args.require_enemy_artifacts:
                     return 1
+            if not requested_local_artifacts_ok(
+                    cwd,
+                    require_pots=args.require_pot_artifacts,
+                    require_enemies=args.require_enemy_artifacts,
+                    require_terrain=args.require_terrain_artifacts,
+                    require_all=args.require_all_artifacts,
+                    prefix="setup_worktree:"):
+                return 1
             return 0
         if need_sdl2 and not have_sdl2:
             print_missing_sdl2("setup_worktree:", cwd)
@@ -411,6 +483,14 @@ def main() -> int:
                     print(f"setup_worktree: WARNING could not produce "
                           f"{BONK_REGISTRY_REL} -- bonk_shuffle seeds will fail "
                           f"closed.", file=sys.stderr)
+            if not requested_local_artifacts_ok(
+                    cwd,
+                    require_pots=args.require_pot_artifacts,
+                    require_enemies=args.require_enemy_artifacts,
+                    require_terrain=args.require_terrain_artifacts,
+                    require_all=args.require_all_artifacts,
+                    prefix="setup_worktree:"):
+                return 1
             print(f"setup_worktree: source == cwd ({source}); required inputs "
                   f"are present, nothing to mirror.")
             return 0
@@ -560,10 +640,8 @@ def main() -> int:
     # add-rando-grass-rock-shuffle: overworld terrain artifacts — mirror as a
     # complete set (dump + registry), like pots. Absence is fail-closed for the
     # grass/rock tiers (registry digest guard), so best-effort + loud warning.
-    terrain_missing_src = [rel for rel in TERRAIN_ARTIFACT_RELS
-                           if not (source / rel).is_file()]
-    terrain_missing_dst = [rel for rel in TERRAIN_ARTIFACT_RELS
-                           if not (cwd / rel).is_file()]
+    terrain_missing_src = missing_terrain_artifacts(source)
+    terrain_missing_dst = missing_terrain_artifacts(cwd)
     if terrain_missing_dst:
         if not terrain_missing_src:
             for rel in TERRAIN_ARTIFACT_RELS:
@@ -575,12 +653,11 @@ def main() -> int:
                 print(f"setup_worktree: copy {src_t} -> {dst_t}")
                 shutil.copy2(src_t, dst_t)
         else:
-            print(f"setup_worktree: WARNING source is missing terrain artifacts "
-                  f"{terrain_missing_src} -- grass/rock shuffle tiers will fail "
-                  f"closed in this worktree build. Run `zelda3 "
-                  f"--dump-terrain-table assets/rando/terrain_dump.gen.txt` + "
-                  f"`python assets/scripts/gen_terrain_tables.py --emit` in "
-                  f"{source}, then re-run this script.", file=sys.stderr)
+            print_missing_terrain_artifacts(
+                "setup_worktree: source", source,
+                required=(args.require_terrain_artifacts or args.require_all_artifacts))
+            if args.require_terrain_artifacts or args.require_all_artifacts:
+                return 1
 
     # add-enemy-souls: soul_rooms.gen.yaml — mirror, else regenerate from the
     # just-mirrored assets (needs only zelda3_assets.dat + committed door
@@ -623,6 +700,15 @@ def main() -> int:
         rc = ensure_vanilla_assets_hash(cwd)
         if rc:
             return rc
+
+    if not requested_local_artifacts_ok(
+            cwd,
+            require_pots=args.require_pot_artifacts,
+            require_enemies=args.require_enemy_artifacts,
+            require_terrain=args.require_terrain_artifacts,
+            require_all=args.require_all_artifacts,
+            prefix="setup_worktree:"):
+        return 1
 
     print("setup_worktree: done.")
     return 0

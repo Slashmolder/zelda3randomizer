@@ -63,6 +63,13 @@ enum {
   kRam_EnemyShuffleLiveSubset = 0x666,
   kRam_EnemyShuffleLiveKey = 0x66a,
   kRam_EnemyShuffleLiveContext = 0x66c,
+
+  // Inclusive ownership bounds for randomizer-only WRAM. Keep these explicit:
+  // the headless initialization + vanilla-snapshot guard and its independent parser use
+  // them as the contract for every byte that must remain untouched in vanilla
+  // snapshots, including padding inside multi-byte cells.
+  kRam_RandoOwnedBegin = 0x659,
+  kRam_RandoOwnedEnd = 0x66c,
 };
 
 enum {

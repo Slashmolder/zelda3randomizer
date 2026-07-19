@@ -4,6 +4,7 @@
 /.claude/
 .DS_Store
 *.dSYM
+*.d
 /*.vcxproj.user
 *.aps
 /obj/
@@ -69,6 +70,7 @@ __pycache__
 /src/rando/direct_grant_icons.h
 # CLI test outputs from --generate-seed runs.
 /out/
+/artifacts/
 /third_party/sha256/*.o
 /third_party/imgui/*.o
 /third_party/imgui/backends/*.o

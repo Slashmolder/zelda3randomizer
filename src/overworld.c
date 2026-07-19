@@ -3115,8 +3115,11 @@ void Overworld_Memorize_Map16_Change(uint16 pos, uint16 value) {  // 8edd40
   num_memorized_tiles = x + 2;
 }
 
+static bool s_rando_peg_grant_blocked;
+
 void HandlePegPuzzles(uint16 pos) {  // 8edd67
   static const uint16 kLwTurtleRockPegPositions[3] = { 0x826, 0x5a0, 0x81a };
+  s_rando_peg_grant_blocked = false;
 
   if (overworld_screen_index == 7) {
     // #82 Inverted: TurtleRockPegSolved. In Inverted the Turtle Rock entrance
@@ -3150,36 +3153,22 @@ void HandlePegPuzzles(uint16 pos) {  // 8edd67
     }
   } else if (overworld_screen_index == 98) {
     if (++word_7E04C8 == 22) {
+      RandoGrantResult grant = Rando_GrantLocation(
+          LOC_Hammer_Pegs, ITEM_PieceOfHeart, 0x17,
+          kRandoGrantPresentation_Animated, 0, 0);
+      if (grant == kRandoGrantResult_Retryable ||
+          grant == kRandoGrantResult_Invalid) {
+        // The final peg remains standing and the persisted puzzle bits remain
+        // untouched, so a later hammer hit can retry the same transaction.
+        word_7E04C8 = 21;
+        s_rando_peg_grant_blocked = true;
+        return;
+      }
       save_ow_event_info[0x62] |= 0x20;
       sound_effect_2 = 27;
-      // Phase B Slice 8 — Hammer Pegs minigame dispatch. The 22nd peg-hit
-      // is the once-per-save trigger for the PoH reward. Mirror the
-      // Digging Game pattern from DiggingGameGuy_AttemptPrizeSpawn: dispatch
-      // through Rando_DispatchVanillaGrant, then set the obtained-bit on
-      // save_ow_event_info[0x62] (overworld_screen_index 98 = 0x62) so the
-      // vanilla standing PoH (`Sprite_HeartPiece`) doesn't ALSO spawn.
-      // Critical ordering: set the bit BEFORE Overworld_DoMapUpdate32x32_B
-      // (the tile reveal below) so SpritePrep_HeartPiece — which fires on
-      // the same frame the revealed tile spawns the PoH sprite — consults
-      // the obtained-bit and self-cancels via HeartUpgrade_CheckIfAlreadyObtained.
-      // Rando_ReceiveOrConfirm grants the placed item directly (for
-      // non-direct-grant placements like Bow/Sword) or fires the
-      // confirmation cue (for direct-grant placements like
-      // HalfMagic/Triforce/prize-bits).
-      // The (0x40 == 0) gate prevents re-trigger if the player somehow
-      // hits the 22nd-peg state machine again on the same save (word_7E04C8
-      // is RAM, the obtained-bit is save-state).
-      if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
-          (save_ow_event_info[0x62] & 0x40) == 0) {
-        // lttp code 0x17 is the quarter Piece of Heart (one heart-piece);
-        // 0x26 is the FULL heart-container code (grants a whole +8-health
-        // container) and would wrongly grant a whole container for a vanilla PoH
-        // placement. (Symbol names kept out of this comment so the audit-guard
-        // regex doesn't false-positive on a non-write.)
-        uint8 lttp = Rando_DispatchVanillaGrant(LOC_Hammer_Pegs, ITEM_PieceOfHeart, 0x17);
+      if (grant == kRandoGrantResult_Accepted ||
+          grant == kRandoGrantResult_AlreadyChecked)
         save_ow_event_info[0x62] |= 0x40;
-        Rando_ReceiveOrConfirm(lttp, (uint8)Rando_LastDispatchedItemId());
-      }
       door_open_closed_counter = 0x50;
       big_rock_starting_address = 0xd20;
       Overworld_DoMapUpdate32x32_B();
@@ -3857,8 +3846,11 @@ check_secret:
         // the placed item was granted; skip RevealSecret and set the 0xFF
         // no-spawn sentinel (a ZERO would trigger the outdoor random-secret
         // substitution) so nothing spawns and yv keeps its cut-tile value.
-        if (yv != 0xdc9 &&
-            Rando_TerrainRevealHook(overworld_screen_index, pos) == kRandoTerrain_Suppress) {
+        uint8 terrain_result = yv == 0xdc9 ? kRandoTerrain_Vanilla :
+            Rando_TerrainRevealHook(overworld_screen_index, pos);
+        if (terrain_result == kRandoTerrain_Retry)
+          return attr;
+        if (terrain_result == kRandoTerrain_Suppress) {
           BYTE(dung_secrets_unk1) = 0xff;
         } else {
           result = Overworld_RevealSecret(pos);
@@ -3885,6 +3877,8 @@ memoize_getout:
     if (attr == 0x21b) {
       sound_effect_1 = 17;
       HandlePegPuzzles(pos);
+      if (s_rando_peg_grant_blocked)
+        return attr;
       yv = 0xdcb;
       goto memoize_getout;
     } else { // else_3
@@ -3942,7 +3936,12 @@ uint8 Overworld_LiftingSmallObj(uint16 a, uint16 pos, uint16 y, Point16U pt) {  
   // (map16 0x101) also routes here but is NOT registered, so the hook returns
   // Vanilla for it. On Suppress the placed item was granted; keep the lifted
   // replacement tile (y) and set the 0xFF no-spawn sentinel.
-  if (Rando_TerrainRevealHook(overworld_screen_index, pos) == kRandoTerrain_Suppress) {
+  uint8 terrain_result = Rando_TerrainRevealHook(overworld_screen_index, pos);
+  if (terrain_result == kRandoTerrain_Retry) {
+    uint16 t = a * 4 + (pt.x & 8 ? 2 : 0) + (pt.y & 8 ? 1 : 0);
+    return kMap8DataToTileAttr[GetMap16toMap8Table()[t] & 0x1ff];
+  }
+  if (terrain_result == kRandoTerrain_Suppress) {
     BYTE(dung_secrets_unk1) = 0xff;
   } else {
     uint16 secret = Overworld_RevealSecret(pos);
@@ -3978,11 +3977,6 @@ uint8 SmashRockPile_fromLift(uint16 a, uint16 pos, uint16 y, Point16U pt) {  // 
   static const int8 kBigRockTabY[] = { 0, 0, -64, -64 };
   static const int8 kBigRockTabX[] = { 0, -1, 0, -1 };
   pos = 2 * ((pos >> 1) + kBigRockTab1[y]);
-  big_rock_starting_address = pos;
-  door_open_closed_counter = 40;
-
-  *(uint16 *)&g_ram[0] = pt.y;
-  *(uint16 *)&g_ram[2] = pt.x;
 
   // add-rando-grass-rock-shuffle: big-pile lift-consume, keyed on the pile
   // ORIGIN pos (reassigned above — the registry key). A pile whose vanilla
@@ -3990,7 +3984,18 @@ uint8 SmashRockPile_fromLift(uint16 a, uint16 pos, uint16 y, Point16U pt) {  // 
   // registry, so the hook returns Vanilla and the stairs branch below still
   // runs. On Suppress the placed item was granted; no structural reveal.
   uint16 secret;
-  if (Rando_TerrainRevealHook(overworld_screen_index, pos) == kRandoTerrain_Suppress) {
+  uint8 terrain_result = Rando_TerrainRevealHook(overworld_screen_index, pos);
+  if (terrain_result == kRandoTerrain_Retry) {
+    uint16 t = a * 4 + (pt.x & 8 ? 2 : 0) + (pt.y & 8 ? 1 : 0);
+    return kMap8DataToTileAttr[GetMap16toMap8Table()[t] & 0x1ff];
+  }
+
+  big_rock_starting_address = pos;
+  door_open_closed_counter = 40;
+  *(uint16 *)&g_ram[0] = pt.y;
+  *(uint16 *)&g_ram[2] = pt.x;
+
+  if (terrain_result == kRandoTerrain_Suppress) {
     BYTE(dung_secrets_unk1) = 0xff;
     secret = 0;
   } else {
@@ -4049,7 +4054,10 @@ void Overworld_BombTile(int x, int y) {  // 9bc155
   // is the CONSUMING branch — the label_a probe below runs for non-consumed
   // blast tiles and the super-bomb follower and must NOT be hooked). On
   // Suppress the placed item was granted; draw the cut tile (j), no secret.
-  if (Rando_TerrainRevealHook(overworld_screen_index, pos) == kRandoTerrain_Suppress) {
+  uint8 terrain_result = Rando_TerrainRevealHook(overworld_screen_index, pos);
+  if (terrain_result == kRandoTerrain_Retry)
+    return;
+  if (terrain_result == kRandoTerrain_Suppress) {
     BYTE(dung_secrets_unk1) = 0xff;
     a = j;
   } else {

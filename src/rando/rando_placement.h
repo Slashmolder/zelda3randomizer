@@ -116,6 +116,12 @@ void PlacementTable_ComputeDigest(const RandoPlacementTable *t, uint8 out_digest
 void Placement_Install(const RandoPlacementTable *t);
 const RandoPlacementTable *Placement_GetActive(void);
 
+// Presence-aware lookup for grant transactions. Returns true only when the
+// active table contains location_id, and writes that entry's item id to
+// out_item_id when non-NULL. Unlike Placement_Lookup, this distinguishes a
+// present identity placement from an absent location that follows vanilla.
+bool Placement_TryLookup(uint16 location_id, uint16 *out_item_id);
+
 // Looks up location_id in the active table. Returns vanilla_item_id when no
 // table is installed or the location_id is missing. Called from
 // Rando_OnLocationCheck (rando.c). add-rando-pot-sanity D10: binary search over

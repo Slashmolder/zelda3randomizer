@@ -2,6 +2,7 @@
 #include "types.h"
 #include "zelda_rtl.h"
 #include "sprite.h"
+#include "rando/rando.h"
 
 typedef struct CheckPlayerCollOut {
   uint16 r4, r6;
@@ -215,7 +216,10 @@ uint8 AncillaAdd_Boomerang(uint8 a, uint8 y);
 void AncillaAdd_TossedPondItem(uint8 a, uint8 xin, uint8 yin);
 void AddHappinessPondRupees(uint8 arg);
 int AncillaAdd_FallingPrize(uint8 a, uint8 item_idx, uint8 yv);
-int AncillaAdd_FallingPrizeRando(uint8 a, uint8 lttp_code, uint8 fallback_idx, uint8 yv);
+int AncillaAdd_FallingPrizeRando(uint8 a,
+                                 const RandoDeferredGrantToken *token,
+                                 uint8 fallback_idx, uint8 yv);
+int Ancilla_RandoFallingPrizeSelfCheck(void);
 void AncillaAdd_ChargedSpinAttackSparkle();
 void AncillaAdd_ExplodingWeatherVane(uint8 a, uint8 y);
 void AncillaAdd_CutsceneDuck(uint8 a, uint8 y);

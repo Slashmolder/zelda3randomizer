@@ -3,8 +3,9 @@
 
 This runner is intentionally local-only: it includes checks that need a built
 binary plus ROM-derived/extracted artifacts that public CI cannot have. In
-particular, it refreshes the gitignored pot ground-truth dump from the binary,
-regenerates the local pot registries, and regenerates rando codegen from them.
+particular, it refreshes the gitignored pot and terrain ground-truth dumps from
+the binary, regenerates the local registries, and regenerates rando codegen
+from them.
 
 Usage:
   python assets/scripts/run_rando_local_checks.py
@@ -32,6 +33,8 @@ POT_REGISTRY = REPO / "assets" / "rando" / "pots.gen.yaml"
 POT_KEY_DEPTH = REPO / "assets" / "rando" / "pot_key_depth.gen.yaml"
 ENEMY_DROP_REGISTRY = REPO / "assets" / "rando" / "enemy_drops.gen.yaml"
 ENEMY_CHECK_REGISTRY = REPO / "assets" / "rando" / "enemy_checks.gen.yaml"
+TERRAIN_DUMP = REPO / "assets" / "rando" / "terrain_dump.gen.txt"
+TERRAIN_REGISTRY = REPO / "assets" / "rando" / "terrain.gen.yaml"
 ITEM_REGISTRY = REPO / "assets" / "rando" / "item_registry.yaml"
 POT_NONPOT_DROP_COUNTS = REPO / "src" / "rando" / "pot_nonpot_drop_counts.h"
 CODEGEN_OUTPUTS = [
@@ -138,6 +141,12 @@ def refresh_pot_codegen(binary: Path, tmp: Path) -> int:
         ("gen_enemy_check_tables --check",
          [sys.executable, "assets/scripts/gen_enemy_check_tables.py",
           "--key-depth", str(key_depth), "--check"]),
+        ("refresh terrain ground-truth dump",
+         [str(binary), "--dump-terrain-table", str(TERRAIN_DUMP)]),
+        ("gen_terrain_tables --emit",
+         [sys.executable, "assets/scripts/gen_terrain_tables.py", "--emit"]),
+        ("gen_terrain_tables --check",
+         [sys.executable, "assets/scripts/gen_terrain_tables.py", "--check"]),
         # add-rando-bonk-sanity (external-review round 2): regenerate the
         # gitignored bonk registry BEFORE logic codegen — its digest ignores
         # predicate content, so a stale pre-fix bonk.gen.yaml would compile
@@ -260,6 +269,8 @@ def main(argv: list[str]) -> int:
         POT_KEY_DEPTH,
         ENEMY_DROP_REGISTRY,
         ENEMY_CHECK_REGISTRY,
+        TERRAIN_DUMP,
+        TERRAIN_REGISTRY,
     ] + CODEGEN_OUTPUTS
     if not args.skip_prepare:
         before = snapshot(tracked_codegen)

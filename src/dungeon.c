@@ -5849,7 +5849,14 @@ uint8 Dungeon_LiftAndReplaceLiftable(Point16U *pt) {  // 81d9ec
 
   if ((rt & 0xf0f0) == 0x1010) {
     dung_misc_objs_index = attr * 2;
-    RevealPotItem(xy, dung_object_tilemap_pos[attr], true);  // genuine pot (0x1010-gated lift)
+    uint16 pos4 = dung_object_tilemap_pos[attr];
+    uint8 pot_result = Rando_PotBreakHook(dungeon_room_index, pos4);
+    if (pot_result == kRandoPot_Retry)
+      return 0;
+    if (pot_result == kRandoPot_Suppress)
+      BYTE(dung_secrets_unk1) = 0;
+    else
+      RevealPotItem(xy, pos4, true);  // genuine pot (0x1010-gated lift)
     RoomDraw_16x16Single(dung_misc_objs_index);
     ManipBlock_Something(pt);
     return kDungeon_QueryIfTileLiftable_rv[rt & 0xf];
@@ -5890,7 +5897,14 @@ uint8 HandleItemTileAction_Dungeon(uint16 x, uint16 y) {  // 81dabb
       sound_effect_1 = 0x11;
     } else if ((tile2 & 0xf0f0) == 0x1010) {  // Pot
       dung_misc_objs_index = (tile & 0xf) * 2;
-      RevealPotItem(pos, dung_object_tilemap_pos[tile & 0xf], true);  // genuine pot (0x1010-gated sword-break)
+      uint16 pos4 = dung_object_tilemap_pos[tile & 0xf];
+      uint8 pot_result = Rando_PotBreakHook(dungeon_room_index, pos4);
+      if (pot_result == kRandoPot_Retry)
+        return 0;
+      if (pot_result == kRandoPot_Suppress)
+        BYTE(dung_secrets_unk1) = 0;
+      else
+        RevealPotItem(pos, pos4, true);  // genuine pot (0x1010-gated sword-break)
       RoomDraw_16x16Single(dung_misc_objs_index);
       Point16U pt;
       ManipBlock_Something(&pt);
@@ -5910,20 +5924,7 @@ void ManipBlock_Something(Point16U *pt) {  // 81db41
 
 void RevealPotItem(uint16 pos6, uint16 pos4, bool is_pot) {  // 81e6b2
   BYTE(dung_secrets_unk1) = 0;
-
-  // add-rando-pot-sanity Phase 4 — runtime grant hook (design D3). Fires ONLY for
-  // the two genuine-pot callers (lift + sword-break, both gated to 0x1010 pot
-  // tiles); the ThievesAttic 0x2020 lightenable-hole caller passes is_pot=false.
-  // The hole shares dung_object_tilemap_pos[] with pots, so its pos4 CAN alias a
-  // registered pot's (Thieves Town attic room 0x65 has pots at 0x1c64/0x1c68) —
-  // relying on the lookup alone would let falling through the floor silently
-  // grant+check that pot. On an active+un-checked pot the hook grants the placed
-  // item; on a checked key/empty pot it suppresses the vanilla re-drop (dup-key
-  // risk). Suppress = return now with dung_secrets_unk1 == 0 — which also
-  // neutralizes the sword-break caller's later `dung_secrets_unk1 |= 0x80`
-  // (0x80 & 0x7f == 0, so no item spawns).
-  if (is_pot && Rando_PotBreakHook(dungeon_room_index, pos4) == kRandoPot_Suppress)
-    return;
+  (void)is_pot;  // callers own the pre-consumption rando transaction
 
   const uint8 *src_ptr = kDungeonSecrets + WORD(kDungeonSecrets[dungeon_room_index * 2]);
 
@@ -6028,10 +6029,13 @@ void Dungeon_DeleteRupeeTile(uint16 x, uint16 y) {  // 81e8bd
 
 // This doesn't return exactly like the original
 // Also returns in scratch_0
-uint8 OpenChestForItem(uint8 tile, int *chest_position) {  // 81eb66
+uint8 OpenChestForItem(uint8 tile, int *chest_position,
+                       RandoGrantResult *grant_result) {  // 81eb66
   static const uint16 kChestOpenMasks[] = { 0x100, 0x200, 0x400, 0x800, 0x1000, 0x2000 };
+  if (grant_result != NULL)
+    *grant_result = kRandoGrantResult_NotActive;
   if (tile == 0x63)
-    return OpenMiniGameChest(chest_position);
+    return OpenMiniGameChest(chest_position, grant_result);
 
   int chest_idx = tile - 0x58, chest_idx_org = chest_idx;
 
@@ -6072,10 +6076,28 @@ uint8 OpenChestForItem(uint8 tile, int *chest_position) {  // 81eb66
             Main_ShowTextMessage();
             return 0xff;
           }
+          if (grant_result != NULL) {
+            *grant_result = Rando_ChestGrant(
+                dungeon_room_index, (uint8)chest_idx_org, data,
+                kRandoGrantPresentation_Animated, 1,
+                (uint16)(loc + 2));
+            if (*grant_result == kRandoGrantResult_Retryable ||
+                *grant_result == kRandoGrantResult_Invalid)
+              return 0xff;
+          }
           dung_savegame_state_bits |= kChestOpenMasks[chest_idx_org];
           OpenBigChest(loc, chest_position);
           return data;
         } else {
+          if (grant_result != NULL) {
+            *grant_result = Rando_ChestGrant(
+                dungeon_room_index, (uint8)chest_idx_org, data,
+                kRandoGrantPresentation_Animated, 1,
+                (uint16)(loc & 0x7fff));
+            if (*grant_result == kRandoGrantResult_Retryable ||
+                *grant_result == kRandoGrantResult_Invalid)
+              return 0xff;
+          }
           dung_savegame_state_bits |= kChestOpenMasks[chest_idx_org];
           ptr = SrcPtr(0x14A4);
           pos = loc >> 1;
@@ -6152,8 +6174,8 @@ void OpenBigChest(uint16 loc, int *chest_position) {  // 81ed05
   byte_7E0B9E = 1;
 }
 
-uint8 OpenMiniGameChest(int *chest_position) {  // 81edab
-  int t;
+uint8 OpenMiniGameChest(int *chest_position,
+                        RandoGrantResult *grant_result) {  // 81edab
   if (minigame_credits == 0) {
     dialogue_message_index = 0x163;
     Main_ShowTextMessage();
@@ -6164,7 +6186,6 @@ uint8 OpenMiniGameChest(int *chest_position) {  // 81edab
     Main_ShowTextMessage();
     return 0xff;
   }
-  minigame_credits--;
 
   int pos = ((link_y_coord - 4) & 0x1f8) * 8;
   pos |= ((link_x_coord + 7) & 0x1f8) >> 3;
@@ -6176,44 +6197,9 @@ uint8 OpenMiniGameChest(int *chest_position) {  // 81edab
   }
 
   *chest_position = pos * 2;
-
-  WORD(dung_bg2_attr_table[pos + XY(0, 0)]) = 0x202;
-  WORD(dung_bg2_attr_table[pos + XY(0, 1)]) = 0x202;
-
-  const uint16 *src = SrcPtr(0x14A4);
-
-  int pos_wrong = pos + XY(0, 2);  // zelda bug?
-  dung_bg2[pos_wrong + XY(0, 0)] = src[0];
-  dung_bg2[pos_wrong + XY(0, 1)] = src[1];
-  dung_bg2[pos_wrong + XY(1, 0)] = src[2];
-  dung_bg2[pos_wrong + XY(1, 1)] = src[3];
-
-  // The orig asm code seems to access invalid vram here because it indexes by 0x14a4
-  uint16 *dst = &vram_upload_data[vram_upload_offset >> 1];
-  dst[0] = Dungeon_MapVramAddr(pos + 0);
-  dst[3] = Dungeon_MapVramAddr(pos + 64);
-  dst[6] = Dungeon_MapVramAddr(pos + 1);
-  dst[9] = Dungeon_MapVramAddr(pos + 65);
-
-  dst[2] = src[0];
-  dst[5] = src[1];
-  dst[8] = src[2];
-  dst[11] = src[3];
-
-  dst[1] = 0x100;
-  dst[4] = 0x100;
-  dst[7] = 0x100;
-  dst[10] = 0x100;
-
-  dst[12] = 0xffff;
-
-  vram_upload_offset += 24;
-
-  uint8 rv;
-
   uint16 r16 = some_menu_ctr;
-
-  t = GetRandomNumber();
+  int t = GetRandomNumber();
+  uint8 rv;
   if (BYTE(dungeon_room_index) == 0) {
     t = t & 0xf;
     rv = kDungeon_RupeeChestMinigamePrizes[t & 0xf];
@@ -6238,25 +6224,48 @@ uint8 OpenMiniGameChest(int *chest_position) {  // 81edab
       if (dung_savegame_state_bits & 0x4000) {
         t = 0;
       } else {
+        if (grant_result != NULL) {
+          *grant_result = Rando_GrantLocation(
+              LOC_Chest_Game, ITEM_PieceOfHeart, 0x17,
+              kRandoGrantPresentation_Animated, 1,
+              (uint16)*chest_position);
+          if (*grant_result == kRandoGrantResult_Retryable ||
+              *grant_result == kRandoGrantResult_Invalid)
+            return 0xff;
+        }
         dung_savegame_state_bits |= 0x4000;
       }
     }
     rv = kDungeon_MinigameChestPrizes1[t];
-    // Phase B Slice 8 §67 — Chest Game minigame dispatch. The t==7 branch
-    // is the "rare prize" (PoH, lttp code 0x17) that fires only once per
-    // savegame (the 0x4000 dung_savegame_state_bits gate). Route this
-    // first-win moment through the placement table so rando seeds can
-    // place anything at LOC_Chest_Game. Consolation outcomes (t != 7
-    // here, post the bit-already-set degrade) stay vanilla.
-    //
-    // The returned lttp code propagates back to `Link_PerformOpenChest`
-    // where the existing Rando_ShouldSkipReceive sentinel
-    // path fires the direct-grant confirmation and short-circuits the
-    // Link_ReceiveItem call.
-    if (rv == 0x17 && (enhanced_features1 & kFeatures1_RandomizerActive)) {
-      rv = Rando_DispatchVanillaGrant(LOC_Chest_Game, ITEM_PieceOfHeart, 0x17);
-    }
   }
+
+  // Only after the grant is accepted (or proves inactive) may the caller-owned
+  // purchase credit, win bit, and physical chest become irreversible.
+  minigame_credits--;
+  WORD(dung_bg2_attr_table[pos + XY(0, 0)]) = 0x202;
+  WORD(dung_bg2_attr_table[pos + XY(0, 1)]) = 0x202;
+
+  const uint16 *src = SrcPtr(0x14A4);
+  int pos_wrong = pos + XY(0, 2);  // zelda bug?
+  dung_bg2[pos_wrong + XY(0, 0)] = src[0];
+  dung_bg2[pos_wrong + XY(0, 1)] = src[1];
+  dung_bg2[pos_wrong + XY(1, 0)] = src[2];
+  dung_bg2[pos_wrong + XY(1, 1)] = src[3];
+
+  // The orig asm code seems to access invalid vram here because it indexes by 0x14a4
+  uint16 *dst = &vram_upload_data[vram_upload_offset >> 1];
+  dst[0] = Dungeon_MapVramAddr(pos + 0);
+  dst[3] = Dungeon_MapVramAddr(pos + 64);
+  dst[6] = Dungeon_MapVramAddr(pos + 1);
+  dst[9] = Dungeon_MapVramAddr(pos + 65);
+  dst[2] = src[0];
+  dst[5] = src[1];
+  dst[8] = src[2];
+  dst[11] = src[3];
+  dst[1] = dst[4] = dst[7] = dst[10] = 0x100;
+  dst[12] = 0xffff;
+  vram_upload_offset += 24;
+
   some_menu_ctr = t;
   nmi_load_bg_from_vram = 1;
   sound_effect_2 = 14;
