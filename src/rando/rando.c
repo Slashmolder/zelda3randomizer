@@ -1175,6 +1175,12 @@ static void rando_trap_effect_onset(uint8 effect) {
       // world-correct with no extra conditional. Reimplements dbg_warp.cpp's
       // DoWarpStartPoint(1); the trap's quiescent gate (module 7/9/11, submodule 0)
       // already enforces "normal gameplay only", so no Cheats_CanWarp() is needed.
+      // The item-receipt path can still own bit 0 of the direction lock here. The
+      // immediate module handoff bypasses that path's normal cleanup, while the
+      // start-point loader does not clear it; leaking the bit lets Link move but
+      // freezes his facing until another room transition. Release only that bit so
+      // unrelated direction-lock state remains intact.
+      link_cant_change_direction &= ~1;
       which_starting_point = 1;   // Sanctuary (Inverted -> Dark Chapel via the loader)
       WORD(death_var5) = 0;       // normal save-exit snapshot
       WORD(death_var4) = 1;       // force the start-point branch
@@ -7271,6 +7277,40 @@ void Rando_SelfCheck(void) {
           exit(2);
         }
         player_is_indoors = s_indoors; overworld_fixed_color_plusminus = s_cd;
+      }
+
+      // Displace immediately changes modules, so it must release the pickup
+      // action's bit-0 facing lock itself. Preserve other lock bits owned by
+      // unrelated player mechanics.
+      {
+        uint8 s_main = main_module_index, s_sub = submodule_index;
+        uint8 s_subsub = subsubmodule_index, s_start = which_starting_point;
+        uint16 s_death4 = WORD(death_var4), s_death5 = WORD(death_var5);
+        uint8 s_follower = follower_indicator;
+        uint8 s_indoors = player_is_indoors, s_cant_dir = link_cant_change_direction;
+
+        main_module_index = 9;
+        submodule_index = 0;
+        subsubmodule_index = 7;
+        link_cant_change_direction = 3;
+        rando_trap_effect_onset(kRandoTrapEffect_Teleport);
+        if (link_cant_change_direction != 2 ||
+            main_module_index != 6 || submodule_index != 0 || subsubmodule_index != 0 ||
+            which_starting_point != 1 || WORD(death_var5) != 0 || WORD(death_var4) != 1 ||
+            follower_indicator != 0 || player_is_indoors != 1) {
+          fprintf(stderr, "Rando_SelfCheck: Displace warp leaked pickup facing lock\n");
+          exit(2);
+        }
+
+        main_module_index = s_main;
+        submodule_index = s_sub;
+        subsubmodule_index = s_subsub;
+        which_starting_point = s_start;
+        WORD(death_var4) = s_death4;
+        WORD(death_var5) = s_death5;
+        follower_indicator = s_follower;
+        player_is_indoors = s_indoors;
+        link_cant_change_direction = s_cant_dir;
       }
 
       // Selector honors the category mask AND the location-compatibility flags:
