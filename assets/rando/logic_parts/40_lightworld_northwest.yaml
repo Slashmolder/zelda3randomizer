@@ -139,14 +139,13 @@ locations:
     can_reach: "TRUE()"
     source: "app/Region/Standard/LightWorld/NorthWest.php:47"
 
-  # `Magic Bat` (php:108-122): Powder AND (Hammer OR mirror-route-to-DW).
-  # All glitch and mirror-wrap branches drop; the surviving disjunct is
-  # Hammer (the no-glitches vanilla path). The mirror-DW path requires
-  # entering DarkWorld_NorthWest, which itself requires Hammer in Phase A,
-  # so it's strictly subsumed by the Hammer disjunct.
+  # `Magic Bat` (php:108-122): Powder AND the same Hammer-or-mirror route as
+  # the Smithy peg pocket. The older Phase-A simplification that treated the
+  # mirror route as Hammer-subsumed became stale once DarkWorld_NorthWest
+  # gained its complete Mitt entry edge.
   - id: "Magic Bat"
     region: LightWorld_NorthWest
-    can_reach: "HAS_ITEM(MagicPowder) AND HAS_ITEM(Hammer)"
+    can_reach: "HAS_ITEM(MagicPowder) AND CanReachSmithPegPocket()"
     source: "app/Region/Standard/LightWorld/NorthWest.php:108-122"
 
   # `Sick Kid` (php:124-126): hasABottle().

@@ -30,7 +30,10 @@
 // via OP_TOWER_CRYSTALS_MET (they hardcoded 7), and CanBonk/CanGetGoodBee
 // gain the swordless medallion-cast arm (the runtime allows sword-free casts
 // under swordless; the 149 widening wrongly excluded them).
-#define kGeneratorVersion 150u  // resolved tower crystals in logic + swordless quake arms
+// 151: isolated Hammer-peg, mirror-ledge, and water-island terrain gains its
+// physical access gates; the Smithy pocket/Magic Bat and Lake Hylia Island
+// bush share their canonical world-state-aware routes.
+#define kGeneratorVersion 151u  // gate isolated terrain and restore mirror routes
 // The share-string binary layout packs version into 1 byte
 // (rando_share.h: ShareString.version is uint8). Compile-time enforce
 // kGeneratorVersion ≤ 255 so silent truncation can't ship.

@@ -149,7 +149,7 @@ locations:
   # reachable DarkWorld_NorthEast (the mirror-from-DW-NE Lake-Hylia warp).
   - id: "Lake Hylia Island"
     region: LightWorld_South
-    can_reach: "HAS_ITEM(Flippers) AND HAS_ITEM(MagicMirror) AND HAS_ITEM(MoonPearl) AND OP_REGION_REACHABLE(DarkWorld_NorthEast)"
+    can_reach: "CanReachLakeHyliaIsland()"
     source: "app/Region/Standard/LightWorld/South.php:165-175"
 
   # `Sunken Treasure` (php:49) — no setRequirements; default TRUE.

@@ -153,14 +153,16 @@ locations:
     can_reach: "HAS_ITEM(Boots) AND HAS_ITEM(MoonPearl)"
     source: "app/Region/Inverted/LightWorld/NorthWest.php:158-164"
 
-  # `Magic Bat` (php:166-177): MagicPowder AND MoonPearl AND Hammer.
+  # `Magic Bat` (php:166-177): MagicPowder AND MoonPearl AND Hammer. Reuse the
+  # shared pocket macro; its mirror-back arm is disabled in Inverted because
+  # the Inverted Mirror carries Light World -> Dark World.
   # The (canBootsClip+Boots OR canOneFrameClipOW) AND (canFakeFlipper OR
   # Flippers) alternative DROPPED — its only no-glitches survivor would
   # require Flippers but the gate is gated by canBootsClip/canOneFrameClipOW
   # which are FALSE in Phase A.
   - id: "Magic Bat"
     region: LightWorld_NorthWest
-    can_reach: "HAS_ITEM(MagicPowder) AND HAS_ITEM(MoonPearl) AND HAS_ITEM(Hammer)"
+    can_reach: "HAS_ITEM(MagicPowder) AND HAS_ITEM(MoonPearl) AND CanReachSmithPegPocket()"
     source: "app/Region/Inverted/LightWorld/NorthWest.php:166-177"
 
   # `Sick Kid` (php:179-181): hasABottle().

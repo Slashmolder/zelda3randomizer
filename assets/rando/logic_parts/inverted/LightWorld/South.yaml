@@ -152,7 +152,7 @@ locations:
   # canOneFrameClipOW) drop.
   - id: "Lake Hylia Island"
     region: LightWorld_South
-    can_reach: "HAS_ITEM(MoonPearl) AND HAS_ITEM(Flippers)"
+    can_reach: "CanReachLakeHyliaIsland()"
     source: "app/Region/Inverted/LightWorld/South.php:214-223"
 
   # `Sunken Treasure` (php:225-231): MoonPearl (other branches drop).

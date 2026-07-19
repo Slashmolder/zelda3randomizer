@@ -90,6 +90,29 @@ macros:
     source: "app/Support/ItemCollection.php:378-382"
 
   # ===========================================================================
+  # CanReachSmithPegPocket — the Light-World pocket shared by Magic Bat and
+  # the five bushes east of the Smithy's house. Enter directly through the
+  # Hammer peg, or (outside Inverted) reach northwest Dark World with Pearl +
+  # Mitts and mirror back into the pocket. Inverted's Mirror carries LW -> DW,
+  # so its reverse-world route cannot enter this Light-World pocket.
+  # ===========================================================================
+  - name: CanReachSmithPegPocket
+    parameters: []
+    body: "HAS_ITEM(Hammer) OR ((NOT WORLDSTATE_EQ(inverted)) AND HAS_ITEM(MagicMirror) AND HAS_ITEM(MoonPearl) AND CanLiftDarkRocks() AND OP_REGION_REACHABLE(DarkWorld_NorthWest))"
+    source: "app/Region/Standard/LightWorld/NorthWest.php:108-122; fork terrain screen 0x22"
+
+  # ===========================================================================
+  # CanReachLakeHyliaIsland — the heart-piece island and its adjacent bush.
+  # Standard reaches it by swimming in northeast Dark World and mirroring;
+  # Inverted reaches the Light-World island directly with Pearl + Flippers.
+  # Keep the named location and terrain check on one predicate.
+  # ===========================================================================
+  - name: CanReachLakeHyliaIsland
+    parameters: []
+    body: "(WORLDSTATE_EQ(inverted) AND HAS_ITEM(MoonPearl) AND HAS_ITEM(Flippers)) OR ((NOT WORLDSTATE_EQ(inverted)) AND HAS_ITEM(Flippers) AND HAS_ITEM(MagicMirror) AND HAS_ITEM(MoonPearl) AND OP_REGION_REACHABLE(DarkWorld_NorthEast))"
+    source: "app/Region/Standard/LightWorld/South.php:165-175; app/Region/Inverted/LightWorld/South.php:214-223"
+
+  # ===========================================================================
   # CanCutGrass — thick-grass (map16 0x37e) consume set. Fork-original
   # (add-rando-grass-rock-shuffle): the ONLY engine paths that consume thick
   # grass are the sword slash (Overworld_ToolAndTileInteraction, attr 0x37e

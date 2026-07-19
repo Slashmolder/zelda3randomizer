@@ -41,6 +41,12 @@ overrides:
     Single light rock (row 12 col 12) = the Glove rock on the Zora river bank
     walk (ALTTPR KingZora: canLiftRocks || flippers). NE region + the
     CanLiftRocks class gate model it exactly.
+- screen: 0x18
+  ranges:
+  # Kakariko east peg pocket: the map16 0x21B Hammer peg at 0x0AF6 is the
+  # only approach to these two bushes; the surrounding fence blocks access
+  # from the other three sides. Both checks therefore require Hammer.
+  - {lo: 0x0AF8, hi: 0x0AFA, gate: 'HAS_ITEM(Hammer)'}
 - screen: 0x1B
   confirmed: >-
     Castle-grounds bushes are open LightWorld_NorthEast ground. Standard's
@@ -48,6 +54,13 @@ overrides:
     walkway is stair-walkable from the same region.
 - screen: 0x1D
   confirmed: Castle east field; plain LightWorld_NorthEast.
+- screen: 0x22
+  ranges:
+  # Five bushes in the enclosed pocket east of the Smithy's house. The direct
+  # entrance is the 0x21B Hammer peg at 0x0524; in non-Inverted worlds Link can
+  # instead mirror here from reachable northwest Dark World with Pearl + Mitts.
+  - {lo: 0x0424, hi: 0x0428, gate: 'CanReachSmithPegPocket()'}
+  - {lo: 0x04A4, hi: 0x04A6, gate: 'CanReachSmithPegPocket()'}
 - screen: 0x28
   confirmed: >-
     Maze-race strip is free walk-in (ALTTPR Maze Race carries no item
@@ -85,6 +98,27 @@ overrides:
   - {lo: 0x1400, hi: 0x1490, gate: 'OP_REGION_REACHABLE(DesertPalace_Lobby)'}
   # Remaining objects (south strip bushes + the row-59 Mitt rock) stay plain
   # LightWorld_South (the walkable band; class gates apply).
+- screen: 0x32
+  ranges:
+  # Cave 45 mirror ledge: this isolated 2x2 bush cluster is on the same ledge
+  # as entrance 0x52 / the Cave 11B south half. Match Cave 45's canonical
+  # access predicate (Standard/LightWorld/South.php:144-148): mirror from
+  # reachable DarkWorld_South, or use an enabled overworld clip route.
+  - {lo: 0x0914, hi: 0x0916, gate: '(HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(DarkWorld_South)) OR CanBootsClip() OR CanOneFrameClipOW()'}
+  - {lo: 0x0994, hi: 0x0996, gate: '(HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(DarkWorld_South)) OR CanBootsClip() OR CanOneFrameClipOW()'}
+- screen: 0x35
+  ranges:
+  # Bush immediately beside the Lake Hylia Island heart piece (overworld-53
+  # item at 24,20; heart-piece sprite at 25,19). It is on the same isolated
+  # island and therefore shares the named location's world-state-aware gate.
+  - {lo: 0x0A30, hi: 0x0A30, gate: 'CanReachLakeHyliaIsland()'}
+  # Three bushes on the separate central island around the 43,30 warp tile.
+  # The warp supplies no ingress: the landmass is surrounded by deep water.
+  # Accept the fork's modeled outdoor swim techniques; no dungeon-entry item
+  # such as Ice Palace's fire source belongs on these outdoor checks.
+  - {lo: 0x0E56, hi: 0x0E56, gate: 'HAS_ITEM(Flippers) OR CanFakeFlippers() OR (CanWaterWalk() AND HAS_ITEM(Boots))'}
+  - {lo: 0x0FD2, hi: 0x0FD2, gate: 'HAS_ITEM(Flippers) OR CanFakeFlippers() OR (CanWaterWalk() AND HAS_ITEM(Boots))'}
+  - {lo: 0x0FDA, hi: 0x0FDA, gate: 'HAS_ITEM(Flippers) OR CanFakeFlippers() OR (CanWaterWalk() AND HAS_ITEM(Boots))'}
 # --- Dark World ---
 - screen: 0x43
   confirmed: >-
@@ -110,6 +144,11 @@ overrides:
   # Village side (ALTTPR Bumper Cave = Standard/DarkWorld/NorthWest.php). The
   # table's DMW binding covered ledge-side enemies; the ledge itself carries
   # no terrain objects.
+- screen: 0x58
+  ranges:
+  # Village-of-Outcasts coordinate twin of the Kakariko peg pocket: the map
+  # build has the same 0x21B Hammer peg at 0x0AF6 followed by these bushes.
+  - {lo: 0x0AF8, hi: 0x0AFA, gate: 'HAS_ITEM(Hammer)'}
 - screen: 0x5B
   confirmed: >-
     Pyramid bushes sit on stair-walkable tiers from DarkWorld_NorthEast; the
@@ -134,3 +173,10 @@ overrides:
   # stumpy's grove): DarkWorld_South, not the LW-mirror NW.
 - screen: 0x6A
   confirmed: Stumpy grove has no registrable terrain objects.
+- screen: 0x75
+  ranges:
+  # Inverted-only heavy rock on Ice Palace island (row 30 col 40), beside the
+  # entrance at 43,28. Preserve the rock's class-level Mitt gate and add only
+  # the outdoor movement arm of Inverted Ice Palace's entry predicate; melting
+  # capability gates the dungeon door, not this overworld rock.
+  - {lo: 0x0F50, hi: 0x0F50, gate: 'HAS_ITEM(Flippers) OR CanFakeFlippers() OR CanBootsClip() OR CanOneFrameClipOW() OR (CanSuperSpeed() AND CanSpinSpeed())'}
