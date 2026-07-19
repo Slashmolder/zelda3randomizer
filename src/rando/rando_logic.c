@@ -450,9 +450,13 @@ static bool predicate_reachability_monotone(Cursor *c, bool negated) {
       }
       return ok && !c->error;
     }
+    case OP_TOWER_CRYSTALS_MET:
+      // Counts crystals HELD (inventory-dependent): monotone un-negated but
+      // anti-monotone under OP_NOT — it does NOT belong in the
+      // settings-constant negation-immune group below.
+      return !c->error && !negated;
     case OP_INSTANT_FLUTE:
     case OP_NPC_SOULS_ACTIVE:
-    case OP_TOWER_CRYSTALS_MET:
     case OP_POT_KEYS_ON:
     case OP_POT_KEYS_WILD:
     case OP_POT_KEYS_DUNGEON:

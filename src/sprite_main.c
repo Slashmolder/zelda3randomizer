@@ -26258,11 +26258,24 @@ void NiceThiefUnderRock(int k) {  // 9ef14f
 // Preflight the same free-or-evictable condition the allocator uses and
 // refuse the sale for those frames; it self-resolves when the bombs pop.
 static bool ShopItem_ReceiptSlotAvailable(void) {
+  // Mirror Ancilla_AllocInit(0x22, 4) exactly. Its free-slot scan covers all
+  // five slots, but its eviction scan only walks slots rotate-1..0 (wrapping
+  // up to 4 only when ancilla_alloc_rotate is 0) — so an evictable
+  // sparkle/wall-arrow sitting in a slot the rotation cannot reach must NOT
+  // approve the purchase, or the post-payment receipt alloc still fails and
+  // the placed item is lost.
   for (int i = 0; i < 5; i++) {
-    uint8 t = ancilla_type[i];
-    if (t == 0 || t == 0x3c || t == 0x13 || t == 0x0a)
+    if (ancilla_type[i] == 0)
       return true;
   }
+  int k = ancilla_alloc_rotate;
+  do {
+    if (--k < 0)
+      k = 4;
+    uint8 t = ancilla_type[k];
+    if (t == 0x3c || t == 0x13 || t == 0x0a)
+      return true;
+  } while (k != 0);
   return false;
 }
 

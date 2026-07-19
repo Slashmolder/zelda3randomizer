@@ -3176,7 +3176,7 @@ static bool Rando_EnemyMarkerAllocateGlintOam(void) {
 // those chars hold is per-area sheet content: on Death Mountain they are 1-17
 // nonzero-byte specks, an invisible cue even after the gold ramp was
 // brightened (two playtest rounds). The glint now owns a private hand-authored
-// 4-frame sparkle uploaded into char 0x0E — the travel-bird char pair, which
+// 4-frame sparkle uploaded into char 0x0F — a travel-bird char, which
 // NMI_DoUpdates uploads ONLY during flute flight; the bird upload is placed
 // after ours so a mid-flight frame shows bird wings, never a stale sparkle.
 // Frames use color index 15 only (all planes set) = the bright end of the
@@ -3280,7 +3280,7 @@ void Rando_DrawOverworldEnemyMarkerGlints(void) {
       continue;
     SetOamHelper0(GetOamCurPtr(), (uint16)gx, (uint16)gy, 0x0F, flags, 0);
     Rando_OverlayPaletteRequestGold((uint8)prow);
-    g_rando_glint_upload_frames = 2;  // private sparkle tile -> char 0x0E
+    g_rando_glint_upload_frames = 2;  // private sparkle tile -> char 0x0F
   }
 }
 
@@ -3337,7 +3337,7 @@ void Rando_DrawTerrainGlints(void) {
   }
   if (drew) {
     Rando_OverlayPaletteRequestGold((uint8)prow);
-    g_rando_glint_upload_frames = 2;  // private sparkle tile -> char 0x0E
+    g_rando_glint_upload_frames = 2;  // private sparkle tile -> char 0x0F
   }
 }
 

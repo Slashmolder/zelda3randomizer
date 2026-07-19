@@ -120,9 +120,9 @@ int Sprite_ShowMessageOnContact(int k, uint16 msg);
 void Sprite_ShowMessageUnconditional(uint16 msg);
 bool Sprite_TutorialGuard_ShowMessageOnContact(int k, uint16 msg);
 void Sprite_ShowMessageMinimal();
+// add-rando-bonk-sanity — rumble entry; both origins (Boots dash and the
+// Quake medallion) wake placed bonk sprites and grant their checks.
 void Prepare_ApplyRumbleToSprites();
-// add-rando-bonk-sanity — RepelDash's rumble entry (marks the wake as
-// dash-origin so bonk checks can grant; the quake rumble stays vanilla).
 void Sprite_SpawnImmediatelySmashedTerrain(uint8 what, uint16 x, uint16 y);
 void Sprite_SpawnThrowableTerrain(uint8 what, uint16 x, uint16 y);
 int Sprite_SpawnThrowableTerrain_silently(uint8 what, uint16 x, uint16 y);

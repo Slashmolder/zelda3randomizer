@@ -5581,11 +5581,11 @@ bool Rando_IsSwordlessActive(void) {
 // RandoCounts the predicate VM reads. The macros (macros.yaml) accept the
 // progressive form via HAS_AMOUNT(Progressive*, n), so populating the
 // progressive counts satisfies every tier disjunct — we don't need the
-// absolute L1Sword/etc. ids. Prizes (crystals/pendants) are NOT set here: the
-// reachability fixed-point derives them from reachable dungeon bosses
-// (OP_HAS_PRIZE + cleared_dungeons), i.e. logical accessibility. Event items
-// the VM treats as inventory (RescuedZelda, DefeatAgahnim) are derived from
-// actual game/rando progress.
+// absolute L1Sword/etc. ids. Prizes (crystals/pendants) are set from the HELD
+// SRAM bitfields below; OP_HAS_PRIZE additionally derives *logical* prize
+// access from reachable dungeon bosses (cleared_dungeons) in the fixed point.
+// Event items the VM treats as inventory (RescuedZelda, DefeatAgahnim) are
+// derived from actual game/rando progress.
 // ---------------------------------------------------------------------------
 static bool rando_has_escape_bomb_refill(void) {
   if (link_item_bombs != 0 || link_bomb_filler != 0) return true;
@@ -5693,6 +5693,21 @@ void Rando_BuildRuntimeCounts(RandoCounts *out) {
   if (rescued) out->by_item_id[ITEM_RescuedZelda] = 1;
   // DefeatAgahnim: the Agahnim-1 location is checked when he is defeated.
   if (Rando_IsLocationChecked(LOC_Agahnim)) out->by_item_id[ITEM_DefeatAgahnim] = 1;
+
+  // Prizes actually HELD, from the SRAM bitfields (same masks as
+  // prize_item_direct_grant). OP_HAS_PRIZE keeps deriving *logical* prize
+  // access from cleared dungeons, but inventory-reading ops
+  // (OP_TOWER_CRYSTALS_MET, any HAS_ITEM(Prize_*)) count by_item_id — without
+  // these the live tracker showed Ganon's Tower unreachable with all seven
+  // crystals in hand.
+  static const uint8 kPrizeCrystalMask[7] = {0x10, 0x02, 0x01, 0x40, 0x04, 0x20, 0x08};
+  for (int i = 0; i < 7; i++) {
+    if (link_has_crystals & kPrizeCrystalMask[i])
+      out->by_item_id[ITEM_Prize_Crystal1 + i] = 1;
+  }
+  if (link_which_pendants & 0x04) out->by_item_id[ITEM_Prize_GreenPendant] = 1;
+  if (link_which_pendants & 0x02) out->by_item_id[ITEM_Prize_RedPendant] = 1;
+  if (link_which_pendants & 0x01) out->by_item_id[ITEM_Prize_BluePendant] = 1;
 
   // Enemy, boss, and NPC souls live in a process-static ownership bitfield,
   // not g_ram. Materialize the contiguous soul item block into the same

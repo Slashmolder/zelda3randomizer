@@ -5,7 +5,7 @@ consumes (assets/rando/bonk.gen.yaml).
 
 Population: sprite types 0x79 (dormant bee hive) and 0xAC (apple tree) —
 exactly the types SpritePrep_OverworldBonkItem preps dormant; woken by
-Entity_ApplyRumbleToSprites (Link's Boots bonk). The classic bonk-prize
+Entity_ApplyRumbleToSprites (Boots dash or Quake rumble). The classic bonk-prize
 ABSORBABLE family (0xD8-0xE3, incl. bonk fairies) is deliberately out of
 scope for v1 (design.md D8).
 
@@ -211,7 +211,11 @@ def main() -> int:
         f.write("# Placed OW bonk-item sprites (0x79 bee hive / 0xAC apple tree),\n")
         f.write("# three-stage-identical (area, block, type) keys. See the script\n")
         f.write("# docstring for the id-gap + suffix-invariant rationale.\n")
-        f.write(f"registry_digest: 0x{digest:08X}\n")
+        f.write("# content_stamp is this script's own regen fingerprint; it is NOT\n")
+        f.write("# kRandoBonkRegistryDigest (that guard value is computed over\n")
+        f.write("# (area, block, loc_id) by rando_logic_gen.py's _bonk_registry_digest\n")
+        f.write("# and nothing parses this header).\n")
+        f.write(f"content_stamp: 0x{digest:08X}\n")
         f.write(f"count: {len(rows)}\n")
         f.write("locations:\n")
         for r in rows:

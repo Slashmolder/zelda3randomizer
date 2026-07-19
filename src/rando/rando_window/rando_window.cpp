@@ -1437,8 +1437,8 @@ static void Panel_Shuffles() {
         s->bonk_shuffle = bonk_value;
         changed = true;
       }
-      HelpTooltip("Dashing into bee-hive and apple trees grants a check "
-                  "(needs the Pegasus Boots). junk = filler only; all = "
+      HelpTooltip("Bonking bee-hive and apple trees grants a check (Pegasus "
+                  "Boots dash, or Quake). junk = filler only; all = "
                   "anything. Checked trees swarm/drop apples as normal.");
     }
 
