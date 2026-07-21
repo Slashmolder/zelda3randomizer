@@ -48,14 +48,14 @@ def main(argv: list[str]) -> int:
     rando_h = _read(RANDO_H)
     manifest = _read(MANIFEST)
 
-    # Scaffold-friendly: if either file is absent (e.g. a partial checkout),
-    # don't fail the build — there's nothing to compare.
     if rando_h is None:
-        print(f"check_corpus_version_sync: {RANDO_H} not found — skipping.")
-        return 0
+        print(f"check_corpus_version_sync: {RANDO_H} not found; cannot verify "
+              "the generator/corpus provenance contract.", file=sys.stderr)
+        return 2
     if manifest is None:
-        print(f"check_corpus_version_sync: {MANIFEST} not found — skipping.")
-        return 0
+        print(f"check_corpus_version_sync: {MANIFEST} not found; cannot verify "
+              "the generator/corpus provenance contract.", file=sys.stderr)
+        return 2
 
     define_m = _DEFINE_RE.search(rando_h)
     if not define_m:

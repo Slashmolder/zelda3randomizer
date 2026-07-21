@@ -115,6 +115,9 @@ bool Rando_EnemyDropMarkerNeedsOverlay(int k);
 bool Rando_TryDrawEnemyDropMarkerOverlay(int k);
 bool Rando_EnemyDropMarkerWantsGlint(int k, int *out_dy);
 int Rando_EnemyMarkerAllocatorSelfCheck(void);
+// Assetless production-seam coverage for grant-result cleanup/retry handling.
+// Returns 0 on success.
+int Sprite_GrantRetrySelfCheck(void);
 int Sprite_ShowSolicitedMessage(int k, uint16 msg);
 int Sprite_ShowMessageOnContact(int k, uint16 msg);
 void Sprite_ShowMessageUnconditional(uint16 msg);
@@ -230,7 +233,9 @@ void Sprite_SetupHitBox(int k, SpriteHitBox *hb);
 bool CheckIfHitBoxesOverlap(SpriteHitBox *hb);
 void Oam_AllocateDeferToPlayer(int k);
 void SpriteModule_Die(int k);
-void Sprite_DoTheDeath(int k);
+// Returns false when a randomized reward blocks terminal death processing and
+// the caller must re-arm its handler boundary.
+bool Sprite_DoTheDeath(int k);
 void ForcePrizeDrop(int k, uint8 prize, uint8 slot);
 void PrepareEnemyDrop(int k, uint8 item);
 // Vanilla prize-drop table accessor (0..55). Used by the drop-pool shuffle to
@@ -280,12 +285,15 @@ void Dungeon_CacheTransSprites();
 void Sprite_DisableAll();
 void Dungeon_LoadSprites();
 const uint8 *Dungeon_GetRoomSpritePtr(uint16 room);
-void Sprite_ManuallySetDeathFlagUW(int k);
+// Returns false only when a randomized reward blocks death persistence.
+bool Sprite_ManuallySetDeathFlagUW(int k);
 int Dungeon_LoadSingleSprite(int k, const uint8 *src, uint8 source_slot);
 void Dungeon_LoadSingleOverlord(const uint8 *src, uint8 source_slot);
 bool Rando_AssignScriptedEnemyCheck(int child_slot, int parent_slot,
                                     uint8 child_index, uint8 child_type);
-void Rando_TryGrantBossEnemyCheckForCurrentEvent(void);
+// Returns false only when a randomized boss reward is retryable/invalid and
+// the caller must preserve or re-arm its event source without advancing.
+bool Rando_TryGrantBossEnemyCheckForCurrentEvent(void);
 void Sprite_ResetAll();
 void Sprite_ResetAll_noDisable();
 void Sprite_ReloadAll_Overworld();

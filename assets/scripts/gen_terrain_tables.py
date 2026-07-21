@@ -28,12 +28,15 @@ that emitter's foundation.
 
 Usage:
   python assets/scripts/gen_terrain_tables.py [--dump assets/rando/terrain_dump.gen.txt]
+  python assets/scripts/gen_terrain_tables.py --emit
+  python assets/scripts/gen_terrain_tables.py --check
 """
 
 import argparse
 import collections
 import os
 import sys
+import tempfile
 
 # Engine glove requirement per liftable attr class, ground-truthed from
 # src/tile_detect.c kTile50data = {0x54,0x52,0x50,0x51,0x53,0x55,0x56} (attr ->
@@ -266,8 +269,14 @@ def main():
     ap = argparse.ArgumentParser()
     repo = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
     ap.add_argument("--dump", default=os.path.join(repo, "assets", "rando", "terrain_dump.gen.txt"))
-    ap.add_argument("--emit", nargs="?", const=os.path.join(repo, "assets", "rando", "terrain.gen.yaml"),
-                    default=None, help="write the terrain registry YAML (default path when bare)")
+    default_registry = os.path.join(repo, "assets", "rando", "terrain.gen.yaml")
+    output = ap.add_mutually_exclusive_group()
+    output.add_argument("--emit", nargs="?", const=default_registry,
+                        default=None,
+                        help="write the terrain registry YAML (default path when bare)")
+    output.add_argument("--check", nargs="?", const=default_registry,
+                        default=None,
+                        help="fail if the existing registry differs from a fresh emission")
     args = ap.parse_args()
 
     areas, secrets, objs, unknowns = parse_dump(args.dump)
@@ -421,6 +430,32 @@ def main():
     # --- registry emission (tasks.md 2.1/2.2) ---
     if args.emit:
         emit_registry(args.emit, registrable, areas)
+    elif args.check:
+        expected = os.path.abspath(args.check)
+        if not os.path.isfile(expected):
+            print(f"gen_terrain_tables: {expected} is missing; run --emit first.",
+                  file=sys.stderr)
+            return 1
+        os.makedirs(os.path.dirname(expected), exist_ok=True)
+        fd, candidate = tempfile.mkstemp(
+            prefix=".terrain.gen.", suffix=".yaml", dir=os.path.dirname(expected))
+        os.close(fd)
+        try:
+            emit_registry(candidate, registrable, areas)
+            with open(expected, "rb") as f:
+                expected_bytes = f.read()
+            with open(candidate, "rb") as f:
+                candidate_bytes = f.read()
+            if candidate_bytes != expected_bytes:
+                print(f"gen_terrain_tables: {expected} is stale; regenerate with "
+                      "--emit.", file=sys.stderr)
+                return 1
+        finally:
+            try:
+                os.unlink(candidate)
+            except FileNotFoundError:
+                pass
+        print(f"gen_terrain_tables: OK ({expected} matches fresh emission)")
     else:
         total = len(registrable)
         print(f"\n(measurement only — pass --emit to write terrain.gen.yaml; "

@@ -81,17 +81,13 @@ bool Placement_ActiveIsSorted(void) {
 }
 
 // ---------------------------------------------------------------------------
-// Linear-scan dispatch lookup. Phase A0 placement tables are small (~237
-// entries); O(N) scan per location-check is fine. Phase A1 may switch to a
-// sorted-by-location-id table with binary search.
-//
-// Returns vanilla_item_id when:
-//   - No placement table installed (g_active_placement == NULL).
-//   - location_id is not in the table (e.g., a slot from a future binary).
+// Presence-aware dispatch lookup. Grant transactions must distinguish a table
+// entry whose item equals the source's vanilla item from a location that is not
+// present at all. Placement_Lookup below retains the legacy fallback wrapper.
 // ---------------------------------------------------------------------------
-uint16 Placement_Lookup(uint16 location_id, uint16 vanilla_item_id) {
+bool Placement_TryLookup(uint16 location_id, uint16 *out_item_id) {
   const RandoPlacementTable *t = g_active_placement;
-  if (t == NULL) return vanilla_item_id;
+  if (t == NULL) return false;
   // Binary search the sorted-by-location_id table.
   // At ~1163 active locations (pot/enemy location-expansion tiers) a
   // per-location-check linear scan would
@@ -101,18 +97,29 @@ uint16 Placement_Lookup(uint16 location_id, uint16 vanilla_item_id) {
     while (lo < hi) {
       uint16 mid = (uint16)(lo + (hi - lo) / 2u);
       uint16 mloc = t->entries[mid].location_id;
-      if (mloc == location_id) return t->entries[mid].item_id;
+      if (mloc == location_id) {
+        if (out_item_id != NULL) *out_item_id = t->entries[mid].item_id;
+        return true;
+      }
       if (mloc < location_id) lo = (uint16)(mid + 1u);
       else hi = mid;
     }
-    return vanilla_item_id;
+    return false;
   }
   // Fallback for an (unexpected) unsorted table: linear scan stays CORRECT.
   for (uint16 i = 0; i < t->count; i++) {
     if (t->entries[i].location_id == location_id) {
-      return t->entries[i].item_id;
+      if (out_item_id != NULL) *out_item_id = t->entries[i].item_id;
+      return true;
     }
   }
+  return false;
+}
+
+uint16 Placement_Lookup(uint16 location_id, uint16 vanilla_item_id) {
+  uint16 placed;
+  if (Placement_TryLookup(location_id, &placed))
+    return placed;
   return vanilla_item_id;
 }
 
@@ -3788,6 +3795,36 @@ void Placement_SelfCheck(void) {
 
   if (memcmp(digest1, digest2, 32) != 0) {
     selfcheck_die("placement digest not sort-invariant");
+  }
+
+  // Presence-aware lookup must distinguish an identity placement from a miss
+  // on both the sorted fast path and the defensive unsorted path. The legacy
+  // wrapper intentionally collapses those outcomes to the same item value.
+  {
+    uint16 found = 0xBEEF;
+    Placement_Install(&t);  // deliberately unsorted: linear fallback
+    if (Placement_ActiveIsSorted() ||
+        !Placement_TryLookup(100, &found) || found != 5 ||
+        Placement_TryLookup(101, &found) || found != 5)
+      selfcheck_die("presence-aware lookup failed on unsorted table");
+
+    RandoPlacement sorted_entries[3] = {
+      {50, 10}, {100, 5}, {200, 15},
+    };
+    RandoPlacementTable sorted = {sorted_entries, 3};
+    Placement_Install(&sorted);
+    found = 0xBEEF;
+    if (!Placement_ActiveIsSorted() ||
+        !Placement_TryLookup(100, &found) || found != 5 ||
+        Placement_TryLookup(101, &found) || found != 5 ||
+        Placement_Lookup(100, 5) != 5 ||
+        Placement_Lookup(101, 5) != 5)
+      selfcheck_die("identity-vs-absent lookup contract failed on sorted table");
+
+    Placement_Install(NULL);
+    found = 0xBEEF;
+    if (Placement_TryLookup(100, &found) || found != 0xBEEF)
+      selfcheck_die("presence-aware lookup must fail cleanly without a table");
   }
 
   // Changing one item changes the digest.

@@ -215,11 +215,17 @@ def _is_hard(meta: dict) -> bool:
     return False
 
 
-def check_binary(binary: Path) -> int:
-    if not binary.exists():
-        print(f"check_placer_determinism: binary {binary} not found — skipping "
-              f"runtime check (pass --binary=<path>).")
-        return 0
+def check_binary(binary: Path, *, allow_missing: bool = False) -> int:
+    if not binary.is_file():
+        if allow_missing:
+            print(f"check_placer_determinism: binary {binary} not found — "
+                  "explicitly skipped (--allow-missing-binary).")
+            return 0
+        print(f"check_placer_determinism: binary {binary} not found; the "
+              "requested runtime canary cannot run. Build it, select "
+              "--source-only, or pass --allow-missing-binary explicitly.",
+              file=sys.stderr)
+        return 2
 
     # First run also validates the canary is still genuinely hard.
     first = _generate(binary, [])
@@ -277,6 +283,8 @@ def main(argv: list[str]) -> int:
                    help="static check only (no binary): default budget must be 0")
     p.add_argument("--binary", type=Path, default=REPO / "zelda3",
                    help="path to the zelda3 binary for the runtime check")
+    p.add_argument("--allow-missing-binary", action="store_true",
+                   help="explicitly skip the runtime prong if its binary is absent")
     args = p.parse_args(argv)
 
     rc = check_source()
@@ -293,7 +301,7 @@ def main(argv: list[str]) -> int:
     # to cwd. Resolve to an absolute path first (matching run_rando_corpus.py).
     if binary.exists():
         binary = binary.resolve()
-    return check_binary(binary)
+    return check_binary(binary, allow_missing=args.allow_missing_binary)
 
 
 if __name__ == "__main__":

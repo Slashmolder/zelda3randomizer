@@ -77,7 +77,7 @@ void ZeldaDumpDebugState(void);  // F12 dev diagnostic: dump WRAM/SRAM/rando/PPU
 void ZeldaWriteSram();
 void ZeldaReadSram();
 
-// Headless helper for the §11.2 / §1.2 init-order replay guard. Loads
+// Headless helper for the §11.2 / §1.2 initialization + snapshot guard. Loads
 // the savestate at `path` into the state recorder in replay mode (which
 // restores g_ram from the snapshot's base_snapshot without running any
 // frames). Returns true if the file was opened and loaded; false if the

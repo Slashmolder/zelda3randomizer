@@ -37,6 +37,11 @@ Usage:
   python assets/scripts/check_rando_slot_path.py
   python assets/scripts/check_rando_slot_path.py --binary=bin/x64-Release/zelda3.exe
   python assets/scripts/check_rando_slot_path.py --jobs=1
+  python assets/scripts/check_rando_slot_path.py --allow-missing-binary
+  python assets/scripts/check_rando_slot_path.py --allow-missing-pot-registry
+
+The last mode is an assetless refusal test, not a skip: both slot and CLI pot
+generation must reject specifically because the registry is missing.
 """
 from __future__ import annotations
 
@@ -93,28 +98,31 @@ def local_pot_registry_available() -> bool:
 
 
 # (label, settings_csv, seed, expect_ok, check_parity, expect_world_state,
-#  allow_missing_pot_registry)
+#  allow_missing_pot_registry, expected_refusal_reason)
 # - expect_ok:        slot generation should succeed (True) or be refused (False)
 # - check_parity:     also run --generate-seed and require an identical digest
 #                     (only meaningful for accepted, attempt-0-success cells)
 # - expect_world_state: persisted slot header world_state (0=open,1=standard,
 #                     2=inverted,3=retro per WorldState enum); None to skip
-# - allow_missing_pot_registry: public CI has no local ROM-derived pot registry;
-#                     such cells are SKIPPED only when the generated registry is
-#                     absent.
+# - allow_missing_pot_registry: public CI has no local ROM-derived pot registry.
+#                     With --allow-missing-pot-registry, such cells become
+#                     fail-closed refusal tests: BOTH slot and CLI paths must
+#                     reject specifically because the registry is absent.
+# - expected_refusal_reason: stable semantic reason required from BOTH paths for
+#                     an intentionally rejected cell; None for accepted cells.
 MATRIX = [
-    ("open-fg-items",       "mode.state=open,goal=fast_ganon,accessibility=items",     "0x77", True,  True,  0, False),
-    ("open-fg-locations",   "mode.state=open,goal=fast_ganon,accessibility=locations", "0x77", True,  True,  0, False),
-    ("open-fg-beatable",    "mode.state=open,goal=fast_ganon,accessibility=none",      "0x77", True,  True,  0, False),
-    ("open-fg-beatable-alias", "mode.state=open,goal=fast_ganon,accessibility=beatable","0x77", True, True,  0, False),
-    ("standard-fg",         "mode.state=standard,goal=fast_ganon",                     "0x3",  True,  True,  1, False),
-    ("inverted-fg",         "mode.state=inverted,goal=fast_ganon",                     "0x50", True,  True,  2, False),
-    ("open-completionist",  "mode.state=open,goal=completionist",                      "0x7",  True,  True,  0, False),
-    ("door-pot-keys-open",  "mode.state=open,goal=fast_ganon,door_shuffle=basic,pot_shuffle=keys", "0x504f54", True, True, 0, True),
-    ("door-pot-all-items-open", "mode.state=open,goal=fast_ganon,door_shuffle=basic,pot_shuffle=all,accessibility=items", "0x504f55", True, True, 0, True),
+    ("open-fg-items",       "mode.state=open,goal=fast_ganon,accessibility=items",     "0x77", True,  True,  0, False, None),
+    ("open-fg-locations",   "mode.state=open,goal=fast_ganon,accessibility=locations", "0x77", True,  True,  0, False, None),
+    ("open-fg-beatable",    "mode.state=open,goal=fast_ganon,accessibility=none",      "0x77", True,  True,  0, False, None),
+    ("open-fg-beatable-alias", "mode.state=open,goal=fast_ganon,accessibility=beatable","0x77", True, True,  0, False, None),
+    ("standard-fg",         "mode.state=standard,goal=fast_ganon",                     "0x3",  True,  True,  1, False, None),
+    ("inverted-fg",         "mode.state=inverted,goal=fast_ganon",                     "0x50", True,  True,  2, False, None),
+    ("open-completionist",  "mode.state=open,goal=completionist",                      "0x7",  True,  True,  0, False, None),
+    ("door-pot-keys-open",  "mode.state=open,goal=fast_ganon,door_shuffle=basic,pot_shuffle=keys", "0x504f54", True, True, 0, True, None),
+    ("door-pot-all-items-open", "mode.state=open,goal=fast_ganon,door_shuffle=basic,pot_shuffle=all,accessibility=items", "0x504f55", True, True, 0, True, None),
     # Stable slot/CLI rejection: all-tier overworld checks include missable
     # pre/post-Aga windows, so 100%-locations is intentionally unsupported.
-    ("all-enemy-locations-REJECT", "mode.state=open,goal=fast_ganon,dungeon_items.small_keys=wild,enemy_drop_checks=all,accessibility=locations", "0x12", False, False, None, False),
+    ("all-enemy-locations-REJECT", "mode.state=open,goal=fast_ganon,dungeon_items.small_keys=wild,enemy_drop_checks=all,accessibility=locations", "0x12", False, False, None, False, "unsupported-enemy-locations"),
     # Seed reselected 3 -> 1 (2026-07-16): regenerating the stale Jul-7
     # gitignored artifacts (the room-0x099 big-key self-lock gates + the
     # CanKillHceThings alignment) tipped seed 3 from feasible to the
@@ -122,8 +130,8 @@ MATRIX = [
     # refuses; 1/2/4-7/9-11 pass — verified by sweep on main-identical code,
     # A/B-proven pre-existing, NOT a shopsanity regression). Both cells stay
     # paired on one seed so the items/beatable tiers compare like-for-like.
-    ("std-ganonhunt-hard-items-OK",     "mode.state=standard,goal=ganonhunt,item_pool=hard,accessibility=items", "1", True, True, 1, False),
-    ("std-ganonhunt-hard-beatable-OK",  "mode.state=standard,goal=ganonhunt,item_pool=hard,accessibility=none",  "1", True,  True,  1, False),
+    ("std-ganonhunt-hard-items-OK",     "mode.state=standard,goal=ganonhunt,item_pool=hard,accessibility=items", "1", True, True, 1, False, None),
+    ("std-ganonhunt-hard-beatable-OK",  "mode.state=standard,goal=ganonhunt,item_pool=hard,accessibility=none",  "1", True,  True,  1, False, None),
 ]
 
 
@@ -140,6 +148,9 @@ def run_slot(binary: Path, settings: str, seed: str) -> dict | None:
         except OSError as e:
             print(f"  failed to launch {binary}: {e}", file=sys.stderr)
             return None
+        except subprocess.TimeoutExpired:
+            print(f"  slot generation timed out after {GEN_TIMEOUT_S}s", file=sys.stderr)
+            return None
         # The binary prints exactly one JSON line on stdout regardless of exit
         # code (ok=false carries the error). exit 0 == accepted, 1 == refused.
         line = next((l for l in proc.stdout.splitlines() if l.startswith("{")), None)
@@ -147,24 +158,79 @@ def run_slot(binary: Path, settings: str, seed: str) -> dict | None:
             print(f"  no JSON on stdout (exit {proc.returncode}); stderr tail:\n"
                   f"    {proc.stderr.strip()[-300:]}", file=sys.stderr)
             return None
-        return json.loads(line)
+        try:
+            result = json.loads(line)
+        except json.JSONDecodeError as exc:
+            print(f"  malformed JSON on stdout: {exc}", file=sys.stderr)
+            return None
+        if not isinstance(result, dict):
+            print("  slot JSON result is not an object", file=sys.stderr)
+            return None
+        # Private harness metadata used to prove semantic refusal. The public
+        # JSON error is intentionally user-facing and may only say
+        # "placement failed"; stderr carries BuildItemPool's precise reason.
+        result["_returncode"] = proc.returncode
+        result["_stderr"] = proc.stderr
+        return result
 
 
-def run_seed_digest(binary: Path, settings: str, seed: str) -> str | None:
-    """Run the CLI --generate-seed path; return its placement_digest_hex."""
+def semantic_refusal(stderr: str) -> str | None:
+    """Classify only stable, intentional generator refusals."""
+    if (
+        "pot_shuffle requested" in stderr
+        and "pots.gen.yaml" in stderr
+        and "rebuild before generating pot-shuffle seeds" in stderr
+    ):
+        return "missing-pot-registry"
+    if (
+        "enemy_drop_checks=all" in stderr
+        and "accessibility=locations" in stderr
+        and ("unsupported" in stderr or "not supported" in stderr)
+    ):
+        return "unsupported-enemy-locations"
+    return None
+
+
+def run_seed_digest(binary: Path, settings: str, seed: str) -> dict[str, str | None]:
+    """Run the CLI path and distinguish acceptance, expected refusal, and error."""
     with tempfile.TemporaryDirectory() as td:
         out_json = Path(td) / "out.json"
         try:
-            subprocess.run(
+            proc = subprocess.run(
                 [str(binary), "--generate-seed", f"--settings={settings}",
                  f"--seed={seed}", f"--out-spoiler={out_json}"],
-                cwd=td, check=True, capture_output=True, timeout=GEN_TIMEOUT_S,
+                cwd=td, check=False, capture_output=True, text=True,
+                timeout=GEN_TIMEOUT_S,
             )
-        except (OSError, subprocess.CalledProcessError):
-            return None
+        except OSError as exc:
+            return {"status": "error", "digest": None,
+                    "detail": f"launch failed: {exc}"}
+        except subprocess.TimeoutExpired:
+            return {"status": "error", "digest": None,
+                    "detail": f"timed out after {GEN_TIMEOUT_S}s"}
+
+        stderr_tail = proc.stderr.strip()[-500:]
+        refusal = semantic_refusal(proc.stderr)
+        if proc.returncode == 1 and refusal is not None:
+            return {"status": "rejected", "digest": None,
+                    "reason": refusal, "detail": stderr_tail}
+        if proc.returncode != 0:
+            return {"status": "error", "digest": None,
+                    "detail": f"unexpected exit {proc.returncode}: {stderr_tail}"}
         if not out_json.exists():
-            return None
-        return json.loads(out_json.read_text(encoding="utf-8")).get("meta", {}).get("placement_digest_hex")
+            return {"status": "error", "digest": None,
+                    "detail": "exit 0 without spoiler JSON"}
+        try:
+            digest = json.loads(out_json.read_text(encoding="utf-8")).get(
+                "meta", {}).get("placement_digest_hex")
+        except (OSError, json.JSONDecodeError) as exc:
+            return {"status": "error", "digest": None,
+                    "detail": f"unreadable spoiler JSON: {exc}"}
+        if not (isinstance(digest, str) and
+                re.fullmatch(r"[0-9a-fA-F]{64}", digest)):
+            return {"status": "error", "digest": None,
+                    "detail": f"missing/malformed placement digest: {digest!r}"}
+        return {"status": "accepted", "digest": digest, "detail": stderr_tail}
 
 
 def main(argv: list[str]) -> int:
@@ -173,72 +239,165 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--jobs", type=int, default=default_jobs(),
                         help="parallel matrix cells (default min(8, CPU count); "
                              "use 1 for serial)")
+    parser.add_argument(
+        "--allow-missing-binary", action="store_true",
+        help="explicitly skip the runtime matrix when the binary is absent",
+    )
+    parser.add_argument(
+        "--allow-missing-pot-registry", action="store_true",
+        help="when the local registry is absent, require both slot and CLI "
+             "pot-shuffle paths to refuse specifically for that reason",
+    )
     args = parser.parse_args(argv)
 
-    if not args.binary.exists():
-        # Match run_rando_corpus.py: missing binary is a skip, not a hard fail,
-        # so a docs-only / ROM-less checkout doesn't break.
-        print(f"check_rando_slot_path: binary {args.binary} not found - skipping.")
-        return 0
+    if not args.binary.is_file():
+        if args.allow_missing_binary:
+            print(f"check_rando_slot_path: binary {args.binary} not found - "
+                  "explicitly skipped (--allow-missing-binary).")
+            return 0
+        print(f"check_rando_slot_path: binary {args.binary} not found; the "
+              "requested runtime check cannot run. Build it or pass "
+              "--allow-missing-binary explicitly.", file=sys.stderr)
+        return 2
     args.binary = args.binary.resolve()
 
     print(f"check_rando_slot_path: binary {args.binary}")
     print(f"check_rando_slot_path: jobs {max(1, args.jobs)}")
     pot_registry_present = local_pot_registry_available()
+    if not pot_registry_present and not args.allow_missing_pot_registry:
+        print("check_rando_slot_path: local pot registry is absent; the requested "
+              "matrix includes pot-shuffle cells. Prepare local artifacts or "
+              "pass --allow-missing-pot-registry explicitly (public assetless CI).",
+              file=sys.stderr)
+        return 2
     jobs = max(1, args.jobs)
 
     def run_cell(cell):
-        label, settings, seed, expect_ok, check_parity, expect_ws, allow_missing_pots = cell
+        (label, settings, seed, expect_ok, check_parity, expect_ws,
+         allow_missing_pots, expected_refusal_reason) = cell
         lines: list[str] = []
         res = run_slot(args.binary, settings, seed)
         if res is None:
             lines.append(f"  FAIL [{label}]: no result")
-            return lines, True, False
+            return lines, True
 
-        ok = bool(res.get("ok"))
-        if not ok and expect_ok and allow_missing_pots and not pot_registry_present:
-            lines.append(f"  SKIP [{label}]: local pot registry absent")
-            return lines, False, True
+        raw_ok = res.get("ok")
+        if not isinstance(raw_ok, bool):
+            lines.append(
+                f"  FAIL [{label}]: slot JSON ok must be boolean, got {raw_ok!r}"
+            )
+            return lines, True
+        ok = raw_ok
+        if allow_missing_pots and not pot_registry_present:
+            slot_reason = semantic_refusal(
+                f"{res.get('_stderr', '')}\n{res.get('error', '')}"
+            )
+            slot_refused = (
+                not ok
+                and res.get("_returncode") == 1
+                and slot_reason == "missing-pot-registry"
+            )
+            cli = run_seed_digest(args.binary, settings, seed)
+            cli_refused = (
+                cli.get("status") == "rejected"
+                and cli.get("reason") == "missing-pot-registry"
+            )
+            if slot_refused and cli_refused:
+                lines.append(
+                    f"  OK   [{label}]: missing pot registry refused by both slot and CLI paths"
+                )
+                return lines, False
+            if ok:
+                lines.append(
+                    f"  FAIL [{label}]: slot path accepted pot shuffle without a pot registry"
+                )
+            else:
+                lines.append(
+                    f"  FAIL [{label}]: slot path did not produce the semantic missing-registry "
+                    f"refusal (exit={res.get('_returncode')}, reason={slot_reason!r}, "
+                    f"error={res.get('error', '')!r})"
+                )
+            if cli.get("status") == "accepted":
+                lines.append(
+                    f"        CLI path also accepted (digest {str(cli.get('digest'))[:8]}...)"
+                )
+            elif not cli_refused:
+                lines.append(
+                    f"        CLI path did not produce the semantic missing-registry refusal "
+                    f"(status={cli.get('status')}, reason={cli.get('reason')!r}, "
+                    f"detail={cli.get('detail')})"
+                )
+            return lines, True
         if ok != expect_ok:
             lines.append(f"  FAIL [{label}]: ok={ok}, expected {expect_ok} "
                          f"(error={res.get('error','')!r})")
-            return lines, True, False
+            return lines, True
 
         if not ok:
-            # Correctly refused. Confirm the CLI path refuses too (consistency).
+            # Correctly refused only if BOTH paths use the matrix's stable,
+            # intentional reason and the slot path returns the refusal exit.
+            if expected_refusal_reason is None:
+                lines.append(f"  FAIL [{label}]: rejected cell has no expected semantic reason")
+                return lines, True
+            slot_reason = semantic_refusal(
+                f"{res.get('_stderr', '')}\n{res.get('error', '')}"
+            )
+            if (res.get("_returncode") != 1 or
+                    slot_reason != expected_refusal_reason):
+                lines.append(
+                    f"  FAIL [{label}]: slot path did not produce expected refusal "
+                    f"(exit={res.get('_returncode')}, reason={slot_reason!r}, "
+                    f"expected={expected_refusal_reason!r})"
+                )
+                return lines, True
             cli = run_seed_digest(args.binary, settings, seed)
-            if cli is not None:
-                lines.append(f"  FAIL [{label}]: slot path refused but CLI path accepted "
-                             f"(digest {cli[:8]}...) - paths disagree")
-                return lines, True, False
-            else:
-                lines.append(f"  OK   [{label}]: refused by both slot and CLI paths (as expected)")
-            return lines, False, False
+            if (cli.get("status") == "rejected" and
+                    cli.get("reason") == expected_refusal_reason):
+                lines.append(
+                    f"  OK   [{label}]: both paths refused with "
+                    f"{expected_refusal_reason} (as expected)"
+                )
+                return lines, False
+            lines.append(
+                f"  FAIL [{label}]: CLI path did not produce expected refusal "
+                f"(status={cli.get('status')}, reason={cli.get('reason')!r}, "
+                f"expected={expected_refusal_reason!r}, detail={cli.get('detail')})"
+            )
+            return lines, True
 
-        if not res.get("roundtrip_ok"):
+        if res.get("_returncode") != 0:
+            lines.append(
+                f"  FAIL [{label}]: slot JSON reported ok=true with exit "
+                f"{res.get('_returncode')}"
+            )
+            return lines, True
+
+        if res.get("roundtrip_ok") is not True:
             lines.append(f"  FAIL [{label}]: slot did not round-trip "
                          f"(world_state={res.get('world_state')}, "
                          f"slot_kind={res.get('slot_kind')})")
-            return lines, True, False
+            return lines, True
 
         if expect_ws is not None and res.get("world_state") != expect_ws:
             lines.append(f"  FAIL [{label}]: world_state={res.get('world_state')}, expected {expect_ws}")
-            return lines, True, False
+            return lines, True
 
         if check_parity:
-            cli_digest = run_seed_digest(args.binary, settings, seed)
-            if cli_digest is None:
-                lines.append(f"  FAIL [{label}]: CLI path failed to generate (parity check)")
-                return lines, True, False
+            cli = run_seed_digest(args.binary, settings, seed)
+            if cli["status"] != "accepted":
+                lines.append(f"  FAIL [{label}]: CLI path failed to generate "
+                             f"(parity check: {cli['detail']})")
+                return lines, True
+            cli_digest = cli["digest"]
             if cli_digest != res.get("placement_digest_hex"):
                 lines.append(f"  FAIL [{label}]: digest parity mismatch")
                 lines.append(f"        slot: {res.get('placement_digest_hex')}")
                 lines.append(f"        cli : {cli_digest}")
-                return lines, True, False
+                return lines, True
 
         lines.append(f"  OK   [{label}]: {res.get('placement_digest_hex','')[:16]}... "
                      f"(ws={res.get('world_state')}, roundtrip+parity)")
-        return lines, False, False
+        return lines, False
 
     results = {}
     if jobs == 1:
@@ -254,28 +413,20 @@ def main(argv: list[str]) -> int:
                     results[idx] = future.result()
                 except Exception as e:
                     label = MATRIX[idx][0]
-                    results[idx] = ([f"  FAIL [{label}]: runner error: {e!r}"],
-                                    True, False)
+                    results[idx] = ([f"  FAIL [{label}]: runner error: {e!r}"], True)
 
     failures = 0
-    skipped = 0
     for idx in range(len(MATRIX)):
-        lines, failed, skip = results[idx]
+        lines, failed = results[idx]
         for line in lines:
             print(line)
         failures += 1 if failed else 0
-        skipped += 1 if skip else 0
 
     n = len(MATRIX)
     if failures:
-        print(f"\ncheck_rando_slot_path: {failures} of {n - skipped} run cells FAILED "
-              f"({skipped} skipped).")
+        print(f"\ncheck_rando_slot_path: {failures} of {n} run cells FAILED.")
         return 1
-    if skipped:
-        print(f"\ncheck_rando_slot_path: all {n - skipped} run cells OK "
-              f"({skipped} pot-registry cells skipped).")
-    else:
-        print(f"\ncheck_rando_slot_path: all {n} cells OK.")
+    print(f"\ncheck_rando_slot_path: all {n} cells OK.")
     return 0
 
 

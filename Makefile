@@ -57,6 +57,7 @@ CPP_OBJS:=$(IMGUI_SRCS:%.cpp=%.o)
 # the object in case a prior codegen run left the .c for the wildcard to catch.
 SRCS:=$(SRCS) src/rando/rando_window/rando_window_bridge.c src/rando/logic_data.c
 OBJS:=$(sort $(SRCS:%.c=%.o))
+DEPS:=$(OBJS:.o=.d) $(CPP_OBJS:.o=.d)
 
 # Rando codegen artifacts (tasks.md §3.5 / §3.6 / §6.3). The Python script reads
 # the YAML registries under assets/rando/ and emits these four files. The
@@ -97,9 +98,9 @@ $(TARGET_EXEC): | check-assets-signature
 $(TARGET_EXEC): $(OBJS) $(CPP_OBJS) $(RES)
 	$(CXX) $^ -o $@ $(LDFLAGS) $(SDLFLAGS)
 %.o : %.c
-	$(CC) -c $(CFLAGS) $< -o $@
+	$(CC) -c $(CFLAGS) -MMD -MP -MF $(@:.o=.d) $< -o $@
 %.o : %.cpp
-	$(CXX) -c $(CXXFLAGS) $< -o $@
+	$(CXX) -c $(CXXFLAGS) -MMD -MP -MF $(@:.o=.d) $< -o $@
 
 # Rando codegen rule. ONE invocation regenerates all outputs.
 #
@@ -141,9 +142,10 @@ rando-local-checks: rando-local-prepare
 	$(PYTHON) assets/scripts/run_rando_local_checks.py --binary=$(RANDO_LOCAL_CHECK_BINARY) --skip-prepare
 
 # Make every object wait on the codegen outputs and the asset-hash header
-# before it compiles. Order-only (the `|`): they gate presence, not timestamps,
-# so regenerating them does not force a full rebuild — consistent with this
-# Makefile carrying no other header dependency tracking. This is what lets a
+# before it compiles. Order-only (the `|`): they gate presence, not timestamps.
+# Normal include relationships, including generated headers once present, are
+# tracked by the compiler-emitted depfiles included at the end of this file.
+# This is what lets a
 # fresh checkout — including CI, which has NO ROM and never extracts assets —
 # build with a bare `make zelda3`. (The Windows vcxproj runs the same codegen
 # as a pre-build Exec; this is the Make equivalent.)
@@ -182,6 +184,12 @@ force-assets-check:
 clean: clean_obj clean_gen
 clean_obj:
 	@$(RM) $(OBJS) $(CPP_OBJS) $(TARGET_EXEC)
+	@$(RM) $(DEPS)
 clean_gen:
 	@$(RM) $(RES) zelda3_assets.dat tables/zelda3_assets.dat tables/*.txt tables/*.png tables/sprites/*.png tables/*.yaml
 	@rm -rf tables/__pycache__ tables/dungeon tables/img tables/overworld tables/sound
+
+# Missing depfiles are expected on a fresh checkout and after clean_obj.
+# -MP emits harmless phony header targets so removing/renaming a header does not
+# make a stale depfile prevent Make from reaching the real compile diagnostic.
+-include $(DEPS)

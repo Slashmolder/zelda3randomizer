@@ -1,12 +1,6 @@
-// rando.c — randomizer master module (tasks.md §1.1, §1.1a). Phase A0 stub.
-//
-// Phase A0 deliverables landed here:
-//   - g_assets_hash[32] global (computed by main.c::LoadAssets via sha256_buffer)
-//   - Rando_OnLocationCheck() stub — currently pass-through (returns vanilla_item_id);
-//     real placement-table dispatch lands with task 6.1
-//   - Rando_BumpReachabilityCounter() stub — no-op; activates with task 3.8's
-//     Logic_ComputeReachability memoization
-//   - Optional SHA-256 self-test (RANDO_SELFCHECK build flag)
+// rando.c — randomizer master module (tasks.md §1.1, §1.1a).
+// Owns slot activation, placement/grant transactions, generated item semantics,
+// reachability, persistence integration, and the headless self-test groups.
 
 #include "rando.h"
 #include <string.h>  // memcpy — used by Rando_ActivateSidecarSlot below
@@ -57,6 +51,7 @@
 #include "../misc.h"       // §7.6 Link_CalculateSfxPan
 #include "../messaging.h"  // dynamic-hint story fast-forward policy selfcheck
 #include "../sprite.h"     // Sprite_ShowMessageUnconditional (trap dialogue)
+#include "../sprite_main.h"  // grant presentation self-check seam
 #include "../zelda_rtl.h"  // g_zenv.dialogue_flags locale gate selfcheck
 #include "../hud.h"        // §7.6 Hud_RefreshIcon
 #include "../player.h"     // §7.6 Link_ReceiveItem
@@ -196,6 +191,14 @@ void Rando_StampSlotRegistries(RandoSlotHeader *h) {
 static bool rando_instant_flute_active(void);
 static bool rando_trap_decoy_icon(uint16 item_id, uint16 location_id,
                                   DirectGrantIconEntry *out);
+static bool rando_trap_decoy_icon_for_seed(uint64 seed, uint16 item_id,
+                                           uint16 location_id,
+                                           DirectGrantIconEntry *out);
+static uint64 rando_trap_decoy_seed(void);
+static bool rando_receive_icon_for_code(uint8 code, uint8 *out_gfx,
+                                        uint8 *out_big, uint8 *out_oam_flags);
+static const RandoLocationDef *Rando_FindLocationDef(uint16 location_id);
+extern const uint8 kWishPond2_OamFlags[76];
 
 // ---------------------------------------------------------------------------
 // Reachability state counter — bumped by Rando_BumpReachabilityCounter()
@@ -217,6 +220,13 @@ uint16 Rando_GiftThiefLocationForRoom(uint16 room_id) {
 // Rando_OnLocationCheck — universal dispatcher (tasks.md §6.1).
 // Phase A0 stub: pass-through. Phase A1 wires the placement_table lookup.
 // ---------------------------------------------------------------------------
+static void rando_record_committed_item_ownership(uint16 item_id) {
+  if (item_id == ITEM_Mushroom && g_rando_slot_active)
+    g_rando_mushroom_held |= kRandoMushroom_Held;
+  if (item_id == ITEM_MagicPowder && g_rando_slot_active)
+    g_rando_mushroom_held |= kRandoMushroom_PowderOwned;
+}
+
 uint16 Rando_OnLocationCheck(uint16 location_id, uint16 vanilla_item_id) {
   // §8.8a ordering-invariant tripwire: every call increments a global
   // counter that StateRecorder_Load snapshots before LoadSnesState and
@@ -241,132 +251,12 @@ uint16 Rando_OnLocationCheck(uint16 location_id, uint16 vanilla_item_id) {
   // (one byte, mutually exclusive values), so the Witch trade keys off this
   // flag instead — see Rando_MushroomHeld / Witch_AcceptShroom. Guarded on
   // an active slot so a vanilla Mushroom pickup never sets it.
-  if (placed == ITEM_Mushroom && g_rando_slot_active)
-    g_rando_mushroom_held |= kRandoMushroom_Held;
   // Powder ownership is tracked the same way, so the item-menu swap can show the
   // Mushroom icon (byte=1) without logic/tracking reading Powder as lost — the
   // shared byte can't represent "have both." See Rando_MushroomPowderCanToggle.
-  if (placed == ITEM_MagicPowder && g_rando_slot_active)
-    g_rando_mushroom_held |= kRandoMushroom_PowderOwned;
+  rando_record_committed_item_ownership(placed);
 
   return placed;
-}
-
-// §6.2 partial: progressive items don't have a vanilla LttP code (the
-// game's Link_ReceiveItem dispatch table grants absolute tiers, not
-// "advance to next tier"). Translate progressive items to the next-tier
-// absolute LttP code at dispatch time. Each call advances by one tier;
-// the placer's bounded-retry already accounts for the cumulative effect
-// across multiple ProgressiveSword placements.
-//
-// Returns 0xFF if `registry_id` isn't a progressive item OR is at max tier
-// (the placer caps pool counts via item-pool-difficulty, so we shouldn't
-// hit this in practice — but if we do, fall back to junk via 0xFF).
-static uint8 progressive_to_lttp(uint16 registry_id) {
-  switch (registry_id) {
-    case ITEM_ProgressiveSword: {
-      uint8 tier = link_sword_type;
-      if (tier >= 4) return 0xFF;
-      return tier;  // LttP codes 0x00..0x03 = L1..L4 sword
-    }
-    case ITEM_ProgressiveShield: {
-      uint8 tier = link_shield_type;
-      if (tier >= 3) return 0xFF;
-      return (uint8)(0x04 + tier);  // LttP codes 0x04..0x06 = Fighter/Red/Mirror
-    }
-    case ITEM_ProgressiveArmor: {
-      // link_armor: 0=Green (default), 1=Blue, 2=Red
-      uint8 tier = link_armor;
-      if (tier >= 2) return 0xFF;
-      return (uint8)(0x22 + tier);  // 0x22=BlueMail, 0x23=RedMail
-    }
-    case ITEM_ProgressiveGlove: {
-      uint8 tier = link_item_gloves;
-      if (tier >= 2) return 0xFF;
-      return (uint8)(0x1b + tier);  // 0x1b=PowerGlove, 0x1c=TitanMitt
-    }
-    case ITEM_ProgressiveBow: {
-      // link_item_bow is NOT a linear tier counter: it encodes bow strength
-      // AND arrow state (1=wood/no-arrows, 2=wood/arrows, 3=silver/no-arrows,
-      // 4=silver/arrows; hud.c re-derives the low bit from link_num_arrows).
-      // So distinguish by strength tier, not raw value.
-      uint8 bow = link_item_bow;
-      if (bow == 0) return 0x0b;  // first pickup: wooden bow (code 0x0b)
-      if (bow < 3)  return 0x3b;  // second: upgrade to silver bow (code 0x3b)
-      return 0xFF;                // already have silver bow
-    }
-    // Multi-tier rupees: vanilla LttP receive codes per Ancilla_AddRupees.
-    // kGiveRupeeGift_Tab[5] = {1, 5, 20, 100, 50}:
-    //   0x34→1, 0x35→5, 0x36→20, 0x40→100, 0x41→50, 0x46→300
-    case ITEM_Rupee1:   return 0x34;
-    case ITEM_Rupee5:   return 0x35;
-    case ITEM_Rupee20:  return 0x36;
-    case ITEM_Rupee100: return 0x40;
-    case ITEM_Rupee300: return 0x46;
-    // Rupoor: ALTTPR-only item (vanilla LttP doesn't have it). No vanilla
-    // LttP code grants Rupoor, so progressive_to_lttp returns 0xFF here — the
-    // grant is handled directly by the ITEM_Rupoor case in
-    // Rando_DispatchVanillaGrant (rupee drain + kRandoLttpSkip). It must NOT
-    // fall through to the vanilla-item fallback: at chests whose US-ROM vanilla
-    // item is progression (Zelda's Cell / Link's House / Secret Passage = Lamp)
-    // that fallback granted a duplicate real item.
-    // HalfMagic / QuarterMagic: no LttP receive code in this port grants
-    // them. kValueToGiveItemTo[32]=-1 means code 0x20's "magic" branch in
-    // Link_ReceiveItem runs special palette/cape logic but does NOT write to
-    // link_magic_consumption. The vanilla Magic Bat grant bypasses
-    // Link_ReceiveItem entirely (direct write). §6.2 work would add a
-    // new receive helper that writes link_magic_consumption=1 (Half) or
-    // =2 (Quarter); Phase A1 falls back to vanilla item.
-
-    // Bottle-with-contents → LttP codes per misc.c kBottleList[].
-    // ItemReceipt_GiveBottledItem finds the first empty slot and writes
-    // (kBottleList_index + 2). Mapping is fixed at:
-    //   0x16=BottleEmpty, 0x2b=Bee, 0x2c=Fairy, 0x2d=RedPotion,
-    //   0x3d=GreenPotion, 0x3c=GoodBee, 0x48=BluePotion
-    case ITEM_BottleEmpty:           return 0x16;
-    case ITEM_BottleWithFairy:       return 0x2c;
-    case ITEM_BottleWithBee:         return 0x2b;
-    case ITEM_BottleWithGoodBee:     return 0x3c;
-    case ITEM_BottleWithRedPotion:   return 0x2d;
-    case ITEM_BottleWithGreenPotion: return 0x3d;
-    case ITEM_BottleWithBluePotion:  return 0x48;
-    // SilverArrowUpgrade → LttP code 0x3b, which sets link_item_bow=3
-    // (silver bow). hud.c re-derives 3→4 when arrows are present. NOTE: code
-    // 0x29 (used previously) writes link_item_mushroom, NOT the bow — it
-    // grants a Mushroom, so silver arrows were never actually awarded.
-    case ITEM_SilverArrowUpgrade: return 0x3b;
-    default:
-      // Dungeon items (SmallKey 53..65, BigKey 66..76, Map 77..87 + 124,
-      // Compass 88..98): for the CURRENT-dungeon vanilla fall-back this
-      // returns the dispatcher code (0x24/0x32/0x33/0x25). The per-placed-
-      // dungeon direct-write path in Rando_DispatchVanillaGrant supersedes
-      // this — see dungeon_item_direct_grant() below. We keep these here as
-      // a last-resort fall-back when the direct-write path can't apply
-      // (e.g. caller passed a vanilla_lttp_code that bypasses dispatch).
-      if (registry_id >= 53 && registry_id <= 65) return 0x24;  // SmallKey
-      if (registry_id >= 66 && registry_id <= 76) return 0x32;  // BigKey
-      if (registry_id == 124) return 0x33;                       // Map_HCE
-      if (registry_id >= 77 && registry_id <= 87) return 0x33;   // Map_*
-      if (registry_id >= 88 && registry_id <= 98) return 0x25;   // Compass
-      return 0xFF;
-  }
-}
-
-// True for the progressive items whose progressive_to_lttp result depends on
-// the player's CURRENT tier — so a 0xFF return from progressive_to_lttp means
-// "already at max tier", NOT "unknown item". Keep in sync with the tiered
-// cases in progressive_to_lttp above.
-static bool rando_is_progressive_item(uint16 registry_id) {
-  switch (registry_id) {
-    case ITEM_ProgressiveSword:
-    case ITEM_ProgressiveShield:
-    case ITEM_ProgressiveArmor:
-    case ITEM_ProgressiveGlove:
-    case ITEM_ProgressiveBow:
-      return true;
-    default:
-      return false;
-  }
 }
 
 // §6.2 per-placed-dungeon counter helper. The vanilla LttP dispatcher
@@ -377,29 +267,29 @@ static bool rando_is_progressive_item(uint16 registry_id) {
 //
 // Returns 1 if the placed item is a dungeon item and was direct-written.
 // Caller treats this as "skip Link_ReceiveItem" via kRandoLttpSkip.
-static int dungeon_item_direct_grant(uint16 registry_id) {
+static int dungeon_item_direct_grant(uint16 registry_id, uint8 opcode) {
   uint8 dungeon = Rando_DungeonItemGameDungeon(registry_id);
   // Game-side indices range 0..13 (GT). 16 is the kUpperBitmasks size — past
   // that, Rando_DungeonBitForGameDungeon returns 0 and the OR would no-op.
   if (dungeon == 0xFF || dungeon >= 16) return 0;
 
   uint16 bit = Rando_DungeonBitForGameDungeon(dungeon);
-  if (registry_id >= 66 && registry_id <= 76) {
+  if (opcode == kRandoGrantOp_DungeonBigKey) {
     // BigKey for `dungeon`.
     link_bigkey |= bit;
     return 1;
   }
-  if (registry_id == 124 || (registry_id >= 77 && registry_id <= 87)) {
+  if (opcode == kRandoGrantOp_DungeonMap) {
     // Map for `dungeon`.
     link_dungeon_map |= bit;
     return 1;
   }
-  if (registry_id >= 88 && registry_id <= 98) {
+  if (opcode == kRandoGrantOp_DungeonCompass) {
     // Compass for `dungeon`.
     link_compass |= bit;
     return 1;
   }
-  if (registry_id >= 53 && registry_id <= 65) {
+  if (opcode == kRandoGrantOp_DungeonSmallKey) {
     // SmallKey for game-side dungeon `dungeon`. Vanilla keeps the live count
     // for the player's CURRENT dungeon in link_num_keys and parks every
     // dungeon's saved count in link_keys_earned_per_dungeon[cur_palace_index_x2
@@ -530,33 +420,24 @@ static int prize_item_direct_grant(uint16 registry_id) {
   }
 }
 
-// §6.2 magic-upgrade direct-grant. HalfMagic / QuarterMagic bypass
-// Link_ReceiveItem in vanilla — the only writer is the Magic Bat handler in
-// sprite_main.c writing link_magic_consumption = 1. Rando placements
-// of these items at non-Magic-Bat slots need a direct-write here.
-// Returns 1 on success.
-static int magic_upgrade_direct_grant(uint16 registry_id) {
-  if (registry_id == ITEM_HalfMagic || registry_id == ITEM_QuarterMagic) {
-    // Strictly progressive: each magic upgrade advances ONE tier
-    // (full=0 -> half=1 -> quarter=2), regardless of which item it is, so the
-    // 1st pickup is always 1/2 and the 2nd is always 1/4 in any collection
-    // order — no pickup is ever wasted. (Deliberate local choice: ALTTPR's
-    // QuarterMagic jumps straight to 1/4; this caps at +1 tier instead. Never
-    // downgrades because it only ever increments.)
-    if (link_magic_consumption < 2) link_magic_consumption++;
-    return 1;
-  }
-  return 0;
+static void capacity_upgrade_direct_grant_to(bool bombs, uint8 target) {
+  uint8 *level = bombs ? &link_bomb_upgrades : &link_arrow_upgrades;
+  uint8 *filler = bombs ? &link_bomb_filler : &link_arrow_filler;
+  if (target > 7) target = 7;
+  if (*level >= target) return;
+  *level = target;
+  // Match the vanilla capacity shop: raising capacity also refills toward the
+  // new maximum. The filler is a countdown, so a max-sized value is enough to
+  // reach the cap from any current inventory without risking arithmetic wrap.
+  *filler = bombs ? kMaxBombsForLevel[target] : kMaxArrowsForLevel[target];
 }
 
-// Phase B Slice 9 — last item id resolved by Rando_DispatchVanillaGrant
-// (or its callers via Rando_ChestDispatch). Read by call sites after the
-// dispatch returns kRandoLttpSkip so Rando_ShowDirectGrantConfirmation can
-// look up the per-item icon in kDirectGrantIcons[]. Single-threaded; the
-// dispatcher is the immediately preceding rando call at every direct-grant
-// site, so the value is fresh by construction.
+// Phase B Slice 9 — last item/plan committed by either the transaction core or
+// the narrow compatibility dispatcher.
 static uint16 g_last_dispatched_item_id = 0xFFFFu;
 static uint16 g_last_dispatched_location_id = 0xFFFFu;
+static RandoGrantPlan g_last_dispatched_plan;
+static bool g_last_dispatched_plan_valid;
 
 uint16 Rando_LastDispatchedItemId(void) {
   return g_last_dispatched_item_id;
@@ -583,6 +464,354 @@ static const DirectGrantIconEntry *rando_direct_grant_icon_entry(uint16 item_id)
   if ((size_t)item_id >= n || kDirectGrantIcons[item_id].gfx == 0)
     return NULL;
   return &kDirectGrantIcons[item_id];
+}
+
+// === Generated-metadata grant planning =====================================
+
+void Rando_CaptureGrantState(RandoGrantState *out) {
+  if (out == NULL) return;
+  memset(out, 0, sizeof(*out));
+  out->sword = link_sword_type;
+  out->shield = link_shield_type;
+  out->armor = link_armor;
+  out->gloves = link_item_gloves;
+  out->bow = link_item_bow;
+  out->bow_owned = g_rando_bow_owned;
+  out->boomerang = link_item_boomerang;
+  out->boomerang_owned = g_rando_boomerang_owned;
+  out->magic_consumption = link_magic_consumption;
+  memcpy(out->bottle, link_bottle_info, sizeof(out->bottle));
+  out->heart_pieces = link_heart_pieces;
+  out->health_capacity = link_health_capacity;
+  out->health_current = link_health_current;
+  out->hearts_filler = link_hearts_filler;
+  out->magic_power = link_magic_power;
+  out->magic_filler = link_magic_filler;
+  out->bombs = link_item_bombs;
+  out->bomb_filler = link_bomb_filler;
+  out->bomb_upgrades = link_bomb_upgrades;
+  out->arrows = link_num_arrows;
+  out->arrow_filler = link_arrow_filler;
+  out->arrow_upgrades = link_arrow_upgrades;
+  out->trap_seed = rando_trap_decoy_seed();
+}
+
+static bool rando_plan_bottle_has_slot(const RandoGrantState *state,
+                                       uint8 code) {
+  static const uint8 kBottlePickupCodes[] = {
+    0x16, 0x2b, 0x2c, 0x2d, 0x3d, 0x3c, 0x48,
+  };
+  static const uint8 kBottleContentCodes[] = {0x2e, 0x2f, 0x30, 0x0e};
+  bool is_bottle = false;
+  for (size_t i = 0; i < countof(kBottlePickupCodes); i++)
+    is_bottle |= code == kBottlePickupCodes[i];
+  if (is_bottle) {
+    for (size_t i = 0; i < countof(state->bottle); i++)
+      if (state->bottle[i] < 2) return true;
+    return false;
+  }
+  bool is_content = false;
+  for (size_t i = 0; i < countof(kBottleContentCodes); i++)
+    is_content |= code == kBottleContentCodes[i];
+  if (is_content) {
+    for (size_t i = 0; i < countof(state->bottle); i++)
+      if (state->bottle[i] == 2) return true;
+    return false;
+  }
+  return true;
+}
+
+static bool rando_plan_receive_is_at_cap(const RandoGrantState *state,
+                                         uint8 code) {
+  switch (code) {
+  case 0x17:  // Piece of Heart has no useful state once capacity is maxed.
+  case 0x26: case 0x3e: case 0x3f:  // Heart containers.
+    return state->health_capacity >= 0xa0;
+  case 0x42:  // Heart refill.
+    return state->health_current >= state->health_capacity;
+  case 0x45:  // Magic refill.
+    return state->magic_power >= 0x80;
+  case 0x27: case 0x28: case 0x31:  // Bomb refills.
+    return state->bomb_upgrades < 8 &&
+           state->bombs >= kMaxBombsForLevel[state->bomb_upgrades];
+  case 0x43: case 0x44:  // Arrow refills.
+    return state->arrow_upgrades < 8 &&
+           state->arrows >= kMaxArrowsForLevel[state->arrow_upgrades];
+  default:
+    return false;
+  }
+}
+
+static void rando_plan_progressive(const RandoGrantState *state,
+                                   RandoGrantPlan *plan) {
+  uint8 code = 0xff;
+  uint8 max_code = 0xff;
+  switch ((RandoGrantOpcode)plan->opcode) {
+  case kRandoGrantOp_ProgressiveSword:
+    code = state->sword < 4 ? state->sword : 0xff;
+    max_code = 0x03;
+    break;
+  case kRandoGrantOp_ProgressiveShield:
+    code = state->shield < 3 ? (uint8)(0x04 + state->shield) : 0xff;
+    max_code = 0x06;
+    break;
+  case kRandoGrantOp_ProgressiveArmor:
+    code = state->armor < 2 ? (uint8)(0x22 + state->armor) : 0xff;
+    max_code = 0x23;
+    break;
+  case kRandoGrantOp_ProgressiveGlove:
+    code = state->gloves < 2 ? (uint8)(0x1b + state->gloves) : 0xff;
+    max_code = 0x1c;
+    break;
+  case kRandoGrantOp_ProgressiveBow:
+    // Ownership is authoritative because the selected vanilla byte may be
+    // swapped down to wood after silver is acquired. Old snapshots can lack
+    // ownership bits, so fall back to the raw byte only when neither known bit
+    // is present: 0=none, 1/2=wood, 3/4=silver. Unknown raw states fail safely
+    // as already-complete rather than risking a downgrade/duplicate upgrade.
+    if (state->bow_owned & kRandoBow_Silver) {
+      code = 0xff;
+    } else if (state->bow_owned & kRandoBow_Wood) {
+      code = 0x3b;
+    } else {
+      code = state->bow == 0 ? 0x0b
+           : state->bow <= 2 ? 0x3b
+           : 0xff;
+    }
+    max_code = 0x3b;
+    break;
+  default:
+    return;
+  }
+  if (code == 0xff) {
+    plan->disposition = kRandoGrantDisposition_AcceptedNoOp;
+    plan->display_code = max_code;
+  } else {
+    plan->disposition = kRandoGrantDisposition_Receive;
+    plan->receive_code = plan->display_code = code;
+  }
+}
+
+static bool rando_plan_opcode_is_direct(uint8 opcode) {
+  switch ((RandoGrantOpcode)opcode) {
+  case kRandoGrantOp_DungeonSmallKey:
+  case kRandoGrantOp_DungeonBigKey:
+  case kRandoGrantOp_DungeonMap:
+  case kRandoGrantOp_DungeonCompass:
+  case kRandoGrantOp_DirectTriforcePiece:
+  case kRandoGrantOp_DirectMagicUpgrade:
+  case kRandoGrantOp_DirectPrize:
+  case kRandoGrantOp_DirectKeyRing:
+  case kRandoGrantOp_DirectSkeletonKey:
+  case kRandoGrantOp_DirectGenericKey:
+  case kRandoGrantOp_DirectRupoor:
+  case kRandoGrantOp_DirectTrap:
+  case kRandoGrantOp_DirectSoul:
+  case kRandoGrantOp_DirectBombCapacity:
+  case kRandoGrantOp_DirectArrowCapacity:
+    return true;
+  default:
+    return false;
+  }
+}
+
+static void rando_plan_resolve_display(const RandoGrantState *state,
+                                       RandoGrantPlan *plan) {
+  DirectGrantIconEntry icon;
+  bool found = false;
+  if (plan->display_code != 0xff) {
+    found = rando_receive_icon_for_code(plan->display_code, &icon.gfx,
+                                        &icon.big, &icon.oam_flags);
+  }
+  if (!found && plan->opcode == kRandoGrantOp_DirectTrap) {
+    found = rando_trap_decoy_icon_for_seed(state->trap_seed, plan->item_id,
+                                            plan->location_id, &icon);
+  }
+  if (!found) {
+    uint16 icon_item = plan->item_id;
+    if (plan->opcode == kRandoGrantOp_DirectMagicUpgrade)
+      icon_item = state->magic_consumption == 0 ? ITEM_HalfMagic : ITEM_QuarterMagic;
+    const DirectGrantIconEntry *entry = rando_direct_grant_icon_entry(icon_item);
+    if (entry != NULL) {
+      icon = *entry;
+      found = true;
+    }
+  }
+  if (found) {
+    plan->display_gfx = icon.gfx;
+    plan->display_big = icon.big;
+    plan->display_oam_flags = icon.oam_flags;
+    plan->display_valid = 1;
+  }
+}
+
+bool Rando_ResolveGrantPlan(uint16 location_id, uint16 item_id,
+                            const RandoGrantState *state,
+                            RandoGrantPlan *out) {
+  if (out == NULL) return false;
+  memset(out, 0, sizeof(*out));
+  out->location_id = location_id;
+  out->item_id = item_id;
+  out->receive_code = 0xff;
+  out->display_code = 0xff;
+  out->disposition = kRandoGrantDisposition_Invalid;
+  if (state == NULL || item_id >= kRandoItemGrantMetadataCount ||
+      kRandoItemGrantMetadataCount != ITEM__COUNT)
+    return false;
+
+  const RandoItemGrantMetadata *metadata = &kRandoItemGrantMetadata[item_id];
+  out->opcode = metadata->opcode;
+  out->payload = metadata->payload;
+  switch ((RandoGrantOpcode)metadata->opcode) {
+  case kRandoGrantOp_ProgressiveSword:
+  case kRandoGrantOp_ProgressiveShield:
+  case kRandoGrantOp_ProgressiveArmor:
+  case kRandoGrantOp_ProgressiveGlove:
+  case kRandoGrantOp_ProgressiveBow:
+    rando_plan_progressive(state, out);
+    break;
+  case kRandoGrantOp_Receive: {
+    uint8 code = (uint8)metadata->payload;
+    if (metadata->payload > 0xff) return false;
+    if (item_id == ITEM_BlueBoomerang || item_id == ITEM_RedBoomerang) {
+      bool blue_owned = (state->boomerang_owned & kRandoBoomerang_Blue) ||
+                        state->boomerang >= 1;
+      code = blue_owned ? 0x2a : 0x0c;
+    }
+    out->receive_code = out->display_code = code;
+    if (!rando_plan_bottle_has_slot(state, code))
+      out->disposition = kRandoGrantDisposition_RetryableFailure;
+    else if (rando_plan_receive_is_at_cap(state, code))
+      out->disposition = kRandoGrantDisposition_AcceptedNoOp;
+    else
+      out->disposition = kRandoGrantDisposition_Receive;
+    break;
+  }
+  case kRandoGrantOp_DirectNothing:
+    out->disposition = kRandoGrantDisposition_AcceptedNoOp;
+    break;
+  case kRandoGrantOp_DirectMagicUpgrade:
+    if (state->magic_consumption >= 2) {
+      out->disposition = kRandoGrantDisposition_AcceptedNoOp;
+      out->receive_code = 2;
+    } else {
+      out->disposition = kRandoGrantDisposition_Direct;
+      out->receive_code = (uint8)(state->magic_consumption + 1);
+    }
+    break;
+  case kRandoGrantOp_DirectBombCapacity:
+    if (state->bomb_upgrades >= 7) {
+      out->disposition = kRandoGrantDisposition_AcceptedNoOp;
+      out->receive_code = 7;
+    } else {
+      uint8 steps = (uint8)((metadata->payload + 4) / 5);
+      if (steps == 0) steps = 1;
+      uint8 target = (uint8)(state->bomb_upgrades + steps);
+      out->receive_code = target > 7 ? 7 : target;
+      out->disposition = kRandoGrantDisposition_Direct;
+    }
+    break;
+  case kRandoGrantOp_DirectArrowCapacity:
+    if (state->arrow_upgrades >= 7) {
+      out->disposition = kRandoGrantDisposition_AcceptedNoOp;
+      out->receive_code = 7;
+    } else {
+      uint8 steps = (uint8)((metadata->payload + 4) / 5);
+      if (steps == 0) steps = 1;
+      uint8 target = (uint8)(state->arrow_upgrades + steps);
+      out->receive_code = target > 7 ? 7 : target;
+      out->disposition = kRandoGrantDisposition_Direct;
+    }
+    break;
+  case kRandoGrantOp_Virtual:
+  case kRandoGrantOp_Invalid:
+    return false;
+  default:
+    if (!rando_plan_opcode_is_direct(metadata->opcode)) return false;
+    out->disposition = kRandoGrantDisposition_Direct;
+    break;
+  }
+
+  rando_plan_resolve_display(state, out);
+  return out->disposition != kRandoGrantDisposition_Invalid;
+}
+
+bool Rando_ResolveLiveGrantPlan(uint16 location_id, uint16 item_id,
+                                RandoGrantPlan *out) {
+  RandoGrantState state;
+  Rando_CaptureGrantState(&state);
+  return Rando_ResolveGrantPlan(location_id, item_id, &state, out);
+}
+
+bool Rando_CanAcceptGrantPlanNow(const RandoGrantPlan *plan) {
+  if (plan == NULL || plan->disposition == kRandoGrantDisposition_Invalid ||
+      plan->disposition == kRandoGrantDisposition_RetryableFailure)
+    return false;
+  if (plan->disposition != kRandoGrantDisposition_Receive)
+    return true;
+  return ItemReceipt_CanAccept(plan->receive_code);
+}
+
+// CRC-16-CCITT-FALSE over a domain separator, token version, and the complete
+// 14-byte plan value. CRC-16 detects every non-zero corruption confined to one
+// byte. The domain prevents an unrelated CRC-tagged value from being accepted
+// as a deferred grant token if the storage is accidentally aliased.
+static uint16 rando_deferred_grant_integrity_tag(
+    uint16 version, const RandoGrantPlan *plan) {
+  static const uint8 kDomain[] = {'Z', '3', 'R', 'G'};
+  uint16 crc = 0xffffu;
+#define RANDO_GRANT_CRC_BYTE(value) \
+  do { \
+    crc ^= (uint16)(uint8)(value) << 8; \
+    for (int bit = 0; bit < 8; bit++) \
+      crc = (crc & 0x8000u) ? (uint16)((crc << 1) ^ 0x1021u) \
+                            : (uint16)(crc << 1); \
+  } while (0)
+  for (size_t i = 0; i < countof(kDomain); i++)
+    RANDO_GRANT_CRC_BYTE(kDomain[i]);
+  RANDO_GRANT_CRC_BYTE(version);
+  RANDO_GRANT_CRC_BYTE(version >> 8);
+  const uint8 *bytes = (const uint8 *)plan;
+  for (size_t i = 0; i < sizeof(*plan); i++)
+    RANDO_GRANT_CRC_BYTE(bytes[i]);
+#undef RANDO_GRANT_CRC_BYTE
+  return crc;
+}
+
+RandoGrantResult Rando_PrepareGrant(uint16 location_id,
+                                    uint16 vanilla_registry_id,
+                                    uint8 vanilla_lttp_code,
+                                    RandoDeferredGrantToken *out) {
+  if (out == NULL) return kRandoGrantResult_Invalid;
+  memset(out, 0, sizeof(*out));
+  uint16 placed;
+  if (!Placement_TryLookup(location_id, &placed))
+    return kRandoGrantResult_NotActive;
+  if (Rando_IsLocationChecked(location_id))
+    return kRandoGrantResult_AlreadyChecked;
+
+  RandoGrantState state;
+  Rando_CaptureGrantState(&state);
+  if (!Rando_ResolveGrantPlan(location_id, placed, &state, &out->plan))
+    return kRandoGrantResult_Invalid;
+  if (out->plan.disposition == kRandoGrantDisposition_RetryableFailure)
+    return kRandoGrantResult_Retryable;
+  if (out->plan.disposition == kRandoGrantDisposition_Invalid)
+    return kRandoGrantResult_Invalid;
+
+  // The boss falling-heart identity uses receipt 0x3e, whose method-2 cleanup
+  // differs from ordinary BossHeartContainer 0x26. Freeze that callsite-owned
+  // identity alias into the token so deferred commit needs no source re-read.
+  if (placed == vanilla_registry_id && placed == ITEM_BossHeartContainer &&
+      vanilla_lttp_code == 0x3e &&
+      out->plan.disposition == kRandoGrantDisposition_Receive) {
+    out->plan.receive_code = out->plan.display_code = vanilla_lttp_code;
+    out->plan.display_valid = 0;
+    rando_plan_resolve_display(&state, &out->plan);
+  }
+  out->version = kRandoDeferredGrantTokenVersion;
+  out->reserved = rando_deferred_grant_integrity_tag(out->version, &out->plan);
+  return kRandoGrantResult_Accepted;
 }
 
 static uint8 trap_ascii_to_font(char ch) {
@@ -1375,140 +1604,107 @@ static void rando_trigger_trap(uint16 item_id) {
   g_rando_trap_shove_dir = 0;
 }
 
+static bool rando_apply_direct_grant_plan(const RandoGrantPlan *plan) {
+  if (plan == NULL || plan->disposition != kRandoGrantDisposition_Direct)
+    return false;
+  uint16 item = plan->item_id;
+  switch ((RandoGrantOpcode)plan->opcode) {
+  case kRandoGrantOp_DirectTriforcePiece:
+    if (g_rando_triforce_piece_count < 255) g_rando_triforce_piece_count++;
+    return true;
+  case kRandoGrantOp_DirectMagicUpgrade:
+    if (plan->receive_code > 2) return false;
+    if (link_magic_consumption < plan->receive_code)
+      link_magic_consumption = plan->receive_code;
+    return true;
+  case kRandoGrantOp_DirectPrize:
+    return prize_item_direct_grant(item) != 0;
+  case kRandoGrantOp_DirectKeyRing:
+    return key_ring_direct_grant(item) != 0;
+  case kRandoGrantOp_DirectSkeletonKey:
+    return skeleton_key_direct_grant(item) != 0;
+  case kRandoGrantOp_DirectGenericKey:
+    rando_grant_generic_key();
+    return true;
+  case kRandoGrantOp_DirectRupoor:
+    link_rupees_goal = link_rupees_goal >= 10
+        ? (uint16)(link_rupees_goal - 10) : 0;
+    return true;
+  case kRandoGrantOp_DirectTrap:
+    rando_trigger_trap(item);
+    return true;
+  case kRandoGrantOp_DirectSoul:
+    Souls_GrantItem(item);
+    return true;
+  case kRandoGrantOp_DirectBombCapacity:
+    capacity_upgrade_direct_grant_to(true, plan->receive_code);
+    return true;
+  case kRandoGrantOp_DirectArrowCapacity:
+    capacity_upgrade_direct_grant_to(false, plan->receive_code);
+    return true;
+  case kRandoGrantOp_DungeonSmallKey:
+  case kRandoGrantOp_DungeonBigKey:
+  case kRandoGrantOp_DungeonMap:
+  case kRandoGrantOp_DungeonCompass:
+    return dungeon_item_direct_grant(item, plan->opcode) != 0;
+  default:
+    return false;
+  }
+}
+
 uint8 Rando_DispatchVanillaGrant(uint16 location_id,
                                  uint16 vanilla_registry_id,
                                  uint8 vanilla_lttp_code) {
-  uint16 placed = Rando_OnLocationCheck(location_id, vanilla_registry_id);
+  uint16 placed;
+  bool placement_present = Placement_TryLookup(location_id, &placed);
+  if (!placement_present) {
+    // Preserve the legacy pass-through for a genuinely absent location. Do not
+    // use item equality for this decision: explicit identity placements still
+    // need metadata semantics (notably 0x51/0x52 capacity and 0xAF generic key).
+    placed = Rando_OnLocationCheck(location_id, vanilla_registry_id);
+    g_last_dispatched_item_id = placed;
+    g_last_dispatched_location_id = location_id;
+    g_last_dispatched_plan_valid = false;
+    return vanilla_lttp_code;
+  }
+
   g_last_dispatched_item_id = placed;
   g_last_dispatched_location_id = location_id;
-  if (placed == vanilla_registry_id) return vanilla_lttp_code;
+  g_last_dispatched_plan_valid =
+      Rando_ResolveLiveGrantPlan(location_id, placed, &g_last_dispatched_plan);
+  // The compatibility return byte cannot represent retry. Fail closed before
+  // Rando_OnLocationCheck marks the location; Phase 5 replaces this bridge with
+  // the full transaction result. Confirmation consumers inspect the stored plan
+  // and suppress success feedback for this outcome.
+  if (!g_last_dispatched_plan_valid ||
+      g_last_dispatched_plan.disposition == kRandoGrantDisposition_RetryableFailure)
+    return kRandoLttpSkip;
 
-  // §6.2 TriforcePiece (no vanilla LttP code). Tick the counter and
-  // return kRandoLttpSkip so the caller bypasses Link_ReceiveItem — no
-  // accidental double-grant of the slot's vanilla item.
-  if (placed == ITEM_TriforcePiece) {
-    if (g_rando_triforce_piece_count < 255) g_rando_triforce_piece_count++;
+  uint16 committed = Rando_OnLocationCheck(location_id, vanilla_registry_id);
+  if (committed != placed) {
+    // Single-threaded placement tables should be immutable across these calls.
+    // Fail closed if that invariant is ever broken.
+    g_last_dispatched_plan_valid = false;
     return kRandoLttpSkip;
   }
-
-  // add-enemy-souls — soul direct-write (no vanilla LttP code): set the
-  // ownership bit and take the confirmation-cue path.
-  if (Souls_ItemIsSoul(placed)) {
-    Souls_GrantItem(placed);
+  // A substituted item is governed exclusively by generated metadata. Unknown
+  // and virtual items fail closed; they never turn into the source location's
+  // vanilla item.
+  if (g_last_dispatched_plan.disposition == kRandoGrantDisposition_Receive) {
+    // Boss falling hearts use the site-specific 0x3e receipt, whose method-2
+    // teardown differs from the ordinary 0x26 BossHeartContainer receipt. It
+    // is still a metadata-validated Receive plan; retain that exact identity
+    // alias so the boss-heart collision path stays vanilla-correct.
+    if (placed == vanilla_registry_id && placed == ITEM_BossHeartContainer &&
+        vanilla_lttp_code == 0x3e)
+      return vanilla_lttp_code;
+    return g_last_dispatched_plan.receive_code;
+  }
+  if (g_last_dispatched_plan.disposition == kRandoGrantDisposition_AcceptedNoOp)
     return kRandoLttpSkip;
-  }
 
-  // §6.2 HalfMagic / QuarterMagic direct-write (no vanilla LttP dispatcher
-  // path). The Magic Bat handler writes link_magic_consumption directly;
-  // rando placements of these at other slots use the same direct-write here.
-  if (magic_upgrade_direct_grant(placed)) {
-    return kRandoLttpSkip;
-  }
-
-  // §6.2 prize-item direct-write (crystals + pendants). The vanilla path in
-  // AncillaAdd_FallingPrize ORs the current dungeon's bit into link_has_crystals;
-  // for rando placements at non-boss slots we set the prize's bit directly.
-  if (prize_item_direct_grant(placed)) {
-    return kRandoLttpSkip;
-  }
-
-  // Key Rings and Skeleton Key have no vanilla receive-item dispatch. Rings
-  // max-write their target dungeon's key stock; Skeleton Key records derived
-  // ownership for the small-key-door bypass. Both use normal direct-grant
-  // confirmation at the caller.
-  if (key_ring_direct_grant(placed) || skeleton_key_direct_grant(placed)) {
-    return kRandoLttpSkip;
-  }
-
-  // §6.2 per-placed-dungeon SmallKey/BigKey/Map/Compass direct-write. Vanilla
-  // LttP's dispatcher credits the player's CURRENT dungeon; for rando
-  // placements where the placed item belongs to a DIFFERENT dungeon we write
-  // that specific dungeon's bit (BigKey/Map/Compass) or counter slot (SmallKey).
-  if (dungeon_item_direct_grant(placed)) {
-    return kRandoLttpSkip;
-  }
-
-  // Retro genericKeys shared small-key. GenericKey (125) has dispatch
-  // `vanilla:0xAF`, which the LttP receive path does NOT understand — route it to
-  // the shared-counter grant instead and skip the vanilla dispatcher. Only ever
-  // placed under genericKeys (Retro), so no settings gate is needed here.
-  if (placed == ITEM_GenericKey) {
-    rando_grant_generic_key();
-    return kRandoLttpSkip;
-  }
-
-  // Rupoor (ALTTPR-only junk item, dispatch `direct_rupoor`). Vanilla ALTTP has
-  // no Rupoor, so NO Link_ReceiveItem code grants it. Without a handler here it
-  // falls through to the vanilla-LttP fallback at the bottom of this function
-  // and grants the CHEST'S US-ROM vanilla item instead — and three chests
-  // (Hyrule Castle - Zelda's Cell, Link's House, Secret Passage) carry US ROM
-  // item byte 0x12 = LAMP. That silently turned a junk Rupoor into a duplicate
-  // progression Lamp ("got the Lamp twice"). Match ALTTPR (newitems.asm
-  // .rupoor): drain RupoorDeduction (=10) rupees from link_rupees_goal; the HUD
-  // ticker (hud.c) animates the displayed count down and plays the drain sfx.
-  // Clamp at 0 — if the goal underflowed below link_rupees_actual the ticker's
-  // fill branch would instead race the count UPWARD (the existing shop/cost
-  // sites use the same `>= cost` guard).
-  if (placed == ITEM_Rupoor) {
-    link_rupees_goal = (link_rupees_goal >= 10) ? (uint16)(link_rupees_goal - 10) : 0;
-    return kRandoLttpSkip;
-  }
-
-  if (rando_is_trap_item(placed)) {
-    rando_trigger_trap(placed);
-    return kRandoLttpSkip;
-  }
-
-  // add-rando-pot-sanity — ITEM_Nothing ("Literally Nothing") is the filler the
-  // placer pins onto empty pots under pot_shuffle=All. It has NO vanilla LttP
-  // code; without this branch it would fall through to the vanilla-LttP fallback
-  // below and grant the pot's vanilla content (the secret-table item), defeating
-  // the whole point of an empty pot. Skip the receive entirely (the runtime hook,
-  // Phase 4, shows the "nothing" cue keyed on g_last_dispatched_item_id).
-  if (placed == ITEM_Nothing) {
-    return kRandoLttpSkip;
-  }
-
-  uint8 lttp = Rando_VanillaItemForRegistryId(placed);
-  if (lttp != 0xFF) {
-    // Boomerang is strictly PROGRESSIVE under rando: the 1st collected is always
-    // blue, the 2nd always red — regardless of which color item the placer put
-    // at this location (see Rando_GrantBoomerang). This returned LttP code drives
-    // BOTH the grant routing (-> Rando_GrantBoomerang, already progressive) AND
-    // the receive-animation graphic + "You got the … Boomerang" text. Without
-    // this remap, collecting the RED item FIRST plays the magical-boomerang
-    // animation even though the player is actually granted blue. Re-derive the
-    // shown color from current ownership so it always matches the tier being
-    // granted: blue (0x0c) until blue is owned, then red (0x2a). Computed
-    // pre-grant — g_rando_boomerang_owned / link_item_boomerang still hold the
-    // state before this pickup, exactly as Rando_GrantBoomerang reads them.
-    if (placed == ITEM_BlueBoomerang || placed == ITEM_RedBoomerang) {
-      bool blue_owned = (g_rando_boomerang_owned & kRandoBoomerang_Blue) ||
-                        link_item_boomerang >= 1;
-      lttp = blue_owned ? 0x2a : 0x0c;
-    }
-    return lttp;
-  }
-
-  // §6.2 partial: progressive items translate via current-tier lookup.
-  uint8 prog_lttp = progressive_to_lttp(placed);
-  if (prog_lttp != 0xFF) return prog_lttp;
-
-  // A KNOWN progressive item already at its max tier yields 0xFF here (no
-  // higher tier to grant). Skip the grant instead of falling through to the
-  // chest's vanilla item: otherwise a maxed ProgressiveBow collected at
-  // Desert Palace - Big Chest would grant that chest's vanilla Power Glove (an
-  // unrelated duplicate). The location is already marked checked
-  // (Rando_OnLocationCheck above), so skipping leaves the player at max tier
-  // with no spurious item. Mainly reachable via the item-give debug cheat —
-  // you can't normally collect a progressive beyond its pool count — but
-  // granting the wrong item is never correct.
-  if (rando_is_progressive_item(placed)) return kRandoLttpSkip;
-
-  // Placed item has no vanilla LttP dispatch path remaining. Fall back to
-  // the vanilla LttP code so the game keeps running with the vanilla grant
-  // (detectable in the spoiler).
-  return vanilla_lttp_code;
+  (void)rando_apply_direct_grant_plan(&g_last_dispatched_plan);
+  return kRandoLttpSkip;
 }
 
 // ---------------------------------------------------------------------------
@@ -1539,13 +1735,16 @@ static uint16 chest_lookup(uint16 dungeon_room, uint8 chest_ordinal) {
   return 0xFFFFu;  // not mapped — vanilla item grants
 }
 
-uint8 Rando_ChestDispatch(uint16 dungeon_room, uint8 chest_ordinal,
-                          uint8 vanilla_lttp_code) {
+RandoGrantResult Rando_ChestGrant(uint16 dungeon_room, uint8 chest_ordinal,
+                                  uint8 vanilla_lttp_code,
+                                  RandoGrantPresentation presentation,
+                                  uint8 receipt_method,
+                                  uint16 chest_position) {
   uint16 loc_id = chest_lookup(dungeon_room, chest_ordinal);
-  if (loc_id == 0xFFFFu) return vanilla_lttp_code;  // not mapped — vanilla
-  // We don't know the vanilla registry id for unmapped chests; pass 0xFFFF
-  // and let Rando_DispatchVanillaGrant's fall-back handle it.
-  return Rando_DispatchVanillaGrant(loc_id, 0xFFFFu, vanilla_lttp_code);
+  if (loc_id == 0xFFFFu)
+    return kRandoGrantResult_NotActive;
+  return Rando_GrantLocation(loc_id, 0xFFFFu, vanilla_lttp_code,
+                             presentation, receipt_method, chest_position);
 }
 
 // === Phase B sprite/shop dispatch: begin ===
@@ -1606,27 +1805,49 @@ static uint16 shop_lookup(uint8 room, uint8 entrance, uint8 pos) {
 
 // add-rando-shopsanity — forward decl (implementation lives below with the
 // other active-slot readers; the dispatch is defined before those globals).
-static bool rando_shopsanity_checked_restock(uint16 loc_id);
+static bool rando_shopsanity_active(void);
 
-uint8 Rando_ShopDispatch(uint8 room, uint8 entrance, uint8 pos,
-                         uint8 vanilla_lttp_code) {
+RandoGrantResult Rando_ShopGrant(uint8 room, uint8 entrance, uint8 pos,
+                                 uint8 vanilla_lttp_code,
+                                 RandoGrantPresentation presentation,
+                                 uint8 receipt_method,
+                                 uint8 chest_position) {
   uint16 loc_id = shop_lookup(room, entrance, pos);
-  if (loc_id == 0xFFFFu) return vanilla_lttp_code;  // not mapped — vanilla
-  // add-rando-shopsanity — a purchased check slot permanently restocks its
-  // VANILLA item at vanilla behavior: never re-dispatch a checked shop slot
-  // (the placed item was granted once; re-dispatching on a re-buy would be
-  // the re-grant/dupe class). Returning the vanilla code takes the plain
-  // Link_ReceiveItem + vanilla-textbox path in ShopItem_HandleReceipt
-  // (never the 0xFE skip sentinel, and Rando_ShouldSkipReceive is stateless).
-  // Under shopsanity OFF (incl. plain Retro) this gate is inert and the
-  // Retro identity economy keeps its unlimited re-dispatch.
-  if (rando_shopsanity_checked_restock(loc_id))
-    return vanilla_lttp_code;
-  // Vanilla registry id is not threaded through the shop receipt path; pass
-  // 0xFFFF so Rando_DispatchVanillaGrant treats the slot as "always overridden
-  // when present in the table" and falls back to the vanilla LttP code when the
-  // slot is absent (non-Retro seeds) — identical to the chest-dispatch contract.
-  return Rando_DispatchVanillaGrant(loc_id, 0xFFFFu, vanilla_lttp_code);
+  // Plain Retro keeps its repeatable vanilla-identity shop economy. Under
+  // shopsanity, a checked slot also becomes a vanilla restock purchase.
+  if (loc_id == 0xFFFFu || !rando_shopsanity_active() ||
+      Rando_IsLocationChecked(loc_id))
+    return kRandoGrantResult_NotActive;
+  return Rando_GrantLocation(loc_id, 0xFFFFu, vanilla_lttp_code,
+                             presentation, receipt_method, chest_position);
+}
+
+RandoGrantResult Rando_CommitRepeatableShopIdentity(
+    uint8 room, uint8 entrance, uint8 pos, uint8 vanilla_lttp_code) {
+  uint16 loc_id = shop_lookup(room, entrance, pos);
+  if (loc_id == 0xFFFFu)
+    return kRandoGrantResult_NotActive;
+  uint16 placed;
+  if (!Placement_TryLookup(loc_id, &placed))
+    return kRandoGrantResult_NotActive;
+  const RandoLocationDef *def = Rando_FindLocationDef(loc_id);
+  if (def == NULL || placed != def->vanilla_item_id)
+    return kRandoGrantResult_Invalid;
+  RandoGrantPlan plan;
+  if (!Rando_ResolveLiveGrantPlan(loc_id, placed, &plan) ||
+      plan.opcode != kRandoGrantOp_Receive ||
+      plan.disposition != kRandoGrantDisposition_Receive ||
+      plan.receive_code != vanilla_lttp_code)
+    return kRandoGrantResult_Invalid;
+  if (!Rando_IsLocationChecked(loc_id)) {
+    Rando_MarkLocationChecked(loc_id);
+    rando_record_committed_item_ownership(placed);
+    g_last_dispatched_item_id = placed;
+    g_last_dispatched_location_id = loc_id;
+    g_last_dispatched_plan = plan;
+    g_last_dispatched_plan_valid = true;
+  }
+  return kRandoGrantResult_Accepted;
 }
 
 // add-rando-shopsanity — deterministic per-slot check price. ONE function
@@ -1815,29 +2036,29 @@ uint16 Rando_TakeAnyLiveSlot(uint8 room, uint8 door_id, uint8 pos) {
   return loc;
 }
 
-uint8 Rando_TakeAnyDispatch(uint8 room, uint8 door_id, uint8 pos,
-                            uint8 vanilla_lttp_code) {
+RandoGrantResult Rando_TakeAnyGrant(uint8 room, uint8 door_id, uint8 pos,
+                                    uint8 vanilla_lttp_code,
+                                    RandoGrantPresentation presentation,
+                                    uint8 receipt_method,
+                                    uint8 chest_position) {
   (void)room;
+  if (pos > 1)
+    return kRandoGrantResult_NotActive;
   int cave = takeany_cave_for_door(door_id);
-  if (cave < 0) return vanilla_lttp_code;
+  if (cave < 0)
+    return kRandoGrantResult_NotActive;
   uint16 loc = (uint16)(kRandoTakeAnyLocBase + 2 * cave + pos);
-  // Grant the placed item (Rando_OnLocationCheck inside also marks loc checked).
-  // The weapon cave's Rupee300 reward (only when mode.weapons is vanilla/swordless)
-  // resolves through Rando_DispatchVanillaGrant -> progressive_to_lttp, which maps
-  // ITEM_Rupee300 -> LttP code 0x46; Link_ReceiveItem(0x46) drives the receipt
-  // ancilla whose Ancilla_AddRupees grants +300 rupees (src/ancilla.c). The default
-  // ProgressiveSword reward likewise dispatches via progressive_to_lttp.
-  uint8 lttp = Rando_DispatchVanillaGrant(loc, 0xFFFFu, vanilla_lttp_code);
-  // Lock the whole cave: mark every active slot's LOC checked so the other
-  // offered item vanishes and the cave stays empty on revisit (matches the asm
-  // ShopState |= $07 + PurchaseCounts[idx] = 1). Slot `pos` was just marked by
-  // the grant; mark the sibling slot too if it is an active slot.
-  for (uint8 s = 0; s < 2; s++) {
-    if (s == pos) continue;
-    uint16 sib = (uint16)(kRandoTakeAnyLocBase + 2 * cave + s);
-    if (takeany_loc_in_table(sib)) Rando_MarkLocationChecked(sib);
+  if (!takeany_loc_in_table(loc))
+    return kRandoGrantResult_NotActive;
+
+  RandoGrantResult result = Rando_GrantLocation(
+      loc, 0xFFFFu, vanilla_lttp_code, presentation,
+      receipt_method, chest_position);
+  if (result == kRandoGrantResult_Accepted) {
+    uint16 sibling = (uint16)(kRandoTakeAnyLocBase + 2 * cave + (pos ^ 1));
+    (void)Rando_ForfeitLocation(sibling);
   }
-  return lttp;
+  return result;
 }
 // === Phase B sprite/shop dispatch: end ===
 
@@ -2096,6 +2317,18 @@ bool Rando_IsLocationChecked(uint16 location_id) {
   return (g_rando_checked_bitmap[location_id >> 3] & (1u << (location_id & 7))) != 0;
 }
 
+bool Rando_HasLocationPlacement(uint16 location_id) {
+  return Placement_TryLookup(location_id, NULL);
+}
+
+bool Rando_IsLocationCheckedOrVanilla(uint16 location_id,
+                                      bool vanilla_completed) {
+  uint16 placed;
+  return Placement_TryLookup(location_id, &placed)
+      ? Rando_IsLocationChecked(location_id)
+      : vanilla_completed;
+}
+
 static const RandoLocationDef *Rando_FindLocationDef(uint16 location_id) {
   for (uint32 i = 0; i < kRandoLocationsCount; i++) {
     if (kRandoLocations[i].id == location_id)
@@ -2242,34 +2475,26 @@ static void rando_show_direct_grant_icon_only(uint8 item_id) {
   // array access regardless; this assert just makes the invariant explicit so a
   // future change that calls this WITHOUT a prior dispatch fires loudly.
   assert(item_id != 0xFFu /* sentinel byte from 0xFFFF truncation */ ||
-         Rando_LastDispatchedItemId() != 0xFFFFu);
+         g_last_dispatched_item_id != 0xFFFFu);
 
-  // Look up the visual icon. Traps use the same deterministic decoy
-  // resolver as field-item sprites so the visible fake item and pickup popup
-  // agree. Other direct-grant items use kDirectGrantIcons; gfx ids with the
-  // 0x80 bit (TriforcePiece / magic decanters / Rupoor custom art,
-  // add-rando-field-item-custom-art) load the kRandoCustomGfx_* tile + palette.
-  DirectGrantIconEntry trap_decoy;
-  if (rando_trap_decoy_icon(item_id, g_last_dispatched_location_id, &trap_decoy)) {
-    AncillaAdd_RandoIconReceipt(trap_decoy.gfx, trap_decoy.big, trap_decoy.oam_flags);
-    return;
-  }
-  uint16 icon_item = rando_direct_grant_icon_item_post_grant(item_id);
-  const DirectGrantIconEntry *e = rando_direct_grant_icon_entry(icon_item);
-  if (e != NULL) {
-    AncillaAdd_RandoIconReceipt(e->gfx, e->big, e->oam_flags);
-    return;
-  }
-  // Non-direct-grant items (rupees, equipment, bottles, boomerang, ...) have no
-  // kDirectGrantIcons entry; without this they'd pop NO icon, so a streamlined pot
-  // pickup reads as empty. Resolve the held-aloft receive gfx the vanilla pickup
-  // draws (shared resolver — see rando_receive_item_icon).
-  uint8 gfx, big, oam;
-  if (rando_receive_item_icon(item_id, &gfx, &big, &oam))
-    AncillaAdd_RandoIconReceipt(gfx, big, oam);
+  RandoGrantPlan plan;
+  bool valid = g_last_dispatched_plan_valid &&
+               g_last_dispatched_plan.item_id == item_id;
+  if (valid)
+    plan = g_last_dispatched_plan;
+  else
+    valid = Rando_ResolveLiveGrantPlan(g_last_dispatched_location_id,
+                                       item_id, &plan);
+  if (valid && plan.display_valid)
+    AncillaAdd_RandoIconReceipt(plan.display_gfx, plan.display_big,
+                                plan.display_oam_flags);
 }
 
 void Rando_ShowDirectGrantConfirmation(uint8 item_id) {
+  if (g_last_dispatched_plan_valid &&
+      g_last_dispatched_plan.item_id == item_id &&
+      g_last_dispatched_plan.disposition == kRandoGrantDisposition_RetryableFailure)
+    return;
   // Traps deliberately start with the normal direct-grant chime; the trap-owned
   // delayed bad cue fires a few frames later so the pickup reads as a fakeout.
   rando_direct_grant_chime_and_hud();
@@ -2376,6 +2601,15 @@ static bool rando_resolve_pot_confirmation_icon(uint16 item_id, uint8 lttp_code,
   if (out == NULL)
     return false;
 
+  if (g_last_dispatched_plan_valid &&
+      g_last_dispatched_plan.item_id == item_id &&
+      g_last_dispatched_plan.display_valid) {
+    out->gfx = g_last_dispatched_plan.display_gfx;
+    out->big = g_last_dispatched_plan.display_big;
+    out->oam_flags = g_last_dispatched_plan.display_oam_flags;
+    return true;
+  }
+
   // Non-direct items resolve from the pre-grant LttP receive code so progressive
   // tiers show the item actually collected, not the next tier after the grant.
   if (!Rando_ShouldSkipReceive(lttp_code)) {
@@ -2452,15 +2686,27 @@ static void rando_tick_deferred_pot_confirmation(void) {
 // Link_ReceiveItem plays the full hold-over-head receipt: it zeroes
 // link_item_in_hand (so a CARRIED pot is dropped mid-lift — "the pot goes
 // flying"), poses Link, and freezes him for the whole animation. Far too heavy
-// to fire on every pot. Instead we run ONLY the inventory write extracted from
-// AncillaAdd_ItemReceipt, then fill in the receipt-update grants this quiet path
-// intentionally skips. We deliberately do NOT call Link_ReceiveItem or allocate a
-// receipt ancilla, so Link's lift/carry/throw of the pot is left untouched. Pot
-// grants play sound + HUD immediately, then shows the lightweight confirmation
-// icon on the next safe tick. The icon path is visual-only, so it does not touch
-// Link's lift/carry state the way Link_ReceiveItem does.
+// to fire on every pot. Instead the shared no-animation receipt helper applies
+// both the immediate inventory write and the completed receipt's deferred
+// effects. We deliberately do NOT call Link_ReceiveItem or allocate a receipt
+// ancilla, so Link's lift/carry/throw of the pot is left untouched. Pot grants
+// play sound + HUD immediately, then show the lightweight confirmation icon on
+// the next safe tick. The icon path is visual-only, so it does not touch Link's
+// lift/carry state the way Link_ReceiveItem does.
 static void rando_pot_quiet_receive_impl(uint8 lttp_code, uint16 item_id, bool show_confirmation) {
   RandoPotCarrySnapshot carry = rando_pot_capture_carry_state();
+  if (g_last_dispatched_plan_valid &&
+      g_last_dispatched_plan.item_id == item_id &&
+      g_last_dispatched_plan.disposition == kRandoGrantDisposition_RetryableFailure) {
+    rando_pot_restore_carry_state(&carry);
+    link_receiveitem_index = 0;
+    return;
+  }
+  if (g_last_dispatched_plan_valid &&
+      g_last_dispatched_plan.item_id == item_id &&
+      (g_last_dispatched_plan.disposition == kRandoGrantDisposition_Receive ||
+       g_last_dispatched_plan.disposition == kRandoGrantDisposition_RetryableFailure))
+    lttp_code = g_last_dispatched_plan.receive_code;
   if (Rando_ShouldSkipReceive(lttp_code)) {
     // Direct-grant classes were already written by Rando_DispatchVanillaGrant.
     if (show_confirmation)
@@ -2471,79 +2717,10 @@ static void rando_pot_quiet_receive_impl(uint8 lttp_code, uint16 item_id, bool s
 
   item_receipt_method = 0;             // normal write path
   link_receiveitem_index = lttp_code;  // keep global state aligned with vanilla receipt code
-  if (!ItemReceipt_GrantInventory(lttp_code)) {
+  if (!ItemReceipt_GrantWithoutAnimation(lttp_code)) {
     rando_pot_restore_carry_state(&carry);
     link_receiveitem_index = 0;
     return;
-  }
-
-  // ItemReceipt_GrantInventory does only the TABLE-WRITE grants (kValueToGiveItemTo).
-  // Several grants are DEFERRED to the ancilla UPDATE — rupees (Ancilla_AddRupees),
-  // the 4th-Piece-of-Heart rollover, heart containers, and heart/magic refills
-  // (Ancilla22_ItemReceipt's completion branch, ancilla.c) — which the visual-kill
-  // below preempts. Replicate that COMPLETE set here (rando-only — not a RAM-compare
-  // path) keyed on the receipt code, or a placed Rupee / BossHeartContainer / heart /
-  // magic / 4th-PoH pot marks itself checked while granting nothing. KEEP IN SYNC
-  // with Ancilla22_ItemReceipt + Ancilla_AddRupees. (The PoH COUNT already
-  // incremented in AncillaAdd_ItemReceipt's j==0x17 case; only the rollover-to-
-  // container is deferred. Armor 0x22/0x23 writes the byte immediately, but its
-  // palette refresh is deferred to the receipt update that this quiet path kills.)
-  switch (lttp_code) {
-    case 0x26: case 0x3f:                // BossHeartContainer
-      if (link_health_capacity != 0xa0) {
-        link_health_capacity += 8;
-        link_hearts_filler += link_health_capacity - link_health_current;
-      }
-      break;
-    case 0x3e:                           // BossHeartContainer (boss-drop code)
-      if (link_health_capacity != 0xa0) {
-        link_health_capacity += 8;
-        link_hearts_filler += 8;
-      }
-      break;
-    case 0x17:                           // PieceOfHeart — the 4th rolls over (count==0)
-      if (link_heart_pieces == 0 && link_health_capacity != 0xa0) {
-        link_health_capacity += 8;
-        link_hearts_filler += link_health_capacity - link_health_current;
-      }
-      break;
-    case 0x42: link_hearts_filler += 8;  break;   // heart refill
-    case 0x45: link_magic_filler  += 16; break;   // magic refill
-    case 0x34: link_rupees_goal += 1;    break;   // rupees (Ancilla_AddRupees)
-    case 0x35: link_rupees_goal += 5;    break;
-    case 0x36: case 0x47: link_rupees_goal += 20; break;
-    case 0x40: link_rupees_goal += 100;  break;
-    case 0x41: link_rupees_goal += 50;   break;
-    case 0x46: link_rupees_goal += 300;  break;
-    case 0x22: case 0x23:                // Blue/Red Mail palette refresh
-      Palette_Load_LinkArmorAndGloves();
-      break;
-    default: break;
-  }
-  // Sword/shield gfx + palette side-loads, mirroring the vanilla receipt
-  // (AncillaAdd_ItemReceipt keys them on kReceiveItemGfx) — without these a
-  // sword/shield collected from a pot/bush/rock/enemy renders the OLD tier
-  // until the next full gear reload. Safe to call here: both Decompress*
-  // functions expand into the 0x9000 gear staging and the Palette_Load_*
-  // functions bump flag_update_cgram_in_nmi, the same mid-logic phase the
-  // vanilla receipt calls them from, and they read link_sword_type /
-  // link_shield_type AFTER the grant above. Code 0 (GiveSwordAndShield — a
-  // tier-0 ProgressiveSword lands here via progressive_to_lttp) writes BOTH
-  // gear bytes, so it takes both loads; the vanilla receipt's j != 0 sword
-  // exclusion relies on the Uncle sequence's own gear reload, which this
-  // quiet path has no equivalent of. (lttp_code < 76 is implied by the
-  // GrantInventory success above.)
-  {
-    uint8 gear_gfx = kReceiveItemGfx[lttp_code];
-    if (gear_gfx == 0x20 || gear_gfx == 0x2d || gear_gfx == 0x2e ||
-        lttp_code == 0) {
-      DecompressShieldGraphics();
-      Palette_Load_Shield();
-    }
-    if (gear_gfx == 6 || gear_gfx == 0x18) {
-      DecompressSwordGraphics();
-      Palette_Load_Sword();
-    }
   }
   rando_pot_restore_carry_state(&carry);  // undo receipt-side lift/carry mutations
   if (show_confirmation)
@@ -2555,8 +2732,148 @@ void Rando_QuietReceiveOrConfirm(uint8 lttp_code, uint16 item_id) {
   rando_pot_quiet_receive_impl(lttp_code, item_id, true);
 }
 
-void Rando_PotQuietReceive(uint8 lttp_code, uint16 item_id) {
-  Rando_QuietReceiveOrConfirm(lttp_code, item_id);
+static RandoGrantResult rando_validate_prepared_token(
+    const RandoDeferredGrantToken *token) {
+  if (token == NULL || token->version != kRandoDeferredGrantTokenVersion)
+    return kRandoGrantResult_Invalid;
+  // Integrity is checked before placement/check lookup so corrupted location,
+  // item, or disposition bytes cannot redirect validation or touch gameplay.
+  if (token->reserved !=
+      rando_deferred_grant_integrity_tag(token->version, &token->plan))
+    return kRandoGrantResult_Invalid;
+  if (token->plan.disposition == kRandoGrantDisposition_Invalid)
+    return kRandoGrantResult_Invalid;
+  uint16 current;
+  if (!Placement_TryLookup(token->plan.location_id, &current))
+    return kRandoGrantResult_NotActive;
+  if (current != token->plan.item_id)
+    return kRandoGrantResult_Invalid;
+  if (Rando_IsLocationChecked(token->plan.location_id))
+    return kRandoGrantResult_AlreadyChecked;
+  if (token->plan.disposition == kRandoGrantDisposition_RetryableFailure)
+    return kRandoGrantResult_Retryable;
+  return kRandoGrantResult_Accepted;
+}
+
+RandoGrantResult Rando_CommitStandingPieceOfHeartIdentity(
+    const RandoDeferredGrantToken *token) {
+  RandoGrantResult result = rando_validate_prepared_token(token);
+  if (result != kRandoGrantResult_Accepted)
+    return result;
+  const RandoGrantPlan *plan = &token->plan;
+  if (plan->item_id != ITEM_PieceOfHeart ||
+      plan->opcode != kRandoGrantOp_Receive ||
+      plan->disposition != kRandoGrantDisposition_Receive ||
+      plan->receive_code != 0x17)
+    return kRandoGrantResult_Invalid;
+  Rando_MarkLocationChecked(plan->location_id);
+  rando_record_committed_item_ownership(plan->item_id);
+  g_last_dispatched_item_id = plan->item_id;
+  g_last_dispatched_location_id = plan->location_id;
+  g_last_dispatched_plan = *plan;
+  g_last_dispatched_plan_valid = true;
+  return kRandoGrantResult_Accepted;
+}
+
+RandoGrantResult Rando_CommitPreparedGrant(
+    const RandoDeferredGrantToken *token,
+    RandoGrantPresentation presentation,
+    uint8 receipt_method, uint16 chest_position) {
+  if (presentation > kRandoGrantPresentation_None)
+    return kRandoGrantResult_Invalid;
+  RandoGrantResult result = rando_validate_prepared_token(token);
+  if (result != kRandoGrantResult_Accepted)
+    return result;
+
+  const RandoGrantPlan *plan = &token->plan;
+  if (!Rando_CanAcceptGrantPlanNow(plan))
+    return plan->disposition == kRandoGrantDisposition_Receive
+        ? kRandoGrantResult_Retryable : kRandoGrantResult_Invalid;
+  if (plan->disposition == kRandoGrantDisposition_Receive) {
+    if (plan->receive_code >= 76)
+      return kRandoGrantResult_Invalid;
+    item_receipt_method = receipt_method;
+    if (presentation == kRandoGrantPresentation_Animated) {
+      Link_ReceiveItem(plan->receive_code, chest_position);
+    } else if (!ItemReceipt_GrantWithoutAnimation(plan->receive_code)) {
+      return kRandoGrantResult_Invalid;
+    }
+  } else if (plan->disposition == kRandoGrantDisposition_Direct) {
+    if (!rando_apply_direct_grant_plan(plan))
+      return kRandoGrantResult_Invalid;
+  } else if (plan->disposition != kRandoGrantDisposition_AcceptedNoOp) {
+    return plan->disposition == kRandoGrantDisposition_RetryableFailure
+        ? kRandoGrantResult_Retryable : kRandoGrantResult_Invalid;
+  }
+
+  // Commit persistence/derived ownership only after the grant path accepted.
+  Rando_MarkLocationChecked(plan->location_id);
+  rando_record_committed_item_ownership(plan->item_id);
+  g_last_dispatched_item_id = plan->item_id;
+  g_last_dispatched_location_id = plan->location_id;
+  g_last_dispatched_plan = *plan;
+  g_last_dispatched_plan_valid = true;
+
+  if (presentation == kRandoGrantPresentation_Quiet &&
+      plan->item_id != ITEM_Nothing) {
+    // Souls deliberately use a named deferred dialogue instead of the shared
+    // generic soul icon. Keep Quiet sources on the same one-cue contract as
+    // animated direct grants: chime/HUD now, one named box when gameplay is
+    // quiescent, and no duplicate floating confirmation icon.
+    if (Souls_ItemIsSoul(plan->item_id)) {
+      rando_direct_grant_chime_and_hud();
+      Rando_QueueSoulPickupMessage(plan->item_id);
+    } else {
+      rando_queue_pot_confirmation(
+          plan->item_id,
+          plan->disposition == kRandoGrantDisposition_Receive
+              ? plan->receive_code : kRandoLttpSkip);
+    }
+  } else if (presentation == kRandoGrantPresentation_Animated &&
+             plan->disposition != kRandoGrantDisposition_Receive) {
+    Rando_ShowDirectGrantConfirmation((uint8)plan->item_id);
+  }
+  return kRandoGrantResult_Accepted;
+}
+
+RandoGrantResult Rando_GrantLocation(uint16 location_id,
+                                     uint16 vanilla_registry_id,
+                                     uint8 vanilla_lttp_code,
+                                     RandoGrantPresentation presentation,
+                                     uint8 receipt_method,
+                                     uint16 chest_position) {
+  RandoDeferredGrantToken token;
+  RandoGrantResult result = Rando_PrepareGrant(
+      location_id, vanilla_registry_id, vanilla_lttp_code, &token);
+  return result == kRandoGrantResult_Accepted
+      ? Rando_CommitPreparedGrant(&token, presentation,
+                                  receipt_method, chest_position)
+      : result;
+}
+
+RandoGrantResult Rando_ForfeitLocation(uint16 location_id) {
+  uint16 ignored;
+  if (!Placement_TryLookup(location_id, &ignored))
+    return kRandoGrantResult_NotActive;
+  if (Rando_IsLocationChecked(location_id))
+    return kRandoGrantResult_AlreadyChecked;
+  Rando_MarkLocationChecked(location_id);
+  return kRandoGrantResult_Accepted;
+}
+
+RandoGrantResult Rando_CommitRepeatableCapacityIdentity(
+    uint16 location_id, uint16 vanilla_registry_id) {
+  uint16 placed;
+  if (!Placement_TryLookup(location_id, &placed))
+    return kRandoGrantResult_NotActive;
+  if (placed != vanilla_registry_id || placed >= kRandoItemGrantMetadataCount)
+    return kRandoGrantResult_Invalid;
+  uint8 opcode = kRandoItemGrantMetadata[placed].opcode;
+  if (opcode != kRandoGrantOp_DirectBombCapacity &&
+      opcode != kRandoGrantOp_DirectArrowCapacity)
+    return kRandoGrantResult_Invalid;
+  Rando_MarkLocationChecked(location_id);
+  return kRandoGrantResult_Accepted;
 }
 
 // ---------------------------------------------------------------------------
@@ -2575,24 +2892,13 @@ bool Rando_FieldItemSpritesActive(void) {
 // declared in sprite.h — redeclared here to avoid pulling sprite.h into rando.c).
 extern const uint8 kWishPond2_OamFlags[76];
 
-// Resolve a placed item to the LttP receive code that drives its receive-
-// animation graphic — the SAME chain Rando_DispatchVanillaGrant uses to pick the
-// shown item (Rando_VanillaItemForRegistryId primary + the progressive-boomerang
-// colour remap, falling back to progressive_to_lttp), MINUS the side effects.
-// Returns 0xFF when the item has no LttP receive code. Keep in sync with the
-// resolution block in Rando_DispatchVanillaGrant (a draw/grant drift here is the
-// bug class that left rupees, then boomerangs, drawing as the vanilla sprite).
+// Compatibility wrapper for callers that only need the plan's frozen display
+// code. The semantic resolver owns progressive and shared-byte decisions, so
+// this path cannot drift from dispatch.
 static uint8 rando_item_display_lttp(uint16 placed) {
-  uint8 lttp = Rando_VanillaItemForRegistryId(placed);
-  if (lttp != 0xFF) {
-    if (placed == ITEM_BlueBoomerang || placed == ITEM_RedBoomerang) {
-      bool blue_owned = (g_rando_boomerang_owned & kRandoBoomerang_Blue) ||
-                        link_item_boomerang >= 1;
-      lttp = blue_owned ? 0x2a : 0x0c;  // red once blue owned, else blue
-    }
-    return lttp;
-  }
-  return progressive_to_lttp(placed);  // progressive items (sword/bow/...) or 0xFF
+  RandoGrantPlan plan;
+  return Rando_ResolveLiveGrantPlan(0xffffu, placed, &plan)
+      ? plan.display_code : 0xff;
 }
 
 // add-rando-pot-sanity — Tier-1 receive-gfx icon for an item (rupees, equipment,
@@ -2617,7 +2923,7 @@ static bool rando_receive_icon_for_code(uint8 code, uint8 *out_gfx, uint8 *out_b
 // Resolve from the item's POST-grant display code. A caller that needs the
 // PRE-grant code (the boomerang colour flips in g_rando_boomerang_owned on grant,
 // so a post-grant recompute pops the NEXT colour) calls rando_receive_icon_for_code
-// directly with the code it was handed (see Rando_PotQuietReceive).
+// directly with the code it was handed.
 static bool rando_receive_item_icon(uint16 item_id, uint8 *out_gfx, uint8 *out_big,
                                     uint8 *out_oam_flags) {
   return rando_receive_icon_for_code(rando_item_display_lttp(item_id),
@@ -2687,17 +2993,14 @@ uint8 Rando_PotBreakHook(uint16 room, uint16 pos4) {
     return one_shot ? kRandoPot_Suppress : kRandoPot_Vanilla;
   }
 
-  // Active + unchecked: grant the placed item. vanilla_registry_id = 0xFFFF means
-  // "always dispatch the placed item" (it can't equal `placed`). The dispatch
-  // marks the LOC checked internally and resolves the placed item's class
-  // (direct-grant / ITEM_Nothing -> kRandoLttpSkip; else its LttP receive code).
-  uint8 lttp = Rando_DispatchVanillaGrant(loc, 0xFFFFu, kRandoLttpSkip);
-  uint16 item = Rando_LastDispatchedItemId();
-  if (item != ITEM_Nothing)
-    Rando_PotQuietReceive(lttp, item);  // streamlined: no receive animation, no lift-yank
-  // ITEM_Nothing (empty pot): the dispatch already marked it checked; no receive
-  // cue — the recolor reverting to vanilla on re-entry is the feedback.
-  return kRandoPot_Suppress;
+  RandoGrantResult result = Rando_GrantLocation(
+      loc, 0xFFFFu, kRandoLttpSkip, kRandoGrantPresentation_Quiet, 0, 0);
+  if (result == kRandoGrantResult_Accepted ||
+      result == kRandoGrantResult_AlreadyChecked)
+    return kRandoPot_Suppress;
+  if (result == kRandoGrantResult_NotActive)
+    return kRandoPot_Vanilla;
+  return kRandoPot_Retry;
 }
 
 bool Rando_PotShouldRecolor(uint16 room, uint16 pos4) {
@@ -2757,15 +3060,14 @@ uint8 Rando_TerrainRevealHook(uint16 screen, uint16 pos) {
     // is no shared key byte to double-grant.
     return kRandoTerrain_Vanilla;
   }
-  // Active + unchecked: grant the placed item (dispatch marks the LOC checked
-  // internally + resolves its class). Every active terrain object holds a real
-  // item (no ITEM_Nothing pins — design D8), so `item` is always real; guard on
-  // ITEM_Nothing anyway for defensive parity with the pot hook (review LOW-4).
-  uint8 lttp = Rando_DispatchVanillaGrant(loc, 0xFFFFu, kRandoLttpSkip);
-  uint16 item = Rando_LastDispatchedItemId();
-  if (item != ITEM_Nothing)
-    Rando_PotQuietReceive(lttp, item);   // shared streamlined receive (no lift-yank)
-  return kRandoTerrain_Suppress;
+  RandoGrantResult result = Rando_GrantLocation(
+      loc, 0xFFFFu, kRandoLttpSkip, kRandoGrantPresentation_Quiet, 0, 0);
+  if (result == kRandoGrantResult_Accepted ||
+      result == kRandoGrantResult_AlreadyChecked)
+    return kRandoTerrain_Suppress;
+  if (result == kRandoGrantResult_NotActive)
+    return kRandoTerrain_Vanilla;
+  return kRandoTerrain_Retry;
 }
 
 // ---- Gold "check" pot overlay (rando.h) -----------------------------------
@@ -3053,40 +3355,14 @@ static bool rando_placed_item_icon(uint16 location_id, uint16 vanilla_item_id,
   uint16 placed = Placement_Lookup(location_id, vanilla_item_id);
   if (placed == vanilla_item_id)
     return false;
-
-  DirectGrantIconEntry trap_decoy;
-  if (rando_trap_decoy_icon(placed, location_id, &trap_decoy)) {
-    *out_gfx = trap_decoy.gfx;
-    *out_big = trap_decoy.big;
-    *out_oam_flags = trap_decoy.oam_flags;
-    return true;
-  }
-
-  // Tier 1 — items the normal receive animation draws (rupees, equipment,
-  // boomerang, bottles, ...). Shared resolver (rando_receive_item_icon) so this
-  // and the direct-grant confirmation cue can't drift. NOTE: kDirectGrantIcons
-  // does NOT cover these — it only holds the Slice-9 direct-grant items, which is
-  // why a placed red rupee (code 0x36) / boomerang previously fell back to vanilla.
-  if (rando_receive_item_icon(placed, out_gfx, out_big, out_oam_flags))
-    return true;
-
-  // Tier 2 — items with a Slice-9 icon but no receive gfx: direct-grant items
-  // (small keys, ...) and the custom-art items (TriforcePiece / HalfMagic /
-  // QuarterMagic / Rupoor — gfx 0x80 bit, add-rando-field-item-custom-art;
-  // Rando_EnsureRecvItemSlotGfx loads their tile + SP3-upper palette). Magic
-  // upgrades are resolved to the NEXT progressive tier before indexing this
-  // table, so a raw QuarterMagic placement draws as 1/2 until half magic is
-  // owned. gfx==0 entries (none currently mapped) fall back to the vanilla
-  // sprite.
-  uint16 icon_item = rando_direct_grant_icon_item_pre_grant(placed);
-  const DirectGrantIconEntry *e = rando_direct_grant_icon_entry(icon_item);
-  if (e != NULL) {
-    *out_gfx = e->gfx;
-    *out_big = e->big;
-    *out_oam_flags = e->oam_flags;
-    return true;
-  }
-  return false;
+  RandoGrantPlan plan;
+  if (!Rando_ResolveLiveGrantPlan(location_id, placed, &plan) ||
+      !plan.display_valid)
+    return false;
+  *out_gfx = plan.display_gfx;
+  *out_big = plan.display_big;
+  *out_oam_flags = plan.display_oam_flags;
+  return true;
 }
 
 bool Rando_GetFieldItemIcon(uint16 location_id, uint16 vanilla_item_id,
@@ -3140,13 +3416,17 @@ uint16 Rando_GetBossPrizeLocation(uint8 dungeon_id) {
   return Rando_BossPrizeLocationForGameDungeon(dungeon_id);
 }
 
-uint8 Rando_DispatchBossPrizeReceipt(uint8 dungeon_id, uint8 vanilla_lttp_code) {
+RandoGrantResult Rando_GrantBossPrizeReceipt(
+    uint8 dungeon_id, uint8 vanilla_lttp_code,
+    RandoGrantPresentation presentation,
+    uint8 receipt_method, uint8 chest_position) {
   if (!Rando_IsActive())
-    return vanilla_lttp_code;
+    return kRandoGrantResult_NotActive;
   uint16 prize_loc = Rando_GetBossPrizeLocation(dungeon_id);
-  if (prize_loc == 0xFFFFu || Rando_IsLocationChecked(prize_loc))
-    return vanilla_lttp_code;
-  return Rando_DispatchVanillaGrant(prize_loc, 0xFFFFu, vanilla_lttp_code);
+  if (prize_loc == 0xFFFFu)
+    return kRandoGrantResult_NotActive;
+  return Rando_GrantLocation(prize_loc, 0xFFFFu, vanilla_lttp_code,
+                             presentation, receipt_method, chest_position);
 }
 
 // ---------------------------------------------------------------------------
@@ -4344,10 +4624,6 @@ static bool rando_shopsanity_active(void) {
          g_rando_active_settings.shopsanity != 0;
 }
 
-static bool rando_shopsanity_checked_restock(uint16 loc_id) {
-  return rando_shopsanity_active() && Rando_IsLocationChecked(loc_id);
-}
-
 // add-rando-bonk-sanity — resolve a DASH wake of a placed bonk sprite to its
 // unchecked check location. 0xFFFF = not a check right now (axis off, no
 // valid slot, unknown (area,block,type), no placement entry, or already
@@ -4390,18 +4666,25 @@ bool Rando_ShopSlotCheckInfo(uint8 room, uint8 entrance, uint8 pos_plus1,
   return true;
 }
 
-static bool rando_trap_decoy_icon(uint16 item_id, uint16 location_id,
-                                  DirectGrantIconEntry *out) {
+static bool rando_trap_decoy_icon_for_seed(uint64 seed, uint16 item_id,
+                                           uint16 location_id,
+                                           DirectGrantIconEntry *out) {
   if (!rando_is_trap_item(item_id) || out == NULL)
     return false;
   uint32 count = rando_trap_good_item_decoy_count();
-  uint32 start = rando_trap_decoy_mix(rando_trap_decoy_seed(), item_id, location_id) % count;
+  uint32 start = rando_trap_decoy_mix(seed, item_id, location_id) % count;
   for (uint32 i = 0; i < count; i++) {
     uint16 decoy_item = rando_trap_good_item_decoy_at((start + i) % count);
     if (rando_good_item_decoy_icon(decoy_item, out))
       return true;
   }
   return false;
+}
+
+static bool rando_trap_decoy_icon(uint16 item_id, uint16 location_id,
+                                  DirectGrantIconEntry *out) {
+  return rando_trap_decoy_icon_for_seed(rando_trap_decoy_seed(), item_id,
+                                        location_id, out);
 }
 
 static bool rando_instant_flute_active(void) {
@@ -5387,6 +5670,10 @@ void Rando_DeactivateSlot(void) {
   g_rando_key_ring_owned_mask = 0;
   g_rando_skeleton_key_present = false;
   g_rando_skeleton_key_owned = false;
+  g_last_dispatched_item_id = 0xffffu;
+  g_last_dispatched_location_id = 0xffffu;
+  g_last_dispatched_plan_valid = false;
+  memset(&g_last_dispatched_plan, 0, sizeof(g_last_dispatched_plan));
   // Transient Retro take-any redirect target. Reset with the other per-slot
   // transients so a stale door id from a prior slot can't mis-key a host-room
   // shop after a slot switch. (Within a slot it is set/cleared by
@@ -5622,7 +5909,8 @@ void Rando_BuildRuntimeCounts(RandoCounts *out) {
   out->by_item_id[ITEM_ProgressiveShield] = link_shield_type;  // 0..3
   out->by_item_id[ITEM_ProgressiveArmor] = link_armor;          // 0=green,1=blue,2=red
   out->by_item_id[ITEM_ProgressiveGlove] = link_item_gloves;    // 0..2
-  // Bow byte is non-linear: 0 none, 1-2 wood, 3-4 silver (see progressive_to_lttp).
+  // Bow byte is non-linear: 0 none, 1-2 wood, 3-4 silver (the same boundary
+  // encoded by Rando_ResolveGrantPlan).
   // Read true ownership (g_rando_bow_owned) so a player who owns silver but has
   // the slot toggled to wood arrows still counts as silver-capable; fall back to
   // the raw byte for pre-feature saves (ownership 0).
@@ -6753,12 +7041,8 @@ void Rando_SelfCheck(void) {
     link_item_flute = saved_link_item_flute;
   }
 
-  // Chest dispatch — verify both unmapped-fall-through and a known mapping.
-  // Unmapped (room, ordinal) returns vanilla unchanged.
-  if (Rando_ChestDispatch(0xFFFE, 5, 0x05) != 0x05) {
-    fprintf(stderr, "Rando_SelfCheck: chest dispatch did not fall back on unmapped\n");
-    exit(2);
-  }
+  // Chest lookup — verify generated room/ordinal mappings directly. Runtime
+  // delivery is exercised by the explicit transaction probes below.
 #if kRandoChestLookup_COUNT > 0
   // Spot-check the generated kRandoChestLookup table against a curated subset
   // of (room, ordinal, expected_LOC_*) triples. These triples are derived
@@ -6793,126 +7077,9 @@ void Rando_SelfCheck(void) {
     }
   }
 
-  // §6.3 + §6.2 integration: install a direct-grant placement (TriforcePiece)
-  // at a known chest location and verify Rando_ChestDispatch returns
-  // kRandoLttpSkip. Regression guard for the bug where the universal chest
-  // hook in player.c forgot to check Rando_ShouldSkipReceive() and would
-  // pass 0xFE to Link_ReceiveItem (OOB index into 76-byte dispatch tables).
-  {
-    uint16 chest_loc = chest_lookup(114, 0);  // Hyrule Castle - Map Chest
-    if (chest_loc == 0xFFFFu) {
-      fprintf(stderr, "Rando_SelfCheck: chest_lookup(114,0) returned 0xFFFF (table broken?)\n");
-      exit(2);
-    }
-    static RandoPlacement entries[1];
-    entries[0].location_id = chest_loc;
-    entries[0].item_id = 52;  // ITEM_TriforcePiece
-    RandoPlacementTable t = { entries, 1 };
-    Placement_Install(&t);
-    g_rando_triforce_piece_count = 0;
-    uint8 lttp = Rando_ChestDispatch(114, 0, 0x05);  // vanilla map = 0x05
-    if (lttp != kRandoLttpSkip) {
-      fprintf(stderr,
-        "Rando_SelfCheck: chest dispatch with TriforcePiece placement should return"
-        " kRandoLttpSkip (got 0x%02x) — Link_PerformOpenChest would OOB-index dispatch tables\n",
-        (unsigned)lttp);
-      exit(2);
-    }
-    if (g_rando_triforce_piece_count != 1) {
-      fprintf(stderr, "Rando_SelfCheck: chest dispatch with TriforcePiece should tick counter\n");
-      exit(2);
-    }
-    Placement_Install(NULL);
-    g_rando_triforce_piece_count = 0;
-  }
-
-  // Regression guard — "got the Lamp twice". A Rupoor (ITEM_Rupoor, ALTTPR-only
-  // junk, dispatch direct_rupoor) placed at a chest whose US-ROM vanilla item is
-  // the Lamp (Hyrule Castle - Zelda's Cell, room 128, vanilla byte 0x12) must
-  // dispatch to kRandoLttpSkip and DRAIN rupees — NOT fall through to the
-  // vanilla code and grant a duplicate Lamp (the original bug: Rupoor had no
-  // dispatch handler, so Rando_DispatchVanillaGrant returned vanilla_lttp_code).
-  {
-    uint16 rupoor_loc = chest_lookup(128, 0);  // Hyrule Castle - Zelda's Cell
-    if (rupoor_loc != 0xFFFFu) {
-      static RandoPlacement entries[1];
-      entries[0].location_id = rupoor_loc;
-      entries[0].item_id = ITEM_Rupoor;  // 110
-      RandoPlacementTable t = { entries, 1 };
-      Placement_Install(&t);
-      link_rupees_goal = 50;
-      uint8 lttp = Rando_ChestDispatch(128, 0, 0x12);  // 0x12 = vanilla Lamp
-      if (lttp != kRandoLttpSkip) {
-        fprintf(stderr,
-          "Rando_SelfCheck: Rupoor chest dispatch should return kRandoLttpSkip "
-          "(got 0x%02x) — would grant the chest's vanilla item (Lamp 0x12)\n",
-          (unsigned)lttp);
-        exit(2);
-      }
-      if (link_rupees_goal != 40) {
-        fprintf(stderr,
-          "Rando_SelfCheck: Rupoor should drain 10 rupees (goal 50 -> 40, got %u)\n",
-          (unsigned)link_rupees_goal);
-        exit(2);
-      }
-      // Floor: with < 10 rupees the goal must clamp to 0, never underflow (an
-      // underflowed goal would make the HUD ticker race the count UPWARD).
-      link_rupees_goal = 4;
-      (void)Rando_ChestDispatch(128, 0, 0x12);
-      if (link_rupees_goal != 0) {
-        fprintf(stderr,
-          "Rando_SelfCheck: Rupoor with <10 rupees should clamp goal to 0 (got %u)\n",
-          (unsigned)link_rupees_goal);
-        exit(2);
-      }
-      Placement_Install(NULL);
-      link_rupees_goal = 0;
-    }
-  }
-
-  // Progressive-item grant regression — a progressive item collected while
-  // ALREADY at max tier must SKIP (kRandoLttpSkip), NOT fall through to the
-  // chest's vanilla item. Original bug: a (customizer-pinned) ProgressiveBow at
-  // Desert Palace - Big Chest (room 115, ord 0; vanilla LttP code 0x1b =
-  // Power Glove) granted the Power Glove when the player already had the silver
-  // bow (e.g. via the item-give cheat). See rando_is_progressive_item /
-  // Rando_DispatchVanillaGrant.
-  {
-    uint16 bow_loc = chest_lookup(115, 0);  // Desert Palace - Big Chest
-    if (bow_loc != 0xFFFFu) {
-      static RandoPlacement entries[1];
-      entries[0].location_id = bow_loc;
-      entries[0].item_id = ITEM_ProgressiveBow;
-      RandoPlacementTable t = { entries, 1 };
-      Placement_Install(&t);
-      uint8 saved_bow = link_item_bow;
-      // Maxed (silver bow + arrows): must skip, not grant vanilla 0x1b.
-      link_item_bow = 4;
-      uint8 lttp = Rando_ChestDispatch(115, 0, 0x1b);
-      if (lttp != kRandoLttpSkip) {
-        fprintf(stderr,
-          "Rando_SelfCheck: maxed ProgressiveBow chest should skip (got 0x%02x) "
-          "- would grant the chest's vanilla item (Power Glove)\n",
-          (unsigned)lttp);
-        exit(2);
-      }
-      // Un-owned: must still grant the wooden-bow code (0x0b), never skip/vanilla.
-      link_item_bow = 0;
-      lttp = Rando_ChestDispatch(115, 0, 0x1b);
-      if (lttp != 0x0b) {
-        fprintf(stderr,
-          "Rando_SelfCheck: un-owned ProgressiveBow chest should grant wood bow "
-          "(0x0b), got 0x%02x\n", (unsigned)lttp);
-        exit(2);
-      }
-      link_item_bow = saved_bow;
-      Placement_Install(NULL);
-    }
-  }
 #else
   // No chest table artifact present (e.g. CI build with no assets): the
   // kRandoChestLookup table is empty so chest mapping cannot be self-checked.
-  // The unmapped fall-through above already exercises the empty-table path.
   fprintf(stderr,
     "Rando_SelfCheck: chest table empty (no assets extracted) - skipping "
     "chest-mapping spot-checks\n");
@@ -7653,15 +7820,20 @@ void Rando_SelfCheck(void) {
       fprintf(stderr, "Rando_SelfCheck: boss prize should start unchecked\n");
       exit(2);
     }
-    lttp = Rando_DispatchBossPrizeReceipt(kGameDungeon_SkullWoods, 0x20);
-    if (lttp != kRandoLttpSkip ||
+    RandoGrantResult prize_result = Rando_GrantBossPrizeReceipt(
+        kGameDungeon_SkullWoods, 0x20,
+        kRandoGrantPresentation_None, 3, 0);
+    if (prize_result != kRandoGrantResult_Accepted ||
         !Rando_IsLocationChecked(LOC_Skull_Woods_Prize) ||
         (link_has_crystals & 0x40) == 0) {
-      fprintf(stderr, "Rando_SelfCheck: boss prize receipt dispatch failed\n");
+      fprintf(stderr, "Rando_SelfCheck: boss prize receipt transaction failed\n");
       exit(2);
     }
-    if (Rando_DispatchBossPrizeReceipt(kGameDungeon_SkullWoods, 0x20) != 0x20) {
-      fprintf(stderr, "Rando_SelfCheck: checked boss prize should fall back to vanilla receipt\n");
+    if (Rando_GrantBossPrizeReceipt(
+            kGameDungeon_SkullWoods, 0x20,
+            kRandoGrantPresentation_None, 3, 0) !=
+        kRandoGrantResult_AlreadyChecked) {
+      fprintf(stderr, "Rando_SelfCheck: checked boss prize did not terminate replay\n");
       exit(2);
     }
     g_rando_slot_active = saved_slot_active;
@@ -9142,56 +9314,892 @@ static void Rando_SelfCheckCapacityABI(void) {
           (unsigned)(sizeof(kProbes) / sizeof(kProbes[0])));
 }
 
-void Rando_RunAllSelfChecks(void) {
-  Rando_SelfCheckCapacityABI();
-  Rando_CrystalGateSelfCheck();
-  Rando_DynamicHintFastForwardSelfCheck();
-  Rando_SelfCheck();
-  ItemReceipt_FastFanfareSelfCheck();
+static void Rando_GrantPlanSelfCheck(void) {
+  static uint8 saved_ram[sizeof(g_ram)];
+  memcpy(saved_ram, g_ram, sizeof(saved_ram));
+  uint8 saved_boomerang_owned = g_rando_boomerang_owned;
+  uint8 saved_bow_owned = g_rando_bow_owned;
+  const char *failure = NULL;
+  uint16 failure_item = 0xffffu;
+  RandoGrantState base;
+  memset(&base, 0, sizeof(base));
+  base.health_capacity = 0x30;
+  base.health_current = 0x18;
+  base.magic_power = 0x20;
+  base.trap_seed = 0x123456789abcdef0ull;
+
+#define GRANT_PLAN_CHECK(expr, message, item) \
+  do { if (!(expr)) { failure = (message); failure_item = (uint16)(item); goto cleanup; } } while (0)
+
+  GRANT_PLAN_CHECK(kRandoItemGrantMetadataCount == ITEM__COUNT,
+                   "metadata count does not equal ITEM__COUNT", 0xffffu);
+
+  for (uint16 item = 0; item < ITEM__COUNT; item++) {
+    const RandoItemGrantMetadata *metadata = &kRandoItemGrantMetadata[item];
+    RandoGrantState state = base, state_after;
+    RandoGrantPlan first, second;
+    bool is_virtual = metadata->opcode == kRandoGrantOp_Virtual;
+    bool ok = Rando_ResolveGrantPlan(166, item, &state, &first);
+    if (is_virtual) {
+      GRANT_PLAN_CHECK(!ok && first.disposition == kRandoGrantDisposition_Invalid,
+                       "virtual item produced a grantable plan", item);
+      continue;
+    }
+    GRANT_PLAN_CHECK(metadata->opcode != kRandoGrantOp_Invalid,
+                     "placeable item has invalid generated opcode", item);
+    GRANT_PLAN_CHECK(ok && first.disposition != kRandoGrantDisposition_Invalid,
+                     "placeable item did not resolve intentionally", item);
+    GRANT_PLAN_CHECK(first.opcode == metadata->opcode &&
+                     first.payload == metadata->payload,
+                     "plan disagrees with generated metadata", item);
+    state_after = state;
+    GRANT_PLAN_CHECK(Rando_ResolveGrantPlan(166, item, &state, &second) &&
+                     memcmp(&first, &second, sizeof(first)) == 0,
+                     "same inputs produced different plans", item);
+    GRANT_PLAN_CHECK(memcmp(&state, &state_after, sizeof(state)) == 0,
+                     "resolver modified its inventory snapshot", item);
+
+    DirectGrantIconEntry expected = {0, 0, 0};
+    bool expected_icon = false;
+    if (first.display_code != 0xff) {
+      expected_icon = rando_receive_icon_for_code(first.display_code,
+                                                   &expected.gfx,
+                                                   &expected.big,
+                                                   &expected.oam_flags);
+    } else if (first.opcode == kRandoGrantOp_DirectTrap) {
+      expected_icon = rando_trap_decoy_icon_for_seed(
+          state.trap_seed, item, 166, &expected);
+    } else {
+      uint16 icon_item = item;
+      if (first.opcode == kRandoGrantOp_DirectMagicUpgrade)
+        icon_item = state.magic_consumption == 0 ? ITEM_HalfMagic : ITEM_QuarterMagic;
+      const DirectGrantIconEntry *entry = rando_direct_grant_icon_entry(icon_item);
+      if (entry != NULL) {
+        expected = *entry;
+        expected_icon = true;
+      }
+    }
+    GRANT_PLAN_CHECK(first.display_valid == expected_icon,
+                     "draw and grant-plan icon availability disagree", item);
+    if (expected_icon) {
+      GRANT_PLAN_CHECK(first.display_gfx == expected.gfx &&
+                       first.display_big == expected.big &&
+                       first.display_oam_flags == expected.oam_flags,
+                       "draw and grant-plan icon descriptor disagree", item);
+    }
+  }
+
+  // Progressive tier boundaries, including the bow's non-linear state byte.
+  {
+    RandoGrantState state = base;
+    RandoGrantPlan plan;
+    const uint8 sword_codes[4] = {0x00, 0x01, 0x02, 0x03};
+    for (uint8 tier = 0; tier <= 4; tier++) {
+      state.sword = tier;
+      GRANT_PLAN_CHECK(Rando_ResolveGrantPlan(1, ITEM_ProgressiveSword, &state, &plan),
+                       "sword boundary did not resolve", ITEM_ProgressiveSword);
+      GRANT_PLAN_CHECK(tier < 4
+                           ? plan.disposition == kRandoGrantDisposition_Receive &&
+                             plan.receive_code == sword_codes[tier]
+                           : plan.disposition == kRandoGrantDisposition_AcceptedNoOp,
+                       "sword boundary resolved incorrectly", ITEM_ProgressiveSword);
+    }
+    for (uint8 tier = 0; tier <= 3; tier++) {
+      state.shield = tier;
+      GRANT_PLAN_CHECK(Rando_ResolveGrantPlan(1, ITEM_ProgressiveShield, &state, &plan) &&
+                       (tier < 3
+                            ? plan.receive_code == (uint8)(0x04 + tier)
+                            : plan.disposition == kRandoGrantDisposition_AcceptedNoOp),
+                       "shield boundary resolved incorrectly", ITEM_ProgressiveShield);
+    }
+    for (uint8 tier = 0; tier <= 2; tier++) {
+      state.armor = tier;
+      GRANT_PLAN_CHECK(Rando_ResolveGrantPlan(1, ITEM_ProgressiveArmor, &state, &plan) &&
+                       (tier < 2
+                            ? plan.receive_code == (uint8)(0x22 + tier)
+                            : plan.disposition == kRandoGrantDisposition_AcceptedNoOp),
+                       "armor boundary resolved incorrectly", ITEM_ProgressiveArmor);
+      state.gloves = tier;
+      GRANT_PLAN_CHECK(Rando_ResolveGrantPlan(1, ITEM_ProgressiveGlove, &state, &plan) &&
+                       (tier < 2
+                            ? plan.receive_code == (uint8)(0x1b + tier)
+                            : plan.disposition == kRandoGrantDisposition_AcceptedNoOp),
+                       "glove boundary resolved incorrectly", ITEM_ProgressiveGlove);
+    }
+    // Ownership bits are authoritative over the currently-selected raw byte.
+    // Exercise every legal ownership x selection combination, including the
+    // critical silver-owned/wood-selected state produced by menu toggling.
+    static const uint8 kBowOwnership[] = {
+      0, kRandoBow_Wood, kRandoBow_Silver,
+      kRandoBow_Wood | kRandoBow_Silver,
+    };
+    for (size_t owned_i = 0; owned_i < countof(kBowOwnership); owned_i++) {
+      state.bow_owned = kBowOwnership[owned_i];
+      for (uint8 bow = 0; bow <= 4; bow++) {
+        state.bow = bow;
+        bool silver_owned = (state.bow_owned & kRandoBow_Silver) != 0;
+        bool wood_owned = (state.bow_owned & kRandoBow_Wood) != 0;
+        uint8 expected = silver_owned ? 0xff
+                       : wood_owned ? 0x3b
+                       : bow == 0 ? 0x0b
+                       : bow <= 2 ? 0x3b
+                       : 0xff;
+        GRANT_PLAN_CHECK(
+            Rando_ResolveGrantPlan(1, ITEM_ProgressiveBow, &state, &plan) &&
+                (expected == 0xff
+                     ? plan.disposition == kRandoGrantDisposition_AcceptedNoOp &&
+                           plan.receive_code == 0xff
+                     : plan.disposition == kRandoGrantDisposition_Receive &&
+                           plan.receive_code == expected),
+            "bow ownership/selection combination resolved incorrectly",
+            ITEM_ProgressiveBow);
+      }
+    }
+    state.bow_owned = 0;
+    state.bow = 0xff;
+    GRANT_PLAN_CHECK(
+        Rando_ResolveGrantPlan(1, ITEM_ProgressiveBow, &state, &plan) &&
+            plan.disposition == kRandoGrantDisposition_AcceptedNoOp,
+        "unknown legacy bow byte did not fail safe", ITEM_ProgressiveBow);
+  }
+
+  // Both boomerang registry ids share one pre-state rule: blue first, red once
+  // blue is truly owned, independent of which slot presentation is active.
+  {
+    RandoGrantState state = base;
+    RandoGrantPlan plan;
+    GRANT_PLAN_CHECK(Rando_ResolveGrantPlan(2, ITEM_RedBoomerang, &state, &plan) &&
+                     plan.receive_code == 0x0c && plan.display_code == 0x0c,
+                     "first boomerang was not blue", ITEM_RedBoomerang);
+    state.boomerang_owned = kRandoBoomerang_Blue;
+    GRANT_PLAN_CHECK(Rando_ResolveGrantPlan(2, ITEM_BlueBoomerang, &state, &plan) &&
+                     plan.receive_code == 0x2a && plan.display_code == 0x2a,
+                     "owned-blue boomerang was not red", ITEM_BlueBoomerang);
+    state.boomerang_owned = 0;
+    state.boomerang = 1;
+    GRANT_PLAN_CHECK(Rando_ResolveGrantPlan(2, ITEM_RedBoomerang, &state, &plan) &&
+                     plan.receive_code == 0x2a,
+                     "legacy boomerang byte was ignored", ITEM_RedBoomerang);
+  }
+
+  // Bottle acquisition and loose contents have different acceptance rules.
+  {
+    RandoGrantState state = base;
+    RandoGrantPlan plan;
+    memset(state.bottle, 3, sizeof(state.bottle));
+    GRANT_PLAN_CHECK(Rando_ResolveGrantPlan(3, ITEM_BottleEmpty, &state, &plan) &&
+                     plan.disposition == kRandoGrantDisposition_RetryableFailure,
+                     "full bottle inventory was not retryable", ITEM_BottleEmpty);
+    GRANT_PLAN_CHECK(Rando_ResolveGrantPlan(3, ITEM_BluePotion, &state, &plan) &&
+                     plan.disposition == kRandoGrantDisposition_RetryableFailure,
+                     "contents without an empty bottle were not retryable", ITEM_BluePotion);
+    state.bottle[2] = 2;
+    GRANT_PLAN_CHECK(Rando_ResolveGrantPlan(3, ITEM_BluePotion, &state, &plan) &&
+                     plan.disposition == kRandoGrantDisposition_Receive,
+                     "contents with an empty bottle were rejected", ITEM_BluePotion);
+  }
+
+  // Intentional accepted no-ops must never fall through to the source item.
+  {
+    RandoGrantState state = base;
+    RandoGrantPlan plan;
+    GRANT_PLAN_CHECK(Rando_ResolveGrantPlan(4, ITEM_Nothing, &state, &plan) &&
+                     plan.disposition == kRandoGrantDisposition_AcceptedNoOp,
+                     "Nothing was not accepted as a no-op", ITEM_Nothing);
+    state.magic_consumption = 2;
+    GRANT_PLAN_CHECK(Rando_ResolveGrantPlan(4, ITEM_HalfMagic, &state, &plan) &&
+                     plan.disposition == kRandoGrantDisposition_AcceptedNoOp,
+                     "max magic upgrade was not an accepted no-op", ITEM_HalfMagic);
+    state.health_capacity = state.health_current = 0xa0;
+    GRANT_PLAN_CHECK(Rando_ResolveGrantPlan(4, ITEM_BossHeartContainer, &state, &plan) &&
+                     plan.disposition == kRandoGrantDisposition_AcceptedNoOp,
+                     "max heart container was not an accepted no-op",
+                     ITEM_BossHeartContainer);
+    GRANT_PLAN_CHECK(Rando_ResolveGrantPlan(4, ITEM_HeartRefill, &state, &plan) &&
+                     plan.disposition == kRandoGrantDisposition_AcceptedNoOp,
+                     "full-health refill was not an accepted no-op", ITEM_HeartRefill);
+    state.bomb_upgrades = state.arrow_upgrades = 7;
+    GRANT_PLAN_CHECK(Rando_ResolveGrantPlan(4, ITEM_BombUpgrade5, &state, &plan) &&
+                     plan.disposition == kRandoGrantDisposition_AcceptedNoOp,
+                     "max bomb capacity was not an accepted no-op", ITEM_BombUpgrade5);
+    GRANT_PLAN_CHECK(Rando_ResolveGrantPlan(4, ITEM_ArrowUpgrade5, &state, &plan) &&
+                     plan.disposition == kRandoGrantDisposition_AcceptedNoOp,
+                     "max arrow capacity was not an accepted no-op", ITEM_ArrowUpgrade5);
+  }
+
+  // The pure resolver must not touch live/shared bytes. Then exercise capture
+  // with deliberately non-default values and restore the entire RAM image.
+  GRANT_PLAN_CHECK(memcmp(saved_ram, g_ram, sizeof(saved_ram)) == 0 &&
+                   g_rando_boomerang_owned == saved_boomerang_owned &&
+                   g_rando_bow_owned == saved_bow_owned,
+                   "resolver modified live gameplay state", 0xffffu);
+  link_sword_type = 2;
+  link_item_bow = 3;
+  link_bottle_info[0] = 2;
+  g_rando_boomerang_owned = kRandoBoomerang_Blue;
+  g_rando_bow_owned = kRandoBow_Silver;
+  {
+    RandoGrantState captured;
+    Rando_CaptureGrantState(&captured);
+    GRANT_PLAN_CHECK(captured.sword == 2 && captured.bow == 3 &&
+                     captured.bow_owned == kRandoBow_Silver &&
+                     captured.bottle[0] == 2 &&
+                     captured.boomerang_owned == kRandoBoomerang_Blue,
+                     "live state capture disagrees with inventory bytes", 0xffffu);
+  }
+
+cleanup:
+  memcpy(g_ram, saved_ram, sizeof(saved_ram));
+  g_rando_boomerang_owned = saved_boomerang_owned;
+  g_rando_bow_owned = saved_bow_owned;
+#undef GRANT_PLAN_CHECK
+  if (failure != NULL) {
+    fprintf(stderr, "Rando_GrantPlanSelfCheck: %s (item %u)\n",
+            failure, (unsigned)failure_item);
+    exit(2);
+  }
+  fprintf(stderr, "[Rando_GrantPlanSelfCheck] OK (%u metadata rows)\n",
+          (unsigned)kRandoItemGrantMetadataCount);
+}
+
+static void Rando_GrantTransactionSelfCheck(void) {
+  static uint8 saved_ram[sizeof(g_ram)], before_ram[sizeof(g_ram)];
+  uint8 saved_checked[kRandoCheckedBitmapBytes];
+  uint8 saved_soul_flags[kSoulFlagsBytes];
+  const RandoPlacementTable *saved_placement = Placement_GetActive();
+  uint8 saved_slot_active = g_rando_slot_active;
+  uint32 saved_features1 = enhanced_features1;
+  RandoSettings saved_active_settings = g_rando_active_settings;
+  bool saved_active_settings_valid = g_rando_active_settings_valid;
+  uint8 saved_mushroom_held = g_rando_mushroom_held;
+  uint8 saved_bow_owned = g_rando_bow_owned;
+  uint32 saved_reachability = g_reachability_state_counter;
+  uint16 saved_last_item = g_last_dispatched_item_id;
+  uint16 saved_last_location = g_last_dispatched_location_id;
+  RandoGrantPlan saved_last_plan = g_last_dispatched_plan;
+  bool saved_last_valid = g_last_dispatched_plan_valid;
+  uint16 saved_last_soul_item = g_rando_last_soul_item_id;
+  uint16 saved_soul_pending = g_rando_soul_msg_pending;
+  uint8 saved_confirmation_count = g_rando_pot_confirmation_count;
+  DirectGrantIconEntry saved_confirmation_icons[kRandoPotConfirmationQueueMax];
+  memcpy(saved_ram, g_ram, sizeof(saved_ram));
+  memcpy(saved_checked, g_rando_checked_bitmap, sizeof(saved_checked));
+  memcpy(saved_soul_flags, Souls_Flags(), sizeof(saved_soul_flags));
+  memcpy(saved_confirmation_icons, g_rando_pot_confirmation_icons,
+         sizeof(saved_confirmation_icons));
+
+  RandoPlacement entries[] = {
+    {7000, ITEM_Rupee1},
+    {7001, ITEM_BottleEmpty},
+    {7002, ITEM_Nothing},
+    {7003, ITEM_HalfMagic},
+    {7004, ITEM_Rupee1},
+    {7005, ITEM_Rupee5},
+    {7006, ITEM_BombUpgrade5},
+    {7007, ITEM_ProgressiveBow},
+    {7008, ITEM_StartingHeart},
+    {7009, ITEM_MagicPowder},
+    {7010, ITEM_Rupee20},
+    {7011, ITEM_Soul_ArmosKnights},
+    {7012, ITEM_Soul_Npc_Sahasrahla},
+  };
+  RandoPlacementTable table = {entries, (uint16)countof(entries)};
+  const char *failure = NULL;
+  uint16 failure_location = 0xffffu;
+
+#define GRANT_TX_CHECK(expr, message, location) \
+  do { if (!(expr)) { failure = (message); failure_location = (uint16)(location); goto cleanup; } } while (0)
+
+  Placement_Install(&table);
+  memset(g_rando_checked_bitmap, 0, sizeof(g_rando_checked_bitmap));
+  g_rando_slot_active = 1;
+  enhanced_features1 |= kFeatures1_RandomizerActive;
+  g_rando_mushroom_held = 0;
+  g_last_dispatched_item_id = g_last_dispatched_location_id = 0xffffu;
+  g_last_dispatched_plan_valid = false;
+  g_rando_pot_confirmation_count = 0;
+  g_rando_last_soul_item_id = 0xffffu;
+  g_rando_soul_msg_pending = 0xffffu;
+  Souls_ResetFlags();
+
+  // Absent/virtual preparation is mutation-free and explicit.
+  {
+    RandoDeferredGrantToken token;
+    memcpy(before_ram, g_ram, sizeof(before_ram));
+    uint8 before_checked[kRandoCheckedBitmapBytes];
+    memcpy(before_checked, g_rando_checked_bitmap, sizeof(before_checked));
+    GRANT_TX_CHECK(Rando_PrepareGrant(7999, ITEM_L1Sword, 0, &token) ==
+                         kRandoGrantResult_NotActive,
+                     "absent placement did not return NotActive", 7999);
+    GRANT_TX_CHECK(memcmp(before_ram, g_ram, sizeof(before_ram)) == 0 &&
+                       memcmp(before_checked, g_rando_checked_bitmap,
+                              sizeof(before_checked)) == 0,
+                     "NotActive preparation mutated gameplay state", 7999);
+    GRANT_TX_CHECK(Rando_PrepareGrant(7008, ITEM_StartingHeart, 0xff, &token) ==
+                         kRandoGrantResult_Invalid &&
+                       !Rando_IsLocationChecked(7008),
+                     "virtual preparation did not fail closed", 7008);
+  }
+
+  // A full bottle is retryable and cannot mark, mutate, or confirm.
+  {
+    RandoDeferredGrantToken token;
+    memset(link_bottle_info, 3, 4);
+    memcpy(before_ram, g_ram, sizeof(before_ram));
+    uint8 before_queue = g_rando_pot_confirmation_count;
+    uint16 before_last = g_last_dispatched_item_id;
+    GRANT_TX_CHECK(Rando_PrepareGrant(7001, ITEM_BottleEmpty, 0x16, &token) ==
+                         kRandoGrantResult_Retryable,
+                     "full bottle did not return Retryable", 7001);
+    GRANT_TX_CHECK(!Rando_IsLocationChecked(7001) && token.version == 0 &&
+                       memcmp(before_ram, g_ram, sizeof(before_ram)) == 0 &&
+                       g_rando_pot_confirmation_count == before_queue &&
+                       g_last_dispatched_item_id == before_last,
+                     "retryable preparation mutated/marked/confirmed", 7001);
+    memset(link_bottle_info, 0, 4);
+
+    GRANT_TX_CHECK(Rando_PrepareGrant(7001, ITEM_BottleEmpty, 0x16, &token) ==
+                         kRandoGrantResult_Accepted && token.version != 0,
+                     "bottle with capacity did not prepare", 7001);
+    memset(link_bottle_info, 3, 4);  // capacity lost while token is deferred
+    memcpy(before_ram, g_ram, sizeof(before_ram));
+    before_queue = g_rando_pot_confirmation_count;
+    GRANT_TX_CHECK(Rando_CommitPreparedGrant(
+                         &token, kRandoGrantPresentation_Animated, 0, 0) ==
+                         kRandoGrantResult_Retryable &&
+                       !Rando_IsLocationChecked(7001) &&
+                       memcmp(before_ram, g_ram, sizeof(before_ram)) == 0 &&
+                       g_rando_pot_confirmation_count == before_queue,
+                     "deferred bottle capacity loss was committed", 7001);
+    memset(link_bottle_info, 0, 4);
+  }
+
+  // Every byte of the fixed-size token is integrity-protected. Corruption is
+  // rejected before placement/check lookup and cannot grant or mark anything.
+  {
+    RandoDeferredGrantToken token, corrupt;
+    GRANT_TX_CHECK(Rando_PrepareGrant(7000, ITEM_Rupee1, 0x34, &token) ==
+                         kRandoGrantResult_Accepted,
+                     "integrity fixture did not prepare", 7000);
+    for (size_t byte = 0; byte < sizeof(token); byte++) {
+      corrupt = token;
+      ((uint8 *)&corrupt)[byte] ^= 0x5au;
+      memcpy(before_ram, g_ram, sizeof(before_ram));
+      uint8 before_checked[kRandoCheckedBitmapBytes];
+      memcpy(before_checked, g_rando_checked_bitmap, sizeof(before_checked));
+      RandoDeferredGrantToken corrupt_before = corrupt;
+      GRANT_TX_CHECK(
+          Rando_CommitPreparedGrant(&corrupt, kRandoGrantPresentation_None,
+                                    0, 0) == kRandoGrantResult_Invalid &&
+              memcmp(&corrupt, &corrupt_before, sizeof(corrupt)) == 0 &&
+              memcmp(before_ram, g_ram, sizeof(before_ram)) == 0 &&
+              memcmp(before_checked, g_rando_checked_bitmap,
+                     sizeof(before_checked)) == 0 &&
+              !Rando_IsLocationChecked(7000),
+          "one-byte token corruption was accepted or mutated state", 7000);
+    }
+  }
+
+  // Accepted no-op commits the check without touching unrelated inventory.
+  {
+    uint16 rupees = link_rupees_goal;
+    GRANT_TX_CHECK(Rando_GrantLocation(7002, ITEM_Nothing, 0xff,
+                                       kRandoGrantPresentation_None, 0, 0) ==
+                         kRandoGrantResult_Accepted &&
+                       Rando_IsLocationChecked(7002) &&
+                       link_rupees_goal == rupees,
+                     "accepted no-op did not commit cleanly", 7002);
+  }
+
+  // Direct grant, replay rejection, and checked-after-acceptance semantics.
+  {
+    link_magic_consumption = 0;
+    RandoDeferredGrantToken token;
+    GRANT_TX_CHECK(Rando_PrepareGrant(7003, ITEM_HalfMagic, 0xff, &token) ==
+                         kRandoGrantResult_Accepted &&
+                       token.plan.receive_code == 1 &&
+                       !Rando_IsLocationChecked(7003),
+                     "direct prepare marked before commit", 7003);
+    link_magic_consumption = 1;  // another upgrade lands while token is deferred
+    GRANT_TX_CHECK(Rando_CommitPreparedGrant(
+                         &token, kRandoGrantPresentation_None, 0, 0) ==
+                         kRandoGrantResult_Accepted &&
+                       link_magic_consumption == 1 &&
+                       Rando_IsLocationChecked(7003),
+                     "direct commit did not grant then mark", 7003);
+    GRANT_TX_CHECK(Rando_CommitPreparedGrant(
+                         &token, kRandoGrantPresentation_None, 0, 0) ==
+                         kRandoGrantResult_AlreadyChecked &&
+                       link_magic_consumption == 1,
+                     "prepared-token replay granted twice", 7003);
+  }
+
+  // Quiet soul sources retain the named soul feedback contract without also
+  // queuing the generic floating icon. Cover both halves of the contiguous
+  // enemy/boss + NPC soul family.
+  {
+    static const struct {
+      uint16 location_id;
+      uint16 item_id;
+    } kQuietSouls[] = {
+      {7011, ITEM_Soul_ArmosKnights},
+      {7012, ITEM_Soul_Npc_Sahasrahla},
+    };
+    for (size_t i = 0; i < countof(kQuietSouls); i++) {
+      g_rando_soul_msg_pending = 0xffffu;
+      g_rando_last_soul_item_id = 0xffffu;
+      g_rando_pot_confirmation_count = 0;
+      uint8 soul_index =
+          (uint8)(kQuietSouls[i].item_id - ITEM_Soul_ArmosKnights);
+      GRANT_TX_CHECK(
+          Rando_GrantLocation(kQuietSouls[i].location_id,
+                              0xffffu, kRandoLttpSkip,
+                              kRandoGrantPresentation_Quiet, 0, 0) ==
+                  kRandoGrantResult_Accepted &&
+              Rando_IsLocationChecked(kQuietSouls[i].location_id) &&
+              Souls_OwnedIndex(soul_index) &&
+              g_rando_soul_msg_pending == kQuietSouls[i].item_id &&
+              g_rando_last_soul_item_id == kQuietSouls[i].item_id &&
+              g_rando_pot_confirmation_count == 0,
+          "quiet soul did not queue exactly the named confirmation",
+          kQuietSouls[i].location_id);
+    }
+  }
+
+  // Present identity is not confused with absence.
+  {
+    link_rupees_goal = 0;
+    RandoDeferredGrantToken token;
+    GRANT_TX_CHECK(Rando_PrepareGrant(7000, ITEM_Rupee1, 0x34, &token) ==
+                         kRandoGrantResult_Accepted && token.plan.item_id == ITEM_Rupee1,
+                     "identity placement did not prepare", 7000);
+    GRANT_TX_CHECK(Rando_CommitPreparedGrant(
+                         &token, kRandoGrantPresentation_None, 0, 0) ==
+                         kRandoGrantResult_Accepted &&
+                       link_rupees_goal == 1 && Rando_IsLocationChecked(7000),
+                     "identity receive did not grant/mark", 7000);
+  }
+
+  // Animated receive uses the lossless saturation fallback in this assetless
+  // selfcheck, then commits only after that receive path accepts it.
+  {
+    memset(ancilla_type, 0x22, 5);
+    link_rupees_goal = 10;
+    GRANT_TX_CHECK(Rando_GrantLocation(7004, ITEM_Rupee1, 0x34,
+                                       kRandoGrantPresentation_Animated, 0, 0) ==
+                         kRandoGrantResult_Accepted &&
+                       link_rupees_goal == 11 && Rando_IsLocationChecked(7004),
+                     "animated receive did not grant/mark", 7004);
+
+    // Quiet receive applies inventory immediately and queues one confirmation.
+    uint8 queue_before = g_rando_pot_confirmation_count;
+    GRANT_TX_CHECK(Rando_GrantLocation(7005, ITEM_Rupee5, 0x35,
+                                       kRandoGrantPresentation_Quiet, 0, 0) ==
+                         kRandoGrantResult_Accepted &&
+                       link_rupees_goal == 16 && Rando_IsLocationChecked(7005) &&
+                       g_rando_pot_confirmation_count == (uint8)(queue_before + 1),
+                     "quiet receive did not grant/mark/queue", 7005);
+  }
+
+  // Deferred commit consumes the frozen plan rather than resolving the changed
+  // progressive state again (wood-bow 0x0b remains wood; a re-resolved 0x3b
+  // would incorrectly advance it to silver).
+  {
+    link_item_bow = 0;
+    g_rando_bow_owned = 0;
+    RandoDeferredGrantToken token, copy;
+    GRANT_TX_CHECK(Rando_PrepareGrant(7007, ITEM_ProgressiveBow, 0xff, &token) ==
+                         kRandoGrantResult_Accepted && token.plan.receive_code == 0x0b,
+                     "deferred progressive prepare was wrong", 7007);
+    memcpy(&copy, &token, sizeof(copy));
+    link_item_bow = 1;
+    g_rando_bow_owned = kRandoBow_Wood;
+    GRANT_TX_CHECK(Rando_CommitPreparedGrant(
+                         &copy, kRandoGrantPresentation_None, 0, 0) ==
+                         kRandoGrantResult_Accepted &&
+                       link_item_bow < 3 &&
+                       !(g_rando_bow_owned & kRandoBow_Silver) &&
+                       memcmp(&copy, &token, sizeof(copy)) == 0,
+                     "deferred commit re-resolved or modified its token", 7007);
+  }
+
+  // Derived shared-byte ownership is recorded only by an accepted commit.
+  {
+    GRANT_TX_CHECK((g_rando_mushroom_held & kRandoMushroom_PowderOwned) == 0,
+                     "powder ownership was dirty before commit", 7009);
+    GRANT_TX_CHECK(Rando_GrantLocation(7009, ITEM_MagicPowder, 0x0d,
+                                       kRandoGrantPresentation_None, 0, 0) ==
+                         kRandoGrantResult_Accepted &&
+                       (g_rando_mushroom_held & kRandoMushroom_PowderOwned),
+                     "accepted commit omitted derived ownership", 7009);
+  }
+
+  // Caller-owned sibling forfeits do not grant the sibling item. Capacity
+  // identity bookkeeping remains explicitly repeatable and never applies +5.
+  {
+    uint16 rupees = link_rupees_goal;
+    GRANT_TX_CHECK(Rando_ForfeitLocation(7010) == kRandoGrantResult_Accepted &&
+                       Rando_IsLocationChecked(7010) && link_rupees_goal == rupees &&
+                       Rando_ForfeitLocation(7010) == kRandoGrantResult_AlreadyChecked,
+                     "sibling forfeit granted or did not persist", 7010);
+    link_bomb_upgrades = 0;
+    link_bomb_filler = 0;
+    RandoDeferredGrantToken token;
+    GRANT_TX_CHECK(Rando_PrepareGrant(7006, ITEM_BombUpgrade5, 0x51, &token) ==
+                         kRandoGrantResult_Accepted && token.plan.receive_code == 1,
+                     "capacity target did not freeze", 7006);
+    link_bomb_upgrades = 1;  // caller/state change reaches the frozen target first
+    GRANT_TX_CHECK(Rando_CommitPreparedGrant(
+                         &token, kRandoGrantPresentation_None, 0, 0) ==
+                         kRandoGrantResult_Accepted &&
+                       link_bomb_upgrades == 1 && link_bomb_filler == 0,
+                     "capacity deferred commit double-incremented/refilled", 7006);
+    link_bomb_upgrades = 0;
+    GRANT_TX_CHECK(Rando_CommitRepeatableCapacityIdentity(
+                         7006, ITEM_BombUpgrade5) == kRandoGrantResult_Accepted &&
+                       Rando_IsLocationChecked(7006) && link_bomb_upgrades == 0 &&
+                       Rando_CommitRepeatableCapacityIdentity(
+                         7006, ITEM_BombUpgrade5) == kRandoGrantResult_Accepted &&
+                       link_bomb_upgrades == 0,
+                     "repeatable capacity identity was not caller-owned", 7006);
+    GRANT_TX_CHECK(Rando_CommitRepeatableCapacityIdentity(
+                         7006, ITEM_ArrowUpgrade5) == kRandoGrantResult_Invalid &&
+                       link_bomb_upgrades == 0,
+                     "capacity identity accepted a mismatched item", 7006);
+  }
+
+  // Event-family adapters exercise the exact result contract their gameplay
+  // callers branch on: absent -> vanilla, accepted/already -> terminal, and
+  // retry -> no sibling/source consumption.
+  {
+    RandoPlacement event_entries[] = {
+      {LOC_Hyrule_Castle_Map_Chest, ITEM_Rupee1},
+      {LOC_Skull_Woods_Prize, ITEM_Prize_Crystal4},
+      {239, ITEM_Bombs10},
+      {266, ITEM_Rupee1},
+      {267, ITEM_Rupee5},
+      {500, ITEM_PieceOfHeart},
+    };
+    RandoPlacementTable event_table = {
+      event_entries, (uint16)countof(event_entries)
+    };
+    Placement_Install(&event_table);
+    memset(g_rando_checked_bitmap, 0, sizeof(g_rando_checked_bitmap));
+
+    GRANT_TX_CHECK(Rando_HasLocationPlacement(500) &&
+                       !Rando_HasLocationPlacement(7999) &&
+                       !Rando_IsLocationCheckedOrVanilla(500, true) &&
+                       Rando_IsLocationCheckedOrVanilla(7999, true) &&
+                       !Rando_IsLocationCheckedOrVanilla(7999, false),
+                     "presence-aware completion fallback drifted", 500);
+    Rando_MarkLocationChecked(500);
+    GRANT_TX_CHECK(Rando_IsLocationCheckedOrVanilla(500, false),
+                     "present checked location ignored checked state", 500);
+    memset(g_rando_checked_bitmap, 0, sizeof(g_rando_checked_bitmap));
+
+#if kRandoChestLookup_COUNT > 0
+    link_rupees_goal = 0;
+    GRANT_TX_CHECK(Rando_ChestGrant(
+                         0xfffe, 0, 0x34,
+                         kRandoGrantPresentation_None, 1, 0) ==
+                         kRandoGrantResult_NotActive,
+                     "unmapped chest did not return NotActive", 0xffff);
+    GRANT_TX_CHECK(Rando_ChestGrant(
+                         114, 0, 0x05,
+                         kRandoGrantPresentation_None, 1, 0) ==
+                         kRandoGrantResult_Accepted &&
+                       Rando_IsLocationChecked(LOC_Hyrule_Castle_Map_Chest) &&
+                       link_rupees_goal == 1,
+                     "mapped chest transaction failed", LOC_Hyrule_Castle_Map_Chest);
+    GRANT_TX_CHECK(Rando_ChestGrant(
+                         114, 0, 0x05,
+                         kRandoGrantPresentation_None, 1, 0) ==
+                         kRandoGrantResult_AlreadyChecked,
+                     "checked chest replay was not terminal", LOC_Hyrule_Castle_Map_Chest);
+#endif
+
+    link_has_crystals = 0;
+    GRANT_TX_CHECK(Rando_GrantBossPrizeReceipt(
+                         kGameDungeon_SkullWoods, 0x20,
+                         kRandoGrantPresentation_None, 3, 0) ==
+                         kRandoGrantResult_Accepted &&
+                       Rando_IsLocationChecked(LOC_Skull_Woods_Prize) &&
+                       (link_has_crystals & 0x40),
+                     "boss-prize transaction failed", LOC_Skull_Woods_Prize);
+    GRANT_TX_CHECK(Rando_GrantBossPrizeReceipt(
+                         kGameDungeon_SkullWoods, 0x20,
+                         kRandoGrantPresentation_None, 3, 0) ==
+                         kRandoGrantResult_AlreadyChecked,
+                     "boss-prize replay was not terminal", LOC_Skull_Woods_Prize);
+
+    memset(g_rando_checked_bitmap, 0, sizeof(g_rando_checked_bitmap));
+    g_rando_active_settings_valid = true;
+    g_rando_active_settings.shopsanity = 0;
+    GRANT_TX_CHECK(Rando_ShopGrant(
+                         0x0f, 0x6f, 2, 0x28,
+                         kRandoGrantPresentation_None, 0, 0) ==
+                         kRandoGrantResult_NotActive,
+                     "plain Retro shop entered shopsanity transaction", 239);
+    g_rando_active_settings.shopsanity = 1;
+    link_bomb_filler = 0;
+    GRANT_TX_CHECK(Rando_ShopGrant(
+                         0x0f, 0x6f, 2, 0x28,
+                         kRandoGrantPresentation_None, 0, 0) ==
+                         kRandoGrantResult_Accepted &&
+                       Rando_IsLocationChecked(239) && link_bomb_filler != 0,
+                     "shopsanity transaction failed", 239);
+    GRANT_TX_CHECK(Rando_ShopGrant(
+                         0x0f, 0x6f, 2, 0x28,
+                         kRandoGrantPresentation_None, 0, 0) ==
+                         kRandoGrantResult_NotActive,
+                     "checked shopsanity slot did not become vanilla restock", 239);
+
+    memset(g_rando_checked_bitmap, 0, sizeof(g_rando_checked_bitmap));
+    g_rando_active_settings.shopsanity = 0;
+    link_bomb_filler = 0;
+    g_last_dispatched_item_id = 0xffffu;
+    GRANT_TX_CHECK(Rando_CommitRepeatableShopIdentity(
+                         0x0f, 0x6f, 2, 0x28) ==
+                         kRandoGrantResult_Accepted &&
+                       Rando_IsLocationChecked(239) && link_bomb_filler == 0 &&
+                       g_last_dispatched_item_id == ITEM_Bombs10 &&
+                       Rando_CommitRepeatableShopIdentity(
+                         0x0f, 0x6f, 2, 0x28) ==
+                         kRandoGrantResult_Accepted &&
+                       link_bomb_filler == 0,
+                     "repeatable shop identity applied or failed", 239);
+    memset(g_rando_checked_bitmap, 0, sizeof(g_rando_checked_bitmap));
+    event_entries[2].item_id = ITEM_Bombs1;
+    GRANT_TX_CHECK(Rando_CommitRepeatableShopIdentity(
+                         0x0f, 0x6f, 2, 0x27) ==
+                         kRandoGrantResult_Invalid &&
+                       !Rando_IsLocationChecked(239),
+                     "same-code nonidentity shop placement was accepted", 239);
+    event_entries[2].item_id = ITEM_Bombs10;
+
+    memset(g_rando_checked_bitmap, 0, sizeof(g_rando_checked_bitmap));
+    link_rupees_goal = 0;
+    GRANT_TX_CHECK(Rando_TakeAnyGrant(
+                         0x58, 0x56, 0, 0x34,
+                         kRandoGrantPresentation_None, 0, 0) ==
+                         kRandoGrantResult_Accepted &&
+                       Rando_IsLocationChecked(266) &&
+                       Rando_IsLocationChecked(267) && link_rupees_goal == 1,
+                     "take-any grant/forfeit transaction failed", 266);
+    GRANT_TX_CHECK(Rando_TakeAnyGrant(
+                         0x58, 0x56, 0, 0x34,
+                         kRandoGrantPresentation_None, 0, 0) ==
+                         kRandoGrantResult_AlreadyChecked,
+                     "take-any replay was not terminal", 266);
+
+    memset(g_rando_checked_bitmap, 0, sizeof(g_rando_checked_bitmap));
+    event_entries[3].item_id = ITEM_BottleEmpty;
+    memset(link_bottle_info, 3, 4);
+    GRANT_TX_CHECK(Rando_TakeAnyGrant(
+                         0x58, 0x56, 0, 0x16,
+                         kRandoGrantPresentation_None, 0, 0) ==
+                         kRandoGrantResult_Retryable &&
+                       !Rando_IsLocationChecked(266) &&
+                       !Rando_IsLocationChecked(267),
+                     "take-any retry consumed chosen/sibling state", 266);
+    memset(link_bottle_info, 0, 4);
+    event_entries[3].item_id = ITEM_Rupee1;
+
+    link_heart_pieces = 0;
+    link_health_capacity = 0x18;
+    RandoDeferredGrantToken poh_token;
+    GRANT_TX_CHECK(Rando_PrepareGrant(
+                         500, ITEM_PieceOfHeart, 0x17, &poh_token) ==
+                         kRandoGrantResult_Accepted &&
+                       Rando_CommitStandingPieceOfHeartIdentity(&poh_token) ==
+                         kRandoGrantResult_Accepted &&
+                       Rando_IsLocationChecked(500) && link_heart_pieces == 0 &&
+                       Rando_CommitStandingPieceOfHeartIdentity(&poh_token) ==
+                         kRandoGrantResult_AlreadyChecked,
+                     "standing PoH identity bookkeeping applied inventory or failed", 500);
+  }
+
+  GRANT_TX_CHECK(Ancilla_RandoFallingPrizeSelfCheck() == 0,
+                 "falling-prize token ABI/commit probe failed", 7000);
+
+cleanup:
+  memcpy(g_ram, saved_ram, sizeof(saved_ram));
+  memcpy(g_rando_checked_bitmap, saved_checked, sizeof(saved_checked));
+  memcpy(Souls_Flags(), saved_soul_flags, sizeof(saved_soul_flags));
+  Placement_Install(saved_placement);
+  g_rando_slot_active = saved_slot_active;
+  enhanced_features1 = saved_features1;
+  g_rando_active_settings = saved_active_settings;
+  g_rando_active_settings_valid = saved_active_settings_valid;
+  g_rando_mushroom_held = saved_mushroom_held;
+  g_rando_bow_owned = saved_bow_owned;
+  g_reachability_state_counter = saved_reachability;
+  g_last_dispatched_item_id = saved_last_item;
+  g_last_dispatched_location_id = saved_last_location;
+  g_last_dispatched_plan = saved_last_plan;
+  g_last_dispatched_plan_valid = saved_last_valid;
+  g_rando_last_soul_item_id = saved_last_soul_item;
+  g_rando_soul_msg_pending = saved_soul_pending;
+  g_rando_pot_confirmation_count = saved_confirmation_count;
+  memcpy(g_rando_pot_confirmation_icons, saved_confirmation_icons,
+         sizeof(saved_confirmation_icons));
+#undef GRANT_TX_CHECK
+  if (failure != NULL) {
+    fprintf(stderr, "Rando_GrantTransactionSelfCheck: %s (location %u)\n",
+            failure, (unsigned)failure_location);
+    exit(2);
+  }
+  fprintf(stderr, "[Rando_GrantTransactionSelfCheck] OK\n");
+}
+
+static void Rando_PotOverlaySelfCheckOrDie(void) {
   if (RandoPot_OverlayOamSelfCheck()) {
     fprintf(stderr, "Rando_SelfCheck: pot overlay OAM allocation can clobber sorted sprites\n");
     exit(2);
   }
+}
+
+static void Rando_EnemyMarkerSelfCheckOrDie(void) {
   if (Rando_EnemyMarkerAllocatorSelfCheck()) {
     fprintf(stderr, "Rando_SelfCheck: enemy marker allocator failed\n");
     exit(2);
   }
+}
+
+static void Rando_OverlayPaletteSelfCheckOrDie(void) {
   if (Rando_OverlayPaletteSelfCheck()) {
     fprintf(stderr, "Rando_SelfCheck: overlay palette manager failed\n");
     exit(2);
   }
-  Rando_Rng_SelfCheck();
-  Rando_ShopPriceSelfCheck();  // add-rando-shopsanity
-  Share_SelfCheck();
-  Settings_SelfCheck();
-  Logic_SelfCheck();
-  Placement_SelfCheck();
-  SeedShape_SelfCheck();
-  Shuffles_SelfCheck();
-  BossShuffle_SelfCheck();
-  DropShuffle_SelfCheck();
-  EnemyShuffle_SelfCheck();  // add-rando-enemy-shuffle
-  Souls_SelfCheck();         // add-enemy-souls
-  Chains_SelfCheck();        // dungeon-chains layout construction
-  Chains_RuntimeSelfCheck(); // dungeon-chains runtime overlay/origin coupling
-  Customizer_SelfCheck();    // add-rando-customizer-mode
-  Customizer_PlacementSelfCheck();  // customizer placement-path regression guard
-  RandoSave_SelfCheck();
-  RandoGenerate_SelfCheck();
-  RandoSnapshotTail_SelfCheck();
-  TextField_SelfCheck();
-  Hints_SelfCheck();
-  RandoDialogue_SelfCheck();
-  Entrance_SelfCheck();
-  InvertedEntrances_SelfCheck();
-  Rando_EntranceContaminationSelfCheck();  // digest vs Inverted-owned asset 126
-  Rando_ReinstallOverlaysSelfCheck();      // generate-then-reinstall round-trip
-  Cosmetic_SelfCheck();
-  Rando_TrackerSelfCheck();
-  Rando_StartingInventorySelfCheck();
-  Rando_MirrorlessAwayWorldSelfCheck();
-  Rando_ShuffleInstallSelfCheck();
-  Rando_MedallionIcons_SelfCheck();
+}
+
+static void Rando_SpriteMainGrantPresentationSelfCheckOrDie(void) {
+  if (!SpriteMain_GrantPresentationSelfCheck()) {
+    fprintf(stderr, "Rando_SelfCheck: sprite-main grant presentation seam failed\n");
+    exit(2);
+  }
+  fprintf(stderr, "[SpriteMain_GrantPresentationSelfCheck] OK\n");
+}
+
+static void Rando_SpriteGrantRetrySelfCheckOrDie(void) {
+  int result = Sprite_GrantRetrySelfCheck();
+  if (result != 0) {
+    fprintf(stderr, "Rando_SelfCheck: sprite grant retry seam failed (%d)\n",
+            result);
+    exit(2);
+  }
+  fprintf(stderr, "[Sprite_GrantRetrySelfCheck] OK\n");
+}
+
+typedef enum RandoSelfCheckGroupId {
+  kRandoSelfCheckGroup_Config,
+  kRandoSelfCheckGroup_Grant,
+  kRandoSelfCheckGroup_Logic,
+  kRandoSelfCheckGroup_Generation,
+  kRandoSelfCheckGroup_Runtime,
+  kRandoSelfCheckGroup_Persistence,
+  kRandoSelfCheckGroup_Ui,
+  kRandoSelfCheckGroup_Count,
+} RandoSelfCheckGroupId;
+
+typedef void (*RandoSelfCheckFn)(void);
+typedef struct RandoSelfCheckEntry {
+  uint8 group;
+  RandoSelfCheckFn run;
+} RandoSelfCheckEntry;
+
+static const char *const kRandoSelfCheckGroupNames[] = {
+  "config", "grant", "logic", "generation", "runtime", "persistence", "ui",
+};
+
+// Keep this table in the exact historical Rando_RunAllSelfChecks order. The
+// unqualified suite walks it once; named groups filter it without maintaining
+// a second list that could silently lose coverage.
+static const RandoSelfCheckEntry kRandoSelfChecks[] = {
+  { kRandoSelfCheckGroup_Config,      Rando_SelfCheckCapacityABI },
+  { kRandoSelfCheckGroup_Logic,       Rando_CrystalGateSelfCheck },
+  { kRandoSelfCheckGroup_Ui,          Rando_DynamicHintFastForwardSelfCheck },
+  { kRandoSelfCheckGroup_Config,      Rando_SelfCheck },
+  { kRandoSelfCheckGroup_Grant,       ItemReceipt_FastFanfareSelfCheck },
+  { kRandoSelfCheckGroup_Grant,       ItemReceipt_LosslessSelfCheck },
+  { kRandoSelfCheckGroup_Grant,       Rando_GrantPlanSelfCheck },
+  { kRandoSelfCheckGroup_Grant,       Rando_GrantTransactionSelfCheck },
+  { kRandoSelfCheckGroup_Grant,       Rando_SpriteMainGrantPresentationSelfCheckOrDie },
+  { kRandoSelfCheckGroup_Grant,       Rando_SpriteGrantRetrySelfCheckOrDie },
+  { kRandoSelfCheckGroup_Runtime,     Rando_PotOverlaySelfCheckOrDie },
+  { kRandoSelfCheckGroup_Runtime,     Rando_EnemyMarkerSelfCheckOrDie },
+  { kRandoSelfCheckGroup_Ui,          Rando_OverlayPaletteSelfCheckOrDie },
+  { kRandoSelfCheckGroup_Config,      Rando_Rng_SelfCheck },
+  { kRandoSelfCheckGroup_Config,      Rando_ShopPriceSelfCheck },
+  { kRandoSelfCheckGroup_Config,      Share_SelfCheck },
+  { kRandoSelfCheckGroup_Config,      Settings_SelfCheck },
+  { kRandoSelfCheckGroup_Logic,       Logic_SelfCheck },
+  { kRandoSelfCheckGroup_Generation,  Placement_SelfCheck },
+  { kRandoSelfCheckGroup_Generation,  SeedShape_SelfCheck },
+  { kRandoSelfCheckGroup_Generation,  Shuffles_SelfCheck },
+  { kRandoSelfCheckGroup_Generation,  BossShuffle_SelfCheck },
+  { kRandoSelfCheckGroup_Generation,  DropShuffle_SelfCheck },
+  { kRandoSelfCheckGroup_Generation,  EnemyShuffle_SelfCheck },
+  { kRandoSelfCheckGroup_Generation,  Souls_SelfCheck },
+  { kRandoSelfCheckGroup_Generation,  Chains_SelfCheck },
+  { kRandoSelfCheckGroup_Runtime,     Chains_RuntimeSelfCheck },
+  { kRandoSelfCheckGroup_Generation,  Customizer_SelfCheck },
+  { kRandoSelfCheckGroup_Generation,  Customizer_PlacementSelfCheck },
+  { kRandoSelfCheckGroup_Persistence, RandoSave_SelfCheck },
+  { kRandoSelfCheckGroup_Generation,  RandoGenerate_SelfCheck },
+  { kRandoSelfCheckGroup_Persistence, RandoSnapshotTail_SelfCheck },
+  { kRandoSelfCheckGroup_Ui,          TextField_SelfCheck },
+  { kRandoSelfCheckGroup_Ui,          Hints_SelfCheck },
+  { kRandoSelfCheckGroup_Ui,          RandoDialogue_SelfCheck },
+  { kRandoSelfCheckGroup_Generation,  Entrance_SelfCheck },
+  { kRandoSelfCheckGroup_Generation,  InvertedEntrances_SelfCheck },
+  { kRandoSelfCheckGroup_Runtime,     Rando_EntranceContaminationSelfCheck },
+  { kRandoSelfCheckGroup_Runtime,     Rando_ReinstallOverlaysSelfCheck },
+  { kRandoSelfCheckGroup_Generation,  Cosmetic_SelfCheck },
+  { kRandoSelfCheckGroup_Logic,       Rando_TrackerSelfCheck },
+  { kRandoSelfCheckGroup_Runtime,     Rando_StartingInventorySelfCheck },
+  { kRandoSelfCheckGroup_Runtime,     Rando_MirrorlessAwayWorldSelfCheck },
+  { kRandoSelfCheckGroup_Runtime,     Rando_ShuffleInstallSelfCheck },
+  { kRandoSelfCheckGroup_Ui,          Rando_MedallionIcons_SelfCheck },
+};
+
+uint8 Rando_SelfCheckGroupCount(void) {
+  return (uint8)countof(kRandoSelfCheckGroupNames);
+}
+
+const char *Rando_SelfCheckGroupName(uint8 index) {
+  return index < Rando_SelfCheckGroupCount()
+      ? kRandoSelfCheckGroupNames[index] : NULL;
+}
+
+bool Rando_RunSelfCheckGroup(const char *name) {
+  int group = -1;
+  if (name == NULL)
+    return false;
+  for (uint8 i = 0; i < Rando_SelfCheckGroupCount(); i++) {
+    if (strcmp(name, kRandoSelfCheckGroupNames[i]) == 0) {
+      group = i;
+      break;
+    }
+  }
+  if (group < 0)
+    return false;  // unknown groups must not run any test
+
+  int passes = group == kRandoSelfCheckGroup_Grant ? 2 : 1;
+  for (int pass = 1; pass <= passes; pass++) {
+    for (size_t i = 0; i < countof(kRandoSelfChecks); i++) {
+      if (kRandoSelfChecks[i].group == group)
+        kRandoSelfChecks[i].run();
+    }
+    fprintf(stderr, "[Rando_SelfCheckGroup:%s] pass %d/%d OK\n",
+            name, pass, passes);
+  }
+  return true;
+}
+
+void Rando_RunAllSelfChecks(void) {
+  for (size_t i = 0; i < countof(kRandoSelfChecks); i++)
+    kRandoSelfChecks[i].run();
   fprintf(stderr, "Rando_RunAllSelfChecks: all subsystems OK.\n");
 }
 

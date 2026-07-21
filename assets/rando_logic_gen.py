@@ -2869,6 +2869,136 @@ def emit_item_ids(items: dict[str, ItemDef], path: Path):
     atomic_write_text(path, "\n".join(lines) + "\n")
 
 
+_BOTTLE_CONTENT_RECEIVE_CODES = {
+    2: 0x16,  # empty
+    3: 0x2B,  # bee
+    4: 0x2C,  # fairy
+    5: 0x2D,  # red potion
+    6: 0x3D,  # green potion
+    7: 0x3C,  # good bee
+    8: 0x48,  # blue potion
+}
+_RUPEE_RECEIVE_CODES = {1: 0x34, 5: 0x35, 20: 0x36, 100: 0x40, 300: 0x46}
+_PROGRESSIVE_GRANT_OPS = {
+    "progressive_sword": "kRandoGrantOp_ProgressiveSword",
+    "progressive_shield": "kRandoGrantOp_ProgressiveShield",
+    "progressive_armor": "kRandoGrantOp_ProgressiveArmor",
+    "progressive_glove": "kRandoGrantOp_ProgressiveGlove",
+    "progressive_bow": "kRandoGrantOp_ProgressiveBow",
+}
+_DUNGEON_GRANT_OPS = {
+    "dungeon_item_small_key": "kRandoGrantOp_DungeonSmallKey",
+    "dungeon_item_big_key": "kRandoGrantOp_DungeonBigKey",
+    "dungeon_item_map": "kRandoGrantOp_DungeonMap",
+    "dungeon_item_compass": "kRandoGrantOp_DungeonCompass",
+}
+
+
+def _parse_grant_metadata(it: ItemDef) -> tuple[str, int]:
+    """Map one registry dispatch token to its semantic C opcode + payload.
+
+    This is deliberately exhaustive. Adding a new spelling to the YAML fails
+    codegen until its runtime semantics are chosen here, preventing a placeable
+    item from falling through to the source location's vanilla item.
+    """
+    token = it.dispatch.strip()
+    if token.startswith("vanilla:"):
+        try:
+            code = int(token.split(":", 1)[1], 0)
+        except ValueError as e:
+            raise RuntimeError(f"item {it.name}: invalid dispatch token {token!r}") from e
+        if not 0 <= code <= 0xFF:
+            raise RuntimeError(f"item {it.name}: receive code out of range in {token!r}")
+        # These ALTTPR item bytes are outside this port's 76-entry vanilla
+        # receive table and therefore have semantic direct handlers.
+        special = {
+            0x51: ("kRandoGrantOp_DirectBombCapacity", 5),
+            0x52: ("kRandoGrantOp_DirectArrowCapacity", 5),
+            0xAF: ("kRandoGrantOp_DirectGenericKey", it.id),
+        }
+        if code in special:
+            return special[code]
+        if code >= 76:
+            raise RuntimeError(
+                f"item {it.name}: {token!r} exceeds the receive table and has no semantic handler"
+            )
+        return "kRandoGrantOp_Receive", code
+
+    if token in _PROGRESSIVE_GRANT_OPS:
+        return _PROGRESSIVE_GRANT_OPS[token], 0
+    if token in _DUNGEON_GRANT_OPS:
+        return _DUNGEON_GRANT_OPS[token], it.id
+    if token.startswith("bottle_contents:"):
+        try:
+            contents = int(token.split(":", 1)[1], 0)
+            code = _BOTTLE_CONTENT_RECEIVE_CODES[contents]
+        except (ValueError, KeyError) as e:
+            raise RuntimeError(f"item {it.name}: unsupported dispatch token {token!r}") from e
+        return "kRandoGrantOp_Receive", code
+    if token.startswith("rupee_tier:"):
+        try:
+            amount = int(token.split(":", 1)[1], 0)
+            code = _RUPEE_RECEIVE_CODES[amount]
+        except (ValueError, KeyError) as e:
+            raise RuntimeError(f"item {it.name}: unsupported dispatch token {token!r}") from e
+        return "kRandoGrantOp_Receive", code
+    if token.startswith("prize_pendant:") or token.startswith("prize_crystal:"):
+        return "kRandoGrantOp_DirectPrize", it.id
+    if token in ("direct_half_magic", "direct_quarter_magic"):
+        return "kRandoGrantOp_DirectMagicUpgrade", it.id
+    if token == "direct_silver_arrows":
+        return "kRandoGrantOp_Receive", 0x3B
+    if token == "direct_triforce_piece":
+        return "kRandoGrantOp_DirectTriforcePiece", it.id
+    if token == "direct_key_ring":
+        return "kRandoGrantOp_DirectKeyRing", it.id
+    if token == "direct_skeleton_key":
+        return "kRandoGrantOp_DirectSkeletonKey", it.id
+    if token == "direct_rupoor":
+        return "kRandoGrantOp_DirectRupoor", it.id
+    if token.startswith("direct_trap_"):
+        return "kRandoGrantOp_DirectTrap", it.id
+    if token == "direct_nothing":
+        return "kRandoGrantOp_DirectNothing", it.id
+    if token == "direct_soul":
+        return "kRandoGrantOp_DirectSoul", it.id
+    if token == "virtual":
+        return "kRandoGrantOp_Virtual", it.id
+    raise RuntimeError(f"item {it.name}: unknown dispatch token {token!r}")
+
+
+def emit_item_grant_metadata(items: dict[str, ItemDef], out: list[str]) -> None:
+    ordered = sorted(items.values(), key=lambda i: i.id)
+    if not ordered:
+        raise RuntimeError("item registry is empty")
+    expected_ids = list(range(ordered[-1].id + 1))
+    actual_ids = [it.id for it in ordered]
+    if actual_ids != expected_ids:
+        raise RuntimeError(
+            "item registry ids must be unique and contiguous for grant metadata: "
+            f"expected {expected_ids!r}, got {actual_ids!r}"
+        )
+    out.extend([
+        "// Semantic grant opcode + payload for every authoritative item id.",
+        "// Generated from item_registry.yaml dispatch tokens; keep grant/draw planning data-driven.",
+        "const RandoItemGrantMetadata kRandoItemGrantMetadata[ITEM__COUNT] = {",
+    ])
+    for it in ordered:
+        opcode, payload = _parse_grant_metadata(it)
+        # Round-trip the semantic parse in-process so formatting/refactors cannot
+        # accidentally emit a different payload than the validated token.
+        if _parse_grant_metadata(it) != (opcode, payload):
+            raise RuntimeError(f"item {it.name}: non-deterministic grant metadata parse")
+        out.append(
+            f"  {{ {opcode}, 0x{payload:04x} }},  // {it.id}: {it.name} ({it.dispatch})"
+        )
+    out.extend([
+        "};",
+        "const uint16 kRandoItemGrantMetadataCount = ITEM__COUNT;",
+        "",
+    ])
+
+
 def _write_empty_chest_lookup(path: Path) -> None:
     """Emit an empty chest_lookup.h (no assets extracted, e.g. CI).
 
@@ -3722,6 +3852,7 @@ def emit_logic_data(
     soul_pin_rooms: list[int] | None = None,
 ):
     out = [HEADER_BANNER, "", "#include \"../types.h\"", "#include \"rando_logic.h\"", "#include \"location_ids.h\"", "#include \"item_ids.h\"", ""]
+    emit_item_grant_metadata(items or {}, out)
     region_ids = _region_ids_for_codegen(regions) if regions else []
     region_index = {rid: i for i, rid in enumerate(region_ids)}
     # Predicate stream — concatenated; LocationDef references offset+length.
@@ -4219,36 +4350,16 @@ def emit_logic_data(
     out.append("}")
     out.append("")
 
-    # Item registry ID → vanilla Link_ReceiveItem dispatch code (LttP item code).
-    # 0xFF = no vanilla dispatch (progressive items, dungeon items, prize items,
-    # virtual items). Indexed by registry item_id.
+    # Compatibility receive-code accessor, now derived from the same semantic
+    # metadata as grant planning. This intentionally returns 0xFF for ALTTPR
+    # bytes whose semantics are direct in this port (0x51/0x52/0xAF), instead of
+    # exposing an out-of-range code to the 76-entry vanilla receive tables.
     if items:
         max_item_id = max(i.id for i in items.values())
-        # Build vanilla code map.
-        dispatch_codes = [0xFF] * (max_item_id + 1)
-        for it in items.values():
-            d = it.dispatch
-            if isinstance(d, str) and d.startswith("vanilla:"):
-                try:
-                    code = int(d[len("vanilla:"):], 0)
-                    if 0 <= code <= 0xFF:
-                        dispatch_codes[it.id] = code
-                except ValueError:
-                    pass
-        out.append("// Registry item_id → vanilla Link_ReceiveItem dispatch code (0xFF = no")
-        out.append("// vanilla path — progressive/dungeon/prize/virtual items). Used by §6")
-        out.append("// grant-site dispatch wrappers to translate from rando placement ids")
-        out.append("// to the LttP receive-item codes that the existing game code expects.")
-        out.append(f"static const uint8 kRandoItemVanillaDispatch[{max_item_id + 1}] = {{")
-        for i in range(0, len(dispatch_codes), 16):
-            chunk = dispatch_codes[i:i + 16]
-            out.append("  " + ", ".join(f"0x{c:02x}" for c in chunk) + ",")
-        out.append("};")
-        out.append(f"static const uint16 kRandoItemVanillaDispatchCount = {max_item_id + 1};")
-        out.append("")
         out.append("uint8 Rando_VanillaItemForRegistryId(uint16 registry_item_id) {")
-        out.append("  if (registry_item_id >= kRandoItemVanillaDispatchCount) return 0xFF;")
-        out.append("  return kRandoItemVanillaDispatch[registry_item_id];")
+        out.append("  if (registry_item_id >= kRandoItemGrantMetadataCount) return 0xFF;")
+        out.append("  const RandoItemGrantMetadata *m = &kRandoItemGrantMetadata[registry_item_id];")
+        out.append("  return m->opcode == kRandoGrantOp_Receive ? (uint8)m->payload : 0xFF;")
         out.append("}")
         out.append("")
 

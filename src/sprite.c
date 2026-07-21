@@ -732,68 +732,276 @@ static uint16 Rando_OverworldEnemyCheckLocForBlock(uint16 block) {
   return check->loc_id;
 }
 
-static bool Rando_TryGrantOverworldEnemyCheck(int k) {
+static bool Rando_GrantResultIsTerminal(RandoGrantResult result) {
+  return result == kRandoGrantResult_Accepted ||
+         result == kRandoGrantResult_AlreadyChecked;
+}
+
+static bool Rando_GrantResultIsBlocked(RandoGrantResult result) {
+  return result == kRandoGrantResult_Retryable ||
+         result == kRandoGrantResult_Invalid;
+}
+
+static RandoGrantResult Rando_NormalizeOrdinaryEnemyGrantResult(
+    RandoGrantResult result) {
+  return result == kRandoGrantResult_AlreadyChecked
+      ? kRandoGrantResult_NotActive : result;
+}
+
+static bool Rando_GrantResultAllowsEventAdvance(RandoGrantResult result) {
+  return !Rando_GrantResultIsBlocked(result);
+}
+
+// Returns true when the bonk source was handled by the randomized path. A
+// blocked source stays live; a terminal source is consumed; NotActive falls
+// through to the authored bees/apple wake.
+static bool Rando_ApplyBonkGrantOutcome(int k, RandoGrantResult result) {
+  if (Rando_GrantResultIsTerminal(result)) {
+    sprite_state[k] = 0;
+    return true;
+  }
+  return Rando_GrantResultIsBlocked(result);
+}
+
+static void Rando_ApplyBurnGrantOutcome(int k, bool completed) {
+  if (!completed)
+    sprite_delay_main[k] = 2;
+}
+
+static void Rando_ApplyFallGrantOutcome(int k, bool completed) {
+  if (completed)
+    sprite_state[k] = 0;
+  else
+    sprite_delay_main[k] = 1;
+}
+
+// Drowning has two terminal animation boundaries. The airborne splash reaches
+// delay 1, while the ordinary ripple reaches delay 0. A blocked randomized
+// grant must leave state 3 live and re-arm the corresponding boundary so the
+// transaction retries promptly instead of consuming the enemy or replaying the
+// whole animation.
+static void Rando_ApplyDrownGrantOutcome(int k, bool completed) {
+  if (completed)
+    sprite_state[k] = 0;
+  else
+    sprite_delay_main[k] = sprite_ai_state[k] ? 2 : 1;
+}
+
+// Returns true when the caller must stop this frame after restoring the exact
+// boss-explosion retry boundary and cutscene lock.
+static bool Rando_ApplyExplosionGrantOutcome(int k, RandoGrantResult result) {
+  if (!Rando_GrantResultIsBlocked(result))
+    return false;
+  sprite_state[k] = 4;
+  sprite_delay_main[k] = 33;
+  flag_is_link_immobilized = 1;
+  return true;
+}
+
+int Sprite_GrantRetrySelfCheck(void) {
+  enum { k = 15 };
+  uint8 saved_state = sprite_state[k];
+  uint8 saved_ai_state = sprite_ai_state[k];
+  uint8 saved_delay = sprite_delay_main[k];
+  uint8 saved_immobilized = flag_is_link_immobilized;
+  int result = 0;
+
+  if (Rando_NormalizeOrdinaryEnemyGrantResult(
+          kRandoGrantResult_AlreadyChecked) != kRandoGrantResult_NotActive ||
+      Rando_GrantResultIsTerminal(Rando_NormalizeOrdinaryEnemyGrantResult(
+          kRandoGrantResult_AlreadyChecked))) {
+    result = 1;
+    goto done;
+  }
+  if (Rando_NormalizeOrdinaryEnemyGrantResult(
+          kRandoGrantResult_Accepted) != kRandoGrantResult_Accepted ||
+      !Rando_GrantResultIsTerminal(Rando_NormalizeOrdinaryEnemyGrantResult(
+          kRandoGrantResult_Accepted))) {
+    result = 2;
+    goto done;
+  }
+
+  sprite_state[k] = 9;
+  if (!Rando_ApplyBonkGrantOutcome(k, kRandoGrantResult_Accepted) ||
+      sprite_state[k] != 0) {
+    result = 3;
+    goto done;
+  }
+  sprite_state[k] = 9;
+  if (!Rando_ApplyBonkGrantOutcome(k, kRandoGrantResult_Retryable) ||
+      sprite_state[k] != 9) {
+    result = 4;
+    goto done;
+  }
+  if (Rando_ApplyBonkGrantOutcome(k, kRandoGrantResult_NotActive) ||
+      sprite_state[k] != 9) {
+    result = 5;
+    goto done;
+  }
+
+  sprite_delay_main[k] = 0x55;
+  Rando_ApplyBurnGrantOutcome(k, false);
+  if (sprite_delay_main[k] != 2) {
+    result = 6;
+    goto done;
+  }
+  sprite_delay_main[k] = 0x55;
+  Rando_ApplyBurnGrantOutcome(k, true);
+  if (sprite_delay_main[k] != 0x55) {
+    result = 7;
+    goto done;
+  }
+
+  sprite_state[k] = 1;
+  sprite_delay_main[k] = 0;
+  Rando_ApplyFallGrantOutcome(k, false);
+  if (sprite_state[k] != 1 || sprite_delay_main[k] != 1) {
+    result = 8;
+    goto done;
+  }
+  sprite_state[k] = 5;
+  sprite_delay_main[k] = 0;
+  Rando_ApplyFallGrantOutcome(k, false);
+  if (sprite_state[k] != 5 || sprite_delay_main[k] != 1) {
+    result = 9;
+    goto done;
+  }
+  sprite_state[k] = 5;
+  sprite_delay_main[k] = 0x55;
+  Rando_ApplyFallGrantOutcome(k, true);
+  if (sprite_state[k] != 0 || sprite_delay_main[k] != 0x55) {
+    result = 10;
+    goto done;
+  }
+
+  sprite_state[k] = 3;
+  sprite_ai_state[k] = 1;
+  sprite_delay_main[k] = 1;
+  Rando_ApplyDrownGrantOutcome(k, false);
+  if (sprite_state[k] != 3 || sprite_delay_main[k] != 2) {
+    result = 14;
+    goto done;
+  }
+  Rando_ApplyDrownGrantOutcome(k, true);
+  if (sprite_state[k] != 0) {
+    result = 15;
+    goto done;
+  }
+  sprite_state[k] = 3;
+  sprite_ai_state[k] = 0;
+  sprite_delay_main[k] = 0;
+  Rando_ApplyDrownGrantOutcome(k, false);
+  if (sprite_state[k] != 3 || sprite_delay_main[k] != 1) {
+    result = 16;
+    goto done;
+  }
+  Rando_ApplyDrownGrantOutcome(k, true);
+  if (sprite_state[k] != 0) {
+    result = 17;
+    goto done;
+  }
+
+  sprite_state[k] = 9;
+  sprite_delay_main[k] = 0x55;
+  flag_is_link_immobilized = 0;
+  if (!Rando_ApplyExplosionGrantOutcome(k, kRandoGrantResult_Retryable) ||
+      sprite_state[k] != 4 || sprite_delay_main[k] != 33 ||
+      flag_is_link_immobilized != 1) {
+    result = 11;
+    goto done;
+  }
+  sprite_state[k] = 9;
+  sprite_delay_main[k] = 0x55;
+  flag_is_link_immobilized = 0;
+  if (Rando_ApplyExplosionGrantOutcome(k, kRandoGrantResult_Accepted) ||
+      sprite_state[k] != 9 || sprite_delay_main[k] != 0x55 ||
+      flag_is_link_immobilized != 0) {
+    result = 12;
+    goto done;
+  }
+  if (!Rando_GrantResultAllowsEventAdvance(kRandoGrantResult_NotActive) ||
+      !Rando_GrantResultAllowsEventAdvance(kRandoGrantResult_Accepted) ||
+      !Rando_GrantResultAllowsEventAdvance(kRandoGrantResult_AlreadyChecked) ||
+      Rando_GrantResultAllowsEventAdvance(kRandoGrantResult_Retryable) ||
+      Rando_GrantResultAllowsEventAdvance(kRandoGrantResult_Invalid)) {
+    result = 13;
+  }
+
+done:
+  sprite_state[k] = saved_state;
+  sprite_ai_state[k] = saved_ai_state;
+  sprite_delay_main[k] = saved_delay;
+  flag_is_link_immobilized = saved_immobilized;
+  return result;
+}
+
+static RandoGrantResult Rando_TryGrantOverworldEnemyCheck(int k) {
   if (!Rando_EnemyChecksAllActiveRuntime() || player_is_indoors ||
       k < 0 || k >= 16)
-    return false;
+    return kRandoGrantResult_NotActive;
   uint16 block = sprite_N_word[k];
   uint16 loc_id = Rando_OverworldEnemyCheckLocForBlock(block);
-  if (loc_id == 0 || !Rando_EnemyCheckLocPlaced(loc_id) ||
-      Rando_IsLocationChecked(loc_id))
-    return false;
-  uint8 lttp = Rando_DispatchVanillaGrant(loc_id, 0xFFFFu, kRandoLttpSkip);
-  uint16 item = Rando_LastDispatchedItemId();
-  Rando_QuietReceiveOrConfirm(lttp, item);
+  if (loc_id == 0 || !Rando_EnemyCheckLocPlaced(loc_id))
+    return kRandoGrantResult_NotActive;
+  RandoGrantResult result = Rando_GrantLocation(
+      loc_id, 0xFFFFu, kRandoLttpSkip, kRandoGrantPresentation_Quiet, 0, 0);
+  // Ordinary enemy checks replace only the first randomized reward. Once the
+  // check is collected, later respawns/kills retain their authored prize flow.
+  result = Rando_NormalizeOrdinaryEnemyGrantResult(result);
+  if (!Rando_GrantResultIsTerminal(result))
+    return result;
   if (block < kRandoOverworldEnemyBlockCount) {
     s_rando_overworld_enemy_loc_by_block[block] = 0;
     s_rando_overworld_enemy_area_by_block[block] = 0xFF;
     s_rando_overworld_enemy_stage_by_block[block] = 0xFF;
     sprite_where_in_overworld[block] = 0;
   }
-  return true;
+  return result;
 }
 
-static bool Rando_TryGrantDynamicEnemyCheck(int k) {
+static RandoGrantResult Rando_TryGrantDynamicEnemyCheck(int k) {
   if (!Rando_EnemyChecksAllActiveRuntime() || !player_is_indoors ||
       k < 0 || k >= 16)
-    return false;
+    return kRandoGrantResult_NotActive;
   uint16 loc_id = s_rando_dynamic_enemy_check_loc[k];
-  if (loc_id == 0 || !Rando_EnemyCheckLocPlaced(loc_id) ||
-      Rando_IsLocationChecked(loc_id)) {
+  if (loc_id == 0 || !Rando_EnemyCheckLocPlaced(loc_id)) {
     if (loc_id != 0)
       s_rando_dynamic_enemy_check_loc[k] = 0;
-    return false;
+    return kRandoGrantResult_NotActive;
   }
-  uint8 lttp = Rando_DispatchVanillaGrant(loc_id, 0xFFFFu, kRandoLttpSkip);
-  uint16 item = Rando_LastDispatchedItemId();
-  Rando_QuietReceiveOrConfirm(lttp, item);
-  s_rando_dynamic_enemy_check_loc[k] = 0;
-  return true;
+  RandoGrantResult result = Rando_GrantLocation(
+      loc_id, 0xFFFFu, kRandoLttpSkip, kRandoGrantPresentation_Quiet, 0, 0);
+  if (Rando_GrantResultIsTerminal(result))
+    s_rando_dynamic_enemy_check_loc[k] = 0;
+  return result;
 }
 
-static bool Rando_TryGrantEnemyCheck(int k) {
+static RandoGrantResult Rando_TryGrantEnemyCheck(int k) {
   if (!player_is_indoors)
     return Rando_TryGrantOverworldEnemyCheck(k);
-  if (Rando_TryGrantDynamicEnemyCheck(k))
-    return true;
+  RandoGrantResult dynamic_result = Rando_TryGrantDynamicEnemyCheck(k);
+  if (dynamic_result != kRandoGrantResult_NotActive)
+    return dynamic_result;
   if (!Rando_EnemyChecksDungeonActiveRuntime() || k < 0 || k >= 16 ||
       sign8(sprite_N[k]))
-    return false;
+    return kRandoGrantResult_NotActive;
   const RandoEnemyCheckLookupEntry *check =
       Rando_FindEnemyCheck(dungeon_room_index2, sprite_N[k]);
   if (!Rando_EnemyCheckEntryActive(check) ||
-      !Rando_EnemyCheckLocPlaced(check->loc_id) ||
-      Rando_IsLocationChecked(check->loc_id))
-    return false;
-  uint8 lttp = Rando_DispatchVanillaGrant(check->loc_id, 0xFFFFu, kRandoLttpSkip);
-  uint16 item = Rando_LastDispatchedItemId();
-  Rando_QuietReceiveOrConfirm(lttp, item);
-  return true;
+      !Rando_EnemyCheckLocPlaced(check->loc_id))
+    return kRandoGrantResult_NotActive;
+  RandoGrantResult result = Rando_GrantLocation(
+      check->loc_id, 0xFFFFu, kRandoLttpSkip,
+      kRandoGrantPresentation_Quiet, 0, 0);
+  // Unlike dynamic/scripted checks, an authored ordinary enemy may respawn.
+  // Its already-checked state suppresses only the randomized reward, not the
+  // repeat vanilla/drop-shuffled prize.
+  return Rando_NormalizeOrdinaryEnemyGrantResult(result);
 }
 
-void Rando_TryGrantBossEnemyCheckForCurrentEvent(void) {
+static RandoGrantResult Rando_TryGrantBossEnemyCheckForCurrentEventResult(void) {
   if (!Rando_EnemyChecksAllActiveRuntime() || !player_is_indoors)
-    return;
+    return kRandoGrantResult_NotActive;
   uint8 game_dungeon = (uint8)(cur_palace_index_x2 >> 1);
   uint16 room_a = dungeon_room_index2;
   uint16 room_b = dungeon_room_index;
@@ -814,12 +1022,16 @@ void Rando_TryGrantBossEnemyCheckForCurrentEvent(void) {
           game_dungeon, room_b, kRandoBossEnemyCheckKind_GtMiniboss);
     }
   }
-  if (check == NULL || !Rando_EnemyCheckLocPlaced(check->loc_id) ||
-      Rando_IsLocationChecked(check->loc_id))
-    return;
-  uint8 lttp = Rando_DispatchVanillaGrant(check->loc_id, 0xFFFFu, kRandoLttpSkip);
-  uint16 item = Rando_LastDispatchedItemId();
-  Rando_QuietReceiveOrConfirm(lttp, item);
+  if (check == NULL || !Rando_EnemyCheckLocPlaced(check->loc_id))
+    return kRandoGrantResult_NotActive;
+  return Rando_GrantLocation(
+      check->loc_id, 0xFFFFu, kRandoLttpSkip,
+      kRandoGrantPresentation_Quiet, 0, 0);
+}
+
+bool Rando_TryGrantBossEnemyCheckForCurrentEvent(void) {
+  return Rando_GrantResultAllowsEventAdvance(
+      Rando_TryGrantBossEnemyCheckForCurrentEventResult());
 }
 
 bool Rando_AssignScriptedEnemyCheck(int child_slot, int parent_slot,
@@ -1104,7 +1316,9 @@ void SpriteModule_Burn(int k) {
   sprite_hit_timer[k] = 0;
   int j = sprite_delay_main[k] - 1;
   if (j == 0) {
-    Sprite_DoTheDeath(k);
+    // Timers decrement before this handler. A blocked outcome re-arms at 2 so
+    // the next frame reaches delay 1 instead of indexing kFlame_Gfx with -1.
+    Rando_ApplyBurnGrantOutcome(k, Sprite_DoTheDeath(k));
     return;
   }
   uint8 bak = sprite_graphics[k];
@@ -1578,8 +1792,9 @@ void Sprite_inactiveSprite(int k) {  // 868510
 
 void SpriteModule_Fall1(int k) {  // 86852e
   if (!sprite_delay_main[k]) {
-    sprite_state[k] = 0;
-    Sprite_ManuallySetDeathFlagUW(k);
+    // A blocked result preserves the live state as a room-clear blocker and
+    // re-arms this terminal frame; success performs the deferred cleanup.
+    Rando_ApplyFallGrantOutcome(k, Sprite_ManuallySetDeathFlagUW(k));
   } else {
     PrepOamCoordsRet info;
     if (Sprite_PrepOamCoordOrDoubleRet(k, &info))
@@ -1610,7 +1825,7 @@ void SpriteModule_Drown(int k) {  // 86859c
     OamEnt *oam = GetOamCurPtr();
     int j = sprite_delay_main[k];
     if (j == 1)
-      sprite_state[k] = 0;
+      Rando_ApplyDrownGrantOutcome(k, Sprite_ManuallySetDeathFlagUW(k));
     if (j != 0) {
       assert((j >> 1) < 11);
       oam->charnum = kSpriteDrown_Oam_Char[j >> 1];
@@ -1639,7 +1854,7 @@ void SpriteModule_Drown(int k) {  // 86859c
     sprite_oam_flags[k] = 0;
     sprite_hit_timer[k] = 0;
     if (!sprite_delay_main[k])
-      sprite_state[k] = 0;
+      Rando_ApplyDrownGrantOutcome(k, Sprite_ManuallySetDeathFlagUW(k));
     Sprite_DrawMultiple(k, &kSpriteDrown_Dmd[(sprite_delay_main[k] << 1 & 0xf8) >> 2], 2, NULL);
   }
 }
@@ -1685,11 +1900,11 @@ void Entity_ApplyRumbleToSprites(SpriteHitBox *hb) {  // 86ad03
       uint16 bonk_loc = Rando_BonkCheckLocForWake(
           (uint8)overworld_area_index, sprite_N_word[j], sprite_type[j]);
       if (bonk_loc != 0xFFFFu) {
-        uint8 bonk_lttp = Rando_DispatchVanillaGrant(bonk_loc, 0xFFFFu,
-                                                     kRandoLttpSkip);
-        Rando_QuietReceiveOrConfirm(bonk_lttp, Rando_LastDispatchedItemId());
-        sprite_state[j] = 0;
-        continue;
+        RandoGrantResult result = Rando_GrantLocation(
+            bonk_loc, 0xFFFFu, kRandoLttpSkip,
+            kRandoGrantPresentation_Quiet, 0, 0);
+        if (Rando_ApplyBonkGrantOutcome(j, result))
+          continue;
       }
     }
     sprite_E[j] = 0;
@@ -1743,9 +1958,52 @@ void Sprite_CheckAbsorptionByPlayer(int k) {  // 86d116
     Sprite_HandleAbsorptionByPlayer(k);
 }
 
+// Resolve absorbable key checks before consuming the pickup sprite. Quiet
+// presentation is intentional: these sources are already in Link's collision
+// path, and the transaction owns both identity and non-identity grants.
+static RandoGrantResult Rando_TryGrantAbsorbableKeyCheck(int k, int type_index) {
+  if (type_index == 12) {
+    if (Rando_EnemyDropKeysActiveRuntime()) {
+      const RandoEnemyDropLookupEntry *drop = Rando_FindEnemyDrop(
+          dungeon_room_index, sprite_subtype[k], kRandoEnemyDropKind_SmallKey);
+      if (drop != NULL) {
+        RandoGrantResult result = Rando_GrantLocation(
+            drop->loc_id, 0xFFFFu, 0x24,
+            kRandoGrantPresentation_Quiet, 0, 0);
+        if (result != kRandoGrantResult_NotActive)
+          return result;
+      }
+    }
+    if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+        dungeon_room_index == 0x87) {
+      return Rando_GrantLocation(
+          LOC_Tower_of_Hera_Basement_Cage, ITEM_SmallKey_TowerOfHera, 0x24,
+          kRandoGrantPresentation_Quiet, 0, 0);
+    }
+  } else if (type_index == 13 && Rando_EnemyDropKeysActiveRuntime()) {
+    const RandoEnemyDropLookupEntry *drop = Rando_FindEnemyDrop(
+        dungeon_room_index, sprite_subtype[k], kRandoEnemyDropKind_BigKey);
+    if (drop != NULL) {
+      return Rando_GrantLocation(
+          drop->loc_id, 0xFFFFu, 0x32,
+          kRandoGrantPresentation_Quiet, 0, 0);
+    }
+  }
+  return kRandoGrantResult_NotActive;
+}
+
 void Sprite_HandleAbsorptionByPlayer(int k) {  // 86d13c
-  sprite_state[k] = 0;
   int t = sprite_type[k] - 0xd8;
+  RandoGrantResult key_result = kRandoGrantResult_NotActive;
+  if (t == 12 || t == 13) {
+    key_result = Rando_TryGrantAbsorbableKeyCheck(k, t);
+    if (Rando_GrantResultIsBlocked(key_result))
+      return;
+  }
+
+  // Delivery accepted (or no randomized check owns this pickup): only now is
+  // it safe to consume the sprite and perform vanilla sound/state cleanup.
+  sprite_state[k] = 0;
   SpriteSfx_QueueSfx3WithPan(k, kAbsorptionSfx[t]);
   switch(t) {
   case 0:
@@ -1774,45 +2032,8 @@ void Sprite_HandleAbsorptionByPlayer(int k) {  // 86d13c
     link_hearts_filler += 56;
     break;
   case 12:
-    // add-rando-enemy-drop-sanity — forced enemy small-key drops become real
-    // checks when the generated row is active. The absorbable key sprite keeps
-    // its carrier's original runtime source slot in sprite_subtype[k] (set in
-    // Sprite_DoTheDeath before PrepareEnemyDrop), so no extra pending state is
-    // needed for save-state/snapshot safety.
-    if (Rando_EnemyDropKeysActiveRuntime()) {
-      const RandoEnemyDropLookupEntry *drop = Rando_FindEnemyDrop(
-          dungeon_room_index, sprite_subtype[k], kRandoEnemyDropKind_SmallKey);
-      if (drop != NULL && Rando_IsLocationChecked(drop->loc_id)) {
-        goto after_getkey;
-      }
-      if (drop != NULL) {
-        uint8 drop_lttp = Rando_DispatchVanillaGrant(
-            drop->loc_id, 0xFFFFu, 0x24);
-        if (Rando_ShouldSkipReceive(drop_lttp))
-          Rando_ShowDirectGrantConfirmation((uint8)Rando_LastDispatchedItemId());
-        else { item_receipt_method = 0; Link_ReceiveItem(drop_lttp, 0); }
-        goto after_getkey;
-      }
-    }
-    // Rando: the Tower of Hera basement freestanding key (room 0x87) is the
-    // ALTTPR "Tower of Hera - Basement Cage" Standing location. Grant the PLACED
-    // item and mark the location checked instead of the vanilla small key (else
-    // the tracker never clears and the placed item is lost). Keyed on room 0x87
-    // like z3randomizer (stats.asm); gated on location-checked so only the one
-    // cage key dispatches; any enemy-drop key here still grants vanilla below.
-    if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
-        dungeon_room_index == 0x87 &&
-        !Rando_IsLocationChecked(LOC_Tower_of_Hera_Basement_Cage)) {
-      uint8 cage_lttp = Rando_DispatchVanillaGrant(
-          LOC_Tower_of_Hera_Basement_Cage, ITEM_SmallKey_TowerOfHera, 0x24);
-      if (cage_lttp != 0x24) {
-        if (Rando_ShouldSkipReceive(cage_lttp))
-          Rando_ShowDirectGrantConfirmation((uint8)Rando_LastDispatchedItemId());
-        else { item_receipt_method = 0; Link_ReceiveItem(cage_lttp, 0); }
-        goto after_getkey;
-      }
-      // vanilla ToH key placed here: fall through to the vanilla key grant.
-    }
+    if (Rando_GrantResultIsTerminal(key_result))
+      goto after_getkey;
     // rando-exempt: drop-pool (Phase B) — small key from killed-sprite drop.
     // The drop-pool shuffle is Phase B work per task 7.2; in Phase A1 small
     // keys from enemy drops grant the vanilla SmallKey of the current dungeon
@@ -1827,20 +2048,12 @@ void Sprite_HandleAbsorptionByPlayer(int k) {  // 86d13c
     if (enhanced_features1 & kFeatures1_RandomizerActive) SaveDungeonKeys();
     goto after_getkey;
   case 13:
-    if (Rando_EnemyDropKeysActiveRuntime()) {
-      const RandoEnemyDropLookupEntry *drop = Rando_FindEnemyDrop(
-          dungeon_room_index, sprite_subtype[k], kRandoEnemyDropKind_BigKey);
-      if (drop != NULL && Rando_IsLocationChecked(drop->loc_id)) {
-        goto after_getkey;
-      }
-      if (drop != NULL) {
-        uint8 drop_lttp = Rando_DispatchVanillaGrant(
-            drop->loc_id, 0xFFFFu, 0x32);
-        item_receipt_method = 0;
-        Rando_ReceiveOrConfirm(drop_lttp, (uint8)Rando_LastDispatchedItemId());
-        Rando_GrantCurrentDungeonBigKeySilently();
-        goto after_getkey;
-      }
+    if (Rando_GrantResultIsTerminal(key_result)) {
+      // HCE forced-big-key drops carry two rewards by design: the randomized
+      // check plus the vanilla current-dungeon Big Key. The latter is a bit,
+      // so an identity placement remains idempotent rather than double-counted.
+      Rando_GrantCurrentDungeonBigKeySilently();
+      goto after_getkey;
     }
     item_receipt_method = 0;
     // rando-exempt: drop-pool (Phase B) — big key from killed-sprite drop.
@@ -3925,8 +4138,10 @@ void SpriteModule_Poof(int k) {  // 86e393
       sprite_ignore_projectile[k] = 0;
     } else {
       if (sprite_die_action[k] == 0) {
-        bool granted_enemy_check = Rando_TryGrantEnemyCheck(k);
-        ResolvePrizeDrop(k, 2, 2, granted_enemy_check);
+        RandoGrantResult grant_result = Rando_TryGrantEnemyCheck(k);
+        if (Rando_GrantResultIsBlocked(grant_result))
+          return;
+        ResolvePrizeDrop(k, 2, 2, Rando_GrantResultIsTerminal(grant_result));
       } else {
         Sprite_DoTheDeath(k);
       }
@@ -5067,9 +5282,12 @@ void SpriteModule_Die(int k) {  // 86f8a2
   SpriteDeath_MainEx(k, false);
 }
 
-void Sprite_DoTheDeath(int k) {  // 86f923
+bool Sprite_DoTheDeath(int k) {  // 86f923
   uint8 type = sprite_type[k];
-  bool granted_enemy_check = Rando_TryGrantEnemyCheck(k);
+  RandoGrantResult grant_result = Rando_TryGrantEnemyCheck(k);
+  if (Rando_GrantResultIsBlocked(grant_result))
+    return false;
+  bool granted_enemy_check = Rando_GrantResultIsTerminal(grant_result);
   // This is how Vitreous knows whether to come out of his slime pool
   if (type == 0xBE)
     sprite_G[0]--;
@@ -5083,7 +5301,7 @@ void Sprite_DoTheDeath(int k) {  // 86f923
       sprite_flags3[k] = 0xf0;
     }
     sprite_head_dir[k]++;
-    return;
+    return true;
   }
 
   // Resets the music in the village when the crazy green guards are killed.
@@ -5097,7 +5315,7 @@ void Sprite_DoTheDeath(int k) {  // 86f923
     uint8 arg = (drop_item == 1) ? 0xe4 : // small key, big key or rupee
                 (drop_item == 3) ? 0xd9 : 0xe5;
     PrepareEnemyDrop(k, arg);
-    return;
+    return true;
   }
 
   uint8 prize = sprite_flags5[k] & 0xf;
@@ -5108,17 +5326,18 @@ void Sprite_DoTheDeath(int k) {  // 86f923
         item_drop_luck = 0;
       if (luck == 1) {
         ResolvePrizeDrop(k, prize, 1, granted_enemy_check);
-        return;
+        return true;
       }
     } else {
       if (!(GetRandomNumber() & kPrizeMasks[prize])) {
         ResolvePrizeDrop(k, prize, prize, granted_enemy_check);
-        return;
+        return true;
       }
     }
   }
   sprite_state[k] = 0;
   SpriteDeath_Func4(k);
+  return true;
 }
 
 // Accessor over the vanilla prize-drop table (kPrizeItems[56], the 7-pack ×
@@ -5160,7 +5379,14 @@ void PrepareEnemyDrop(int k, uint8 item) {  // 86f9d1
 
 void SpriteDeath_Func4(int k) {  // 86fa25
   if (sprite_type[k] == 0xa2 && Sprite_CheckIfScreenIsClear()) {
-    Rando_TryGrantBossEnemyCheckForCurrentEvent();
+    RandoGrantResult result = Rando_TryGrantBossEnemyCheckForCurrentEventResult();
+    if (Rando_GrantResultIsBlocked(result)) {
+      // Keep the completed enemy in the death handler so the event and falling
+      // prize are retried after capacity becomes available.
+      sprite_state[k] = 6;
+      sprite_delay_main[k] = 0;
+      return;
+    }
     Ancilla_SpawnFallingPrize(4);
   }
   Sprite_ManuallySetDeathFlagUW(k);
@@ -5196,8 +5422,7 @@ void SpriteDeath_DrawPoof(int k) {  // 86fb2a
 void SpriteModule_Fall2(int k) {  // 86fbea
   uint8 delay = sprite_delay_main[k];
   if (!delay) {
-    sprite_state[k] = 0;
-    Sprite_ManuallySetDeathFlagUW(k);
+    Rando_ApplyFallGrantOutcome(k, Sprite_ManuallySetDeathFlagUW(k));
     return;
   }
 
@@ -5857,14 +6082,20 @@ void Dungeon_LoadSprites() {  // 89c290
   }
 }
 
-void Sprite_ManuallySetDeathFlagUW(int k) {  // 89c2f5
+bool Sprite_ManuallySetDeathFlagUW(int k) {  // 89c2f5
+  // The randomized enemy transaction applies to every terminal death mode,
+  // including overworld checks and non-persistent underworld actors. Only the
+  // authored killed-bit write below is conditional on indoor persistence.
+  RandoGrantResult result = Rando_TryGrantEnemyCheck(k);
+  if (Rando_GrantResultIsBlocked(result))
+    return false;
   if (!player_is_indoors || sprite_defl_bits[k] & 1)
-    return;
+    return true;
   // Dynamic scripted enemy checks have no authored sprite_N slot.
-  Rando_TryGrantEnemyCheck(k);
   if (sign8(sprite_N[k]))
-    return;
+    return true;
   sprite_where_in_room[dungeon_room_index2] |= 1 << sprite_N[k];
+  return true;
 }
 
 int Dungeon_LoadSingleSprite(int k, const uint8 *src, uint8 source_slot) {  // 89c327
@@ -6168,7 +6399,9 @@ void Overworld_LoadProximaSpriteIfAlive(uint16 blk) {  // 89c739
 }
 
 void SpriteExplode_SpawnEA(int k) {  // 89ee4c
-  Rando_TryGrantBossEnemyCheckForCurrentEvent();
+  RandoGrantResult result = Rando_TryGrantBossEnemyCheckForCurrentEventResult();
+  if (Rando_ApplyExplosionGrantOutcome(k, result))
+    return;
   tmp_counter = sprite_type[k];
   SpriteSpawnInfo info;
   int j = Sprite_SpawnDynamicallyEx(k, 0xea, &info, 14);

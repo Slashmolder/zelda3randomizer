@@ -855,6 +855,41 @@ void TriforceRoom_LinkApproachTriforce() {  // 87f49c
   }
 }
 
+static const uint8 kItemReceiptBottleList[7] = {
+  0x16, 0x2b, 0x2c, 0x2d, 0x3d, 0x3c, 0x48,
+};
+static const uint8 kItemReceiptPotionList[5] = {
+  0x2e, 0x2f, 0x30, 0xff, 0x0e,
+};
+
+// Return whether a bottle acquisition/content receipt can actually write a
+// slot. Non-bottle receive codes are unconstrained by this predicate. Vanilla
+// historically animates even a bottle no-op, so callers only enforce the
+// result while a randomizer slot is active.
+static bool ItemReceipt_BottleGrantAvailable(uint8 item) {
+  if (FindInByteArray(kItemReceiptBottleList, item,
+                      countof(kItemReceiptBottleList)) >= 0) {
+    for (int i = 0; i != 4; i++) {
+      if (link_bottle_info[i] < 2)
+        return true;
+    }
+    return false;
+  }
+  if (FindInByteArray(kItemReceiptPotionList, item,
+                      countof(kItemReceiptPotionList)) >= 0) {
+    for (int i = 0; i != 4; i++) {
+      if (link_bottle_info[i] == 2)
+        return true;
+    }
+    return false;
+  }
+  return true;
+}
+
+bool ItemReceipt_CanAccept(uint8 item) {
+  return item < 76 && ItemReceipt_BottleGrantAvailable(item);
+}
+
 bool ItemReceipt_GrantInventory(uint8 j) {
   uint8 t;
   // Defensive bound guard: every array below (kValueToGiveItemTo,
@@ -862,6 +897,12 @@ bool ItemReceipt_GrantInventory(uint8 j) {
   // currently-defined receive codes are all < 0x4C, so this is a no-op today; it
   // exists so a future receive code >= 0x4C can't read past these tables.
   if (j >= 76)
+    return false;
+  // A shuffled bottle must remain retryable when inventory has no compatible
+  // slot. Reject before any table write or receipt side effect. Keep vanilla's
+  // original animated-no-op behavior when the randomizer is inactive.
+  if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+      !ItemReceipt_CanAccept(j))
     return false;
   if (j == 0) {
     // Vanilla "GiveSwordAndShield": receiving the L1 (Fighter) sword also grants
@@ -993,6 +1034,236 @@ bool ItemReceipt_GrantInventory(uint8 j) {
     ItemReceipt_GiveBottledItem(j);
   }
   return true;
+}
+
+// Return whether Ancilla_AddAncilla(0x22, 4) can create a receive-item
+// ancilla without changing allocator state. Keep this byte-for-byte equivalent
+// to Ancilla_AllocInit's five-slot free/evictable scan: shops use it as a
+// preflight, while Link_ReceiveItem uses it as the acceptance decision before
+// touching Link's hold-up state.
+bool ItemReceipt_CanAllocate(void) {
+  int receipt_count = 0;
+  for (int i = 0; i < 5; i++) {
+    if (ancilla_type[i] == 0x22)
+      receipt_count++;
+  }
+  if (receipt_count == 5)
+    return false;
+
+  for (int i = 0; i < 5; i++) {
+    if (ancilla_type[i] == 0)
+      return true;
+  }
+
+  int k = ancilla_alloc_rotate;
+  do {
+    if (--k < 0)
+      k = 4;
+    uint8 type = ancilla_type[k];
+    if (type == 0x3c || type == 0x13 || type == 0x0a)
+      return true;
+  } while (k != 0);
+  return false;
+}
+
+typedef struct ItemReceiptActionSnapshot {
+  uint8 flag_immobilized;
+  uint8 flag_sprite_pickup;
+  uint8 flag_ancilla_pickup;
+  uint8 flag_sprite_pickup_cached;
+  uint8 pickup_handshake;
+  uint8 player_handler;
+  uint8 item_in_hand;
+  uint8 state_bits;
+  uint8 picking_throw_state;
+  uint8 anim_timer_steps;
+  uint8 anim_timer;
+  uint8 button_mask;
+  uint8 a_button;
+  uint8 button_frames;
+  uint8 speed;
+  uint8 cant_change_dir;
+  uint8 player_handler_state;
+  uint8 pose_for_item;
+  uint8 position_mode;
+  uint8 disable_sprite_damage;
+  uint8 auxiliary_state;
+  uint8 incapacitated_timer;
+  uint8 blink_countdown;
+  uint8 receive_var1;
+  uint8 is_running;
+  uint8 dash_countdown;
+} ItemReceiptActionSnapshot;
+
+static ItemReceiptActionSnapshot ItemReceipt_CaptureActionState(void) {
+  ItemReceiptActionSnapshot s;
+  s.flag_immobilized = flag_is_link_immobilized;
+  s.flag_sprite_pickup = flag_is_sprite_to_pick_up;
+  s.flag_ancilla_pickup = flag_is_ancilla_to_pick_up;
+  s.flag_sprite_pickup_cached = flag_is_sprite_to_pick_up_cached;
+  s.pickup_handshake = byte_7E0FB2;
+  s.player_handler = player_handler_timer;
+  s.item_in_hand = link_item_in_hand;
+  s.state_bits = link_state_bits;
+  s.picking_throw_state = link_picking_throw_state;
+  s.anim_timer_steps = some_animation_timer_steps;
+  s.anim_timer = some_animation_timer;
+  s.button_mask = button_mask_b_y;
+  s.a_button = bitfield_for_a_button;
+  s.button_frames = button_b_frames;
+  s.speed = link_speed_setting;
+  s.cant_change_dir = link_cant_change_direction;
+  s.player_handler_state = link_player_handler_state;
+  s.pose_for_item = link_pose_for_item;
+  s.position_mode = link_position_mode;
+  s.disable_sprite_damage = link_disable_sprite_damage;
+  s.auxiliary_state = link_auxiliary_state;
+  s.incapacitated_timer = link_incapacitated_timer;
+  s.blink_countdown = countdown_for_blink;
+  s.receive_var1 = link_receiveitem_var1;
+  s.is_running = link_is_running;
+  s.dash_countdown = link_countdown_for_dash;
+  return s;
+}
+
+static void ItemReceipt_RestoreActionState(const ItemReceiptActionSnapshot *s) {
+  flag_is_link_immobilized = s->flag_immobilized;
+  flag_is_sprite_to_pick_up = s->flag_sprite_pickup;
+  flag_is_ancilla_to_pick_up = s->flag_ancilla_pickup;
+  flag_is_sprite_to_pick_up_cached = s->flag_sprite_pickup_cached;
+  byte_7E0FB2 = s->pickup_handshake;
+  player_handler_timer = s->player_handler;
+  link_item_in_hand = s->item_in_hand;
+  link_state_bits = s->state_bits;
+  link_picking_throw_state = s->picking_throw_state;
+  some_animation_timer_steps = s->anim_timer_steps;
+  some_animation_timer = s->anim_timer;
+  button_mask_b_y = s->button_mask;
+  bitfield_for_a_button = s->a_button;
+  button_b_frames = s->button_frames;
+  link_speed_setting = s->speed;
+  link_cant_change_direction = s->cant_change_dir;
+  link_player_handler_state = s->player_handler_state;
+  link_pose_for_item = s->pose_for_item;
+  link_position_mode = s->position_mode;
+  link_disable_sprite_damage = s->disable_sprite_damage;
+  link_auxiliary_state = s->auxiliary_state;
+  link_incapacitated_timer = s->incapacitated_timer;
+  countdown_for_blink = s->blink_countdown;
+  link_receiveitem_var1 = s->receive_var1;
+  link_is_running = s->is_running;
+  link_countdown_for_dash = s->dash_countdown;
+}
+
+static void ItemReceipt_ApplyDeferredEffects(uint8 item) {
+  switch (item) {
+  case 0x26: case 0x3f:  // BossHeartContainer
+    if (link_health_capacity != 0xa0) {
+      link_health_capacity += 8;  // rando-exempt: central no-animation receipt dispatcher
+      link_hearts_filler += link_health_capacity - link_health_current;
+    }
+    break;
+  case 0x3e:             // BossHeartContainer (boss-drop code)
+    if (link_health_capacity != 0xa0) {
+      link_health_capacity += 8;  // rando-exempt: central no-animation receipt dispatcher
+      link_hearts_filler += 8;
+    }
+    break;
+  case 0x17:             // PieceOfHeart: the fourth piece rolls over to a heart
+    if (link_heart_pieces == 0 && link_health_capacity != 0xa0) {
+      link_health_capacity += 8;  // rando-exempt: central no-animation receipt dispatcher
+      link_hearts_filler += link_health_capacity - link_health_current;
+    }
+    break;
+  case 0x42:
+    link_hearts_filler += 8;
+    break;
+  case 0x45:
+    link_magic_filler += 16;
+    break;
+  case 0x34:
+    link_rupees_goal += 1;
+    break;
+  case 0x35:
+    link_rupees_goal += 5;
+    break;
+  case 0x36: case 0x47:
+    link_rupees_goal += 20;
+    break;
+  case 0x40:
+    link_rupees_goal += 100;
+    break;
+  case 0x41:
+    link_rupees_goal += 50;
+    break;
+  case 0x46:
+    link_rupees_goal += 300;
+    break;
+  case 0x22: case 0x23:
+    Palette_Load_LinkArmorAndGloves();
+    break;
+  default:
+    break;
+  }
+}
+
+// Apply the completed result of a normal item receipt without allocating an
+// ancilla or entering Link's hold-up state. This is the authoritative quiet
+// path for both naturally quiet pickups and saturated animated receipts.
+// Presentation callers remain responsible for their sound/HUD/icon policy.
+bool ItemReceipt_GrantWithoutAnimation(uint8 item) {
+  if (item >= 76)
+    return false;
+
+  ItemReceiptActionSnapshot action = ItemReceipt_CaptureActionState();
+  uint8 saved_receipt_method = item_receipt_method;
+  uint8 saved_receive_index = link_receiveitem_index;
+  item_receipt_method = 0;
+  if (!ItemReceipt_GrantInventory(item)) {
+    ItemReceipt_RestoreActionState(&action);
+    item_receipt_method = saved_receipt_method;
+    link_receiveitem_index = saved_receive_index;
+    return false;
+  }
+
+  ItemReceipt_ApplyDeferredEffects(item);
+
+  // A full animated receipt refreshes equipped gear after the inventory write.
+  // Quiet delivery must do the same or a sword/shield pickup renders the old
+  // tier until the next room/load transition. Receive code 0 grants both the
+  // Fighter Sword and Fighter Shield, so it needs both refreshes.
+  uint8 gfx = kReceiveItemGfx[item];
+  if (gfx == 0x20 || gfx == 0x2d || gfx == 0x2e || item == 0) {
+    DecompressShieldGraphics();
+    Palette_Load_Shield();
+  }
+  if (gfx == 6 || gfx == 0x18) {
+    DecompressSwordGraphics();
+    Palette_Load_Sword();
+  }
+
+  ItemReceipt_RestoreActionState(&action);
+  item_receipt_method = 0;
+  link_receiveitem_index = 0;
+  return true;
+}
+
+// Complete the action-state portion of a method-3 falling-prize receipt after
+// quiet delivery. This mirrors Ancilla22_ItemReceipt's label_a/final teardown:
+// return Link to Ground (or Swimming), release receipt-owned pose/damage/
+// immobilization, and perform the same indoor boss-exit handoff. The inventory
+// and deferred item effects have already been applied by the caller.
+void ItemReceipt_CompleteMethod3WithoutAnimation(uint8 item) {
+  link_player_handler_state =
+      link_is_in_deep_water ? kPlayerState_Swimming : kPlayerState_Ground;
+  link_receiveitem_index = 0;
+  link_pose_for_item = 0;
+  link_disable_sprite_damage = 0;
+  item_receipt_method = 0;
+  if (player_is_indoors && item != 0x10 && item != 0x26 &&
+      item != 0x0f && item != 0x20)
+    PrepareDungeonExitFromBossFight();
+  flag_is_link_immobilized = 0;
 }
 
 // Fast fanfare shortens a chest receipt from 0x38 to 0x18 frames. Vanilla
@@ -1140,14 +1411,330 @@ void ItemReceipt_FastFanfareSelfCheck(void) {
   fprintf(stderr, "[ItemReceipt_FastFanfareSelfCheck] OK\n");
 }
 
-void AncillaAdd_ItemReceipt(uint8 ain, uint8 yin, int chest_pos) {  // 8985e8
+static void ItemReceipt_LosslessSelfCheckFail(const uint8 *saved_ram,
+                                               const char *message) {
+  memcpy(g_ram, saved_ram, sizeof(g_ram));
+  fprintf(stderr, "ItemReceipt_LosslessSelfCheck: %s\n", message);
+  exit(2);
+}
+
+void ItemReceipt_LosslessSelfCheck(void) {
+  static uint8 saved_ram[sizeof(g_ram)];
+  static uint8 before_ram[sizeof(g_ram)];
+  memcpy(saved_ram, g_ram, sizeof(g_ram));
+
+  // The read-only capacity predicate must match Ancilla_AllocInit for every
+  // allocator rotation and every possible position/type of evictable entry.
+  static const uint8 kEvictableTypes[] = {0x3c, 0x13, 0x0a};
+  for (int rotate = 0; rotate < 5; rotate++) {
+    for (int slot = 0; slot < 5; slot++) {
+      for (size_t type = 0;
+           type < sizeof(kEvictableTypes) / sizeof(kEvictableTypes[0]);
+           type++) {
+        for (int i = 0; i < 5; i++)
+          ancilla_type[i] = 1;
+        ancilla_type[slot] = kEvictableTypes[type];
+        ancilla_alloc_rotate = (uint8)rotate;
+        bool capacity = ItemReceipt_CanAllocate();
+        ancilla_alloc_rotate = (uint8)rotate;
+        bool allocator = Ancilla_AllocInit(0x22, 4) >= 0;
+        if (capacity != allocator)
+          ItemReceipt_LosslessSelfCheckFail(
+              saved_ram, "capacity predicate diverged from allocator");
+      }
+    }
+  }
+
+  for (int i = 0; i < 5; i++)
+    ancilla_type[i] = 1;
+  ancilla_alloc_rotate = 0;
+  if (ItemReceipt_CanAllocate())
+    ItemReceipt_LosslessSelfCheckFail(
+        saved_ram, "full non-evictable pool reported capacity");
+  ancilla_type[3] = 0;
+  if (!ItemReceipt_CanAllocate())
+    ItemReceipt_LosslessSelfCheckFail(saved_ram, "free slot was rejected");
+  for (int i = 0; i < 5; i++)
+    ancilla_type[i] = 0x22;
+  if (ItemReceipt_CanAllocate())
+    ItemReceipt_LosslessSelfCheckFail(
+        saved_ram, "five same-type receipts bypassed the allocator limit");
+
+  // Rupee amounts are normally deferred to Ancilla_AddRupees. Exercise every
+  // receive code through the shared no-animation path.
+  static const struct {
+    uint8 item;
+    uint16 amount;
+  } kRupees[] = {
+      {0x34, 1}, {0x35, 5}, {0x36, 20}, {0x40, 100},
+      {0x41, 50}, {0x46, 300}, {0x47, 20},
+  };
+  for (size_t i = 0; i < sizeof(kRupees) / sizeof(kRupees[0]); i++) {
+    memcpy(g_ram, saved_ram, sizeof(g_ram));
+    enhanced_features1 |= kFeatures1_RandomizerActive;
+    link_rupees_goal = 20;
+    if (!ItemReceipt_GrantWithoutAnimation(kRupees[i].item) ||
+        link_rupees_goal != 20 + kRupees[i].amount)
+      ItemReceipt_LosslessSelfCheckFail(
+          saved_ram, "quiet rupee deferred effect mismatch");
+  }
+
+  // Heart containers, the fourth heart piece, and refill items all finish in
+  // Ancilla22_ItemReceipt rather than the immediate inventory table.
+  static const uint8 kCapacityItems[] = {0x26, 0x3f};
+  for (size_t i = 0;
+       i < sizeof(kCapacityItems) / sizeof(kCapacityItems[0]); i++) {
+    memcpy(g_ram, saved_ram, sizeof(g_ram));
+    enhanced_features1 |= kFeatures1_RandomizerActive;
+    link_health_capacity = 0x40;  // rando-exempt: lossless-receipt self-check fixture
+    link_health_current = 0x30;
+    link_hearts_filler = 2;
+    if (!ItemReceipt_GrantWithoutAnimation(kCapacityItems[i]) ||
+        link_health_capacity != 0x48 || link_hearts_filler != 0x1a)
+      ItemReceipt_LosslessSelfCheckFail(
+          saved_ram, "quiet heart-container deferred effect mismatch");
+  }
+
+  memcpy(g_ram, saved_ram, sizeof(g_ram));
+  enhanced_features1 |= kFeatures1_RandomizerActive;
+  link_health_capacity = 0x40;  // rando-exempt: lossless-receipt self-check fixture
+  link_hearts_filler = 2;
+  link_state_bits = 0x80;
+  link_picking_throw_state = 0x5a;
+  ItemReceiptActionSnapshot before_action = ItemReceipt_CaptureActionState();
+  if (!ItemReceipt_GrantWithoutAnimation(0x3e) ||
+      link_health_capacity != 0x48 || link_hearts_filler != 0x0a)
+    ItemReceipt_LosslessSelfCheckFail(
+        saved_ram, "quiet boss-heart deferred effect mismatch");
+  ItemReceiptActionSnapshot after_action = ItemReceipt_CaptureActionState();
+  if (memcmp(&before_action, &after_action, sizeof(before_action)) != 0)
+    ItemReceipt_LosslessSelfCheckFail(
+        saved_ram, "quiet delivery changed Link action state");
+
+  memcpy(g_ram, saved_ram, sizeof(g_ram));
+  enhanced_features1 |= kFeatures1_RandomizerActive;
+  link_health_capacity = 0x40;  // rando-exempt: lossless-receipt self-check fixture
+  link_health_current = 0x30;
+  link_hearts_filler = 2;
+  link_heart_pieces = 3;  // rando-exempt: lossless-receipt self-check fixture
+  if (!ItemReceipt_GrantWithoutAnimation(0x17) ||
+      link_heart_pieces != 0 || link_health_capacity != 0x48 ||
+      link_hearts_filler != 0x1a)
+    ItemReceipt_LosslessSelfCheckFail(
+        saved_ram, "quiet fourth-heart-piece rollover mismatch");
+
+  memcpy(g_ram, saved_ram, sizeof(g_ram));
+  enhanced_features1 |= kFeatures1_RandomizerActive;
+  link_hearts_filler = 1;
+  link_magic_filler = 2;
+  if (!ItemReceipt_GrantWithoutAnimation(0x42) || link_hearts_filler != 9 ||
+      !ItemReceipt_GrantWithoutAnimation(0x45) || link_magic_filler != 18)
+    ItemReceipt_LosslessSelfCheckFail(
+        saved_ram, "quiet heart/magic refill mismatch");
+
+  // Drive the production Link_ReceiveItem saturation branch. Its only allowed
+  // state changes are the delivered inventory/resource, receipt feedback, and
+  // receipt-global cleanup; occupied ancillae and Link action state stay put.
+  memcpy(g_ram, saved_ram, sizeof(g_ram));
+  enhanced_features1 |= kFeatures1_RandomizerActive;
+  for (int i = 0; i < 5; i++)
+    ancilla_type[i] = 1;
+  item_receipt_method = 0;
+  uint8 occupied[5];
+  memcpy(occupied, ancilla_type, sizeof(occupied));
+  flag_is_link_immobilized = 0x41;
+  flag_is_sprite_to_pick_up = 0x42;
+  flag_is_ancilla_to_pick_up = 0x43;
+  flag_is_sprite_to_pick_up_cached = 0x44;
+  byte_7E0FB2 = 0x45;
+  player_handler_timer = 0x46;
+  link_item_in_hand = 0x47;
+  link_state_bits = 0x48;
+  link_picking_throw_state = 0x49;
+  some_animation_timer_steps = 0x4a;
+  some_animation_timer = 0x4b;
+  button_mask_b_y = 0x4c;
+  bitfield_for_a_button = 0x4d;
+  button_b_frames = 0x4e;
+  link_speed_setting = 0x4f;
+  link_cant_change_direction = 0x50;
+  link_player_handler_state = 0x51;
+  link_pose_for_item = 0x52;
+  link_position_mode = 0x53;
+  link_disable_sprite_damage = 0x54;
+  link_auxiliary_state = 0x55;
+  link_incapacitated_timer = 0x56;
+  countdown_for_blink = 0x57;
+  link_receiveitem_var1 = 0x58;
+  link_is_running = 1;
+  link_countdown_for_dash = 0x59;
+  before_action = ItemReceipt_CaptureActionState();
+  link_rupees_goal = 20;
+  overworld_map_state = 9;
+  sound_effect_2 = 0;
+  Link_ReceiveItem(0x34, 0);
+  after_action = ItemReceipt_CaptureActionState();
+  if (link_rupees_goal != 21 ||
+      memcmp(occupied, ancilla_type, sizeof(occupied)) != 0 ||
+      memcmp(&before_action, &after_action, sizeof(before_action)) != 0 ||
+      item_receipt_method != 0 || link_receiveitem_index != 0 ||
+      (sound_effect_2 & 0x3f) != 0x0f || overworld_map_state != 0)
+    ItemReceipt_LosslessSelfCheckFail(
+        saved_ram, "active saturated receipt was not lossless");
+
+  // Saturated heart-container delivery completes immediately, so its audible
+  // result must be the normal completion cue rather than the generic pickup
+  // chime. Boss-heart code 0x3e uses the same completion cue after its onset.
+  static const uint8 kHeartContainerItems[] = {0x26, 0x3e};
+  for (size_t i = 0; i < countof(kHeartContainerItems); i++) {
+    memcpy(g_ram, saved_ram, sizeof(g_ram));
+    enhanced_features1 |= kFeatures1_RandomizerActive;
+    for (int j = 0; j < 5; j++)
+      ancilla_type[j] = 1;
+    link_health_capacity = 0x40;  // rando-exempt: lossless-receipt self-check fixture
+    link_health_current = 0x30;
+    link_hearts_filler = 0;
+    sound_effect_2 = 0;
+    Link_ReceiveItem(kHeartContainerItems[i], 0);
+    if (link_health_capacity != 0x48 ||
+        (sound_effect_2 & 0x3f) != 0x0d)
+      ItemReceipt_LosslessSelfCheckFail(
+          saved_ram, "saturated heart-container feedback mismatch");
+  }
+
+  // At capacity, 0x3e never reaches the completion cue; preserve its normal
+  // boss-heart onset sound instead of inventing the generic receipt chime.
+  memcpy(g_ram, saved_ram, sizeof(g_ram));
+  enhanced_features1 |= kFeatures1_RandomizerActive;
+  for (int i = 0; i < 5; i++)
+    ancilla_type[i] = 1;
+  link_health_capacity = 0xa0;  // rando-exempt: lossless-receipt self-check fixture
+  sound_effect_2 = 0;
+  Link_ReceiveItem(0x3e, 0);
+  if ((sound_effect_2 & 0x3f) != 0x2e)
+    ItemReceipt_LosslessSelfCheckFail(
+        saved_ram, "at-cap saturated boss-heart feedback mismatch");
+
+  // A saturated falling-prize handoff (method 3) must perform the same action
+  // teardown as a completed animated receipt.
+  memcpy(g_ram, saved_ram, sizeof(g_ram));
+  enhanced_features1 |= kFeatures1_RandomizerActive;
+  for (int i = 0; i < 5; i++)
+    ancilla_type[i] = 1;
+  item_receipt_method = 3;
+  player_is_indoors = 0;
+  flag_is_link_immobilized = 1;
+  link_pose_for_item = 2;
+  link_disable_sprite_damage = 1;
+  link_player_handler_state = 0x66;
+  link_is_in_deep_water = 0;
+  link_rupees_goal = 20;
+  Link_ReceiveItem(0x34, 0);
+  if (link_rupees_goal != 21 || flag_is_link_immobilized != 0 ||
+      link_pose_for_item != 0 || link_disable_sprite_damage != 0 ||
+      link_player_handler_state != kPlayerState_Ground ||
+      item_receipt_method != 0 || link_receiveitem_index != 0)
+    ItemReceipt_LosslessSelfCheckFail(
+        saved_ram, "saturated falling receipt did not release Link");
+
+  memcpy(g_ram, saved_ram, sizeof(g_ram));
+  enhanced_features1 |= kFeatures1_RandomizerActive;
+  for (int i = 0; i < 5; i++)
+    ancilla_type[i] = 1;
+  item_receipt_method = 3;
+  player_is_indoors = 0;
+  link_is_in_deep_water = 1;
+  link_player_handler_state = 0x66;
+  link_rupees_goal = 20;
+  Link_ReceiveItem(0x34, 0);
+  if (link_rupees_goal != 21 ||
+      link_player_handler_state != kPlayerState_Swimming ||
+      item_receipt_method != 0 || link_receiveitem_index != 0)
+    ItemReceipt_LosslessSelfCheckFail(
+        saved_ram, "saturated falling receipt did not restore swimming");
+
+  // Bottle acquisition needs a free bottle slot; loose contents need an
+  // existing empty bottle. Both failures must report retry without mutation.
+  memcpy(g_ram, saved_ram, sizeof(g_ram));
+  enhanced_features1 |= kFeatures1_RandomizerActive;
+  memset(link_bottle_info, 3, 4);
+  item_receipt_method = 3;
+  link_receiveitem_index = 0x16;
+  uint8 bottles_before[4];
+  memcpy(bottles_before, link_bottle_info, sizeof(bottles_before));
+  if (ItemReceipt_GrantWithoutAnimation(0x16) ||
+      memcmp(bottles_before, link_bottle_info, sizeof(bottles_before)) != 0 ||
+      item_receipt_method != 3 || link_receiveitem_index != 0x16)
+    ItemReceipt_LosslessSelfCheckFail(
+        saved_ram, "full bottle acquisition was not retryable");
+  if (ItemReceipt_GrantWithoutAnimation(0x2e) ||
+      memcmp(bottles_before, link_bottle_info, sizeof(bottles_before)) != 0)
+    ItemReceipt_LosslessSelfCheckFail(
+        saved_ram, "bottle contents without an empty slot were not retryable");
+  // rando-exempt: lossless-receipt self-check fixture
+  link_bottle_info[2] = 2;
+  if (!ItemReceipt_GrantWithoutAnimation(0x2e) || link_bottle_info[2] != 3)
+    ItemReceipt_LosslessSelfCheckFail(
+        saved_ram, "bottle contents with an empty slot were rejected");
+
+  // Link_ReceiveItem must use the same acceptance predicate before entering
+  // its hold-up state or allocating an otherwise-free receipt ancilla. A full
+  // bottle inventory is therefore a byte-for-byte no-op in an active slot.
+  memcpy(g_ram, saved_ram, sizeof(g_ram));
+  enhanced_features1 |= kFeatures1_RandomizerActive;
+  memset(link_bottle_info, 3, 4);
+  memset(ancilla_type, 0, 5);
+  item_receipt_method = 0;
+  link_receiveitem_index = 0x44;
+  memcpy(before_ram, g_ram, sizeof(g_ram));
+  Link_ReceiveItem(0x16, 0);
+  if (memcmp(before_ram, g_ram, sizeof(g_ram)) != 0)
+    ItemReceipt_LosslessSelfCheckFail(
+        saved_ram, "full-bottle Link_ReceiveItem mutated state");
+
+  // Preserve the legacy non-randomizer behavior: a full bottle receipt is an
+  // accepted animated no-op rather than a new failure outcome.
+  memcpy(g_ram, saved_ram, sizeof(g_ram));
+  enhanced_features1 &= ~kFeatures1_RandomizerActive;
+  memset(link_bottle_info, 3, 4);
+  if (!ItemReceipt_GrantInventory(0x16))
+    ItemReceipt_LosslessSelfCheckFail(
+        saved_ram, "randomizer-inactive full bottle behavior changed");
+
+  // With the randomizer bit clear, the same saturated call retains the legacy
+  // behavior: Link enters the hold-up state and the unallocated item is not
+  // granted. This guards the RAM-compare path from the new fallback.
+  memcpy(g_ram, saved_ram, sizeof(g_ram));
+  enhanced_features1 &= ~kFeatures1_RandomizerActive;
+  for (int i = 0; i < 5; i++)
+    ancilla_type[i] = 1;
+  item_receipt_method = 0;
+  memcpy(occupied, ancilla_type, sizeof(occupied));
+  link_rupees_goal = 20;
+  link_is_running = 1;
+  link_countdown_for_dash = 0x59;
+  Link_ReceiveItem(0x34, 0);
+  if (link_rupees_goal != 20 ||
+      memcmp(occupied, ancilla_type, sizeof(occupied)) != 0 ||
+      link_player_handler_state != kPlayerState_HoldUpItem ||
+      link_disable_sprite_damage != 1 || link_receiveitem_index != 0x34 ||
+      link_receiveitem_var1 != 0x60 || link_is_running != 0 ||
+      link_countdown_for_dash != 0)
+    ItemReceipt_LosslessSelfCheckFail(
+        saved_ram, "randomizer-inactive saturated receipt changed behavior");
+
+  memcpy(g_ram, saved_ram, sizeof(g_ram));
+  fprintf(stderr, "[ItemReceipt_LosslessSelfCheck] OK\n");
+}
+
+bool AncillaAdd_ItemReceipt(uint8 ain, uint8 yin, int chest_pos) {  // 8985e8
   int j = link_receiveitem_index;
   if (j >= 76)
-    return;
+    return false;
 
   int ancilla = Ancilla_AddAncilla(ain, yin);
   if (ancilla < 0)
-    return;
+    return false;
 
   // A vanilla pickup repaints the shared receive-item VRAM slot (chars
   // 0x24/0x34) via DecodeAnimatedSpriteTile_variable further down. Under rando,
@@ -1166,7 +1753,7 @@ void AncillaAdd_ItemReceipt(uint8 ain, uint8 yin, int chest_pos) {  // 8985e8
   flag_is_link_immobilized = (link_receiveitem_index == 0x20) ? 2 : 1;
 
   if (!ItemReceipt_GrantInventory((uint8)j))
-    return;
+    return false;
 
   uint8 gfx = kReceiveItemGfx[j];
   if (gfx == 0xff) {
@@ -1235,13 +1822,13 @@ void AncillaAdd_ItemReceipt(uint8 ain, uint8 yin, int chest_pos) {  // 8985e8
     y += link_y_coord + ((method == 2) ? -8 : 0);
   }
   Ancilla_SetXY(ancilla, x, y);
+  return true;
 }
 
 void ItemReceipt_GiveBottledItem(uint8 item) {  // 89893e
-  static const uint8 kBottleList[7] = { 0x16, 0x2b, 0x2c, 0x2d, 0x3d, 0x3c, 0x48 };
-  static const uint8 kPotionList[5] = { 0x2e, 0x2f, 0x30, 0xff, 0xe };
   int j;
-  if ((j = FindInByteArray(kBottleList, item, 7)) >= 0) {
+  if ((j = FindInByteArray(kItemReceiptBottleList, item,
+                           countof(kItemReceiptBottleList))) >= 0) {
     for (int i = 0; i != 4; i++) {
       if (link_bottle_info[i] < 2) {
         // rando-exempt: dispatcher-core — ItemReceipt_GiveBottledItem is
@@ -1253,7 +1840,8 @@ void ItemReceipt_GiveBottledItem(uint8 item) {  // 89893e
       }
     }
   }
-  if ((j = FindInByteArray(kPotionList, item, 5)) >= 0) {
+  if ((j = FindInByteArray(kItemReceiptPotionList, item,
+                           countof(kItemReceiptPotionList))) >= 0) {
     for (int i = 0; i != 4; i++) {
       if (link_bottle_info[i] == 2) {
         // rando-exempt: dispatcher-core — see above. (audit.md §0.1.1)

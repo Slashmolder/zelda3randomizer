@@ -1,24 +1,19 @@
 #!/usr/bin/env python3
-"""Init-order replay guard (tasks.md §1.0d, §1.2).
+"""Initialization + vanilla snapshot WRAM ownership guard (tasks.md §1.0d, §1.2).
 
-Replays the per-chapter savestates in ``saves/ref/`` against the freshly-built
-binary in vanilla mode (no randomizer slot active) and asserts byte-identity
-at every newly-added ``kRam_*`` offset versus the pre-change baseline.
+Captures the freshly-built binary's post-``ZeldaInitialize`` WRAM in vanilla
+mode, then restores each chapter savestate's base snapshot without stepping
+frames. Both complete randomizer-owned WRAM ranges must remain zero.
 
-**A0 status (scaffold)**: until task 1.1 lands ``kRam_Features1`` etc., this
-script has no new offsets to check. The script knows the protocol but exits
-zero with an explanatory message.
-
-**Activation**: once ``kRam_RandoSlotActive`` (or any new ``kRam_*`` cell)
-exists in ``src/features.h``, the script:
-  1. Boots the binary against each ``saves/ref/Chapter*.sav`` in replay mode.
-  2. After each replay, dumps the new kRam_* byte range.
-  3. Asserts the dump matches the vanilla baseline captured pre-change.
-  4. Fails the CI job if any byte differs.
+The C binary emits a lossless hex dump plus a convenience ``ok=`` value. This
+driver independently parses the inclusive ownership bounds from
+``src/features.h``, requires an exact-length dump, decodes it, and checks every
+byte itself. A stale or incomplete C-side ``ok=1`` therefore cannot green the
+guard.
 
 Usage:
-  python assets/scripts/check_init_order.py           # scan + check
-  python assets/scripts/check_init_order.py --strict  # fail if scaffold can't yet run
+  python assets/scripts/check_init_order.py           # fail closed + ownership check
+  python assets/scripts/check_init_order.py --allow-missing-prerequisites
 """
 from __future__ import annotations
 
@@ -30,28 +25,34 @@ from pathlib import Path
 FEATURES_H = Path("src/features.h")
 SAVES_REF = Path("saves/ref")
 
-# kRam_* cells whose init-order we guard. Populated by scanning features.h.
-# At A0 only the existing pre-rando cells exist; the rando cells (kRam_Features1,
-# kRam_RandoSlotActive, kRam_RandoStartingInventoryGranted) land in task 1.1.
-RANDO_KRAM_NAMES = {
-    "kRam_Features1",
-    "kRam_RandoSlotActive",
-    "kRam_RandoStartingInventoryGranted",
-}
+OWNED_BEGIN_NAME = "kRam_RandoOwnedBegin"
+OWNED_END_NAME = "kRam_RandoOwnedEnd"
+FIRST_OWNED_CELL = "kRam_Features1"
+LAST_OWNED_CELL = "kRam_EnemyShuffleLiveContext"
 
 
-def discover_rando_kram_cells() -> dict[str, int]:
-    """Parse features.h for kRam_* enum entries belonging to the rando subsystem."""
+def discover_rando_owned_range() -> tuple[int, int] | None:
+    """Independently parse the inclusive randomizer WRAM ownership bounds."""
     if not FEATURES_H.exists():
-        return {}
+        return None
     text = FEATURES_H.read_text(encoding="utf-8", errors="replace")
-    out: dict[str, int] = {}
-    # Match: kRam_Foo = 0xNNN,
-    for match in re.finditer(r"(kRam_[A-Za-z0-9_]+)\s*=\s*(0x[0-9a-fA-F]+)", text):
-        name, offset = match.group(1), int(match.group(2), 16)
-        if name in RANDO_KRAM_NAMES:
-            out[name] = offset
-    return out
+    values: dict[str, int] = {}
+    for name in (
+        OWNED_BEGIN_NAME,
+        OWNED_END_NAME,
+        FIRST_OWNED_CELL,
+        LAST_OWNED_CELL,
+    ):
+        matches = re.findall(
+            rf"\b{re.escape(name)}\s*=\s*(0x[0-9a-fA-F]+)\b", text
+        )
+        if len(matches) != 1:
+            return None
+        values[name] = int(matches[0], 16)
+    begin, end = values[OWNED_BEGIN_NAME], values[OWNED_END_NAME]
+    if begin != values[FIRST_OWNED_CELL] or end != values[LAST_OWNED_CELL]:
+        return None
+    return (begin, end) if begin <= end else None
 
 
 def parse_ram_check_line(line: str) -> dict[str, str] | None:
@@ -67,7 +68,10 @@ def parse_ram_check_line(line: str) -> dict[str, str] | None:
     # spaces ("Chapter 1 - Zelda's Rescue.sav"). The savestate= token always
     # appears first; everything before the next "<key>=" with a known key is
     # part of the savestate path.
-    KNOWN_KEYS = ("ok=", "features1=", "slot_active=", "starting_inv=")
+    KNOWN_KEYS = (
+        "owned_begin=", "owned_end=", "initializer_bytes=", "snapshot_bytes=",
+        "initializer_ok=", "snapshot_ok=", "ok=",
+    )
     sav_end = len(rest)
     for k in KNOWN_KEYS:
         idx = rest.find(" " + k)
@@ -80,30 +84,82 @@ def parse_ram_check_line(line: str) -> dict[str, str] | None:
     for tok in rest[sav_end:].split():
         if "=" in tok:
             k, v = tok.split("=", 1)
+            if k in out:
+                return None
             out[k] = v
     return out
 
 
-def run_one_chapter(binary: Path, savestate: Path) -> tuple[bool, str]:
-    """Invoke the binary's --vanilla-ram-check and parse the result.
-
-    Returns (ok, raw_line). ok=True if the binary printed ok=1 (all
-    tracked kRam_* cells were zero after replay).
-    """
+def run_one_chapter(
+    binary: Path, savestate: Path, owned_range: tuple[int, int]
+) -> tuple[bool, str]:
+    """Validate the emitted initialization and restored-snapshot WRAM dumps."""
     import subprocess
     try:
-        out = subprocess.check_output(
+        proc = subprocess.run(
             [str(binary), f"--vanilla-ram-check={savestate}"],
-            stderr=subprocess.STDOUT,
+            capture_output=True,
             text=True,
+            check=False,
         )
-    except subprocess.CalledProcessError as exc:
-        return (False, f"binary exited {exc.returncode}: {exc.output.strip()}")
-    line = out.strip().splitlines()[-1] if out.strip() else ""
+    except OSError as exc:
+        return (False, f"unable to launch binary: {exc}")
+    line = next(
+        (candidate for candidate in proc.stdout.splitlines()
+         if candidate.startswith("ram_check ")),
+        "",
+    )
     parsed = parse_ram_check_line(line)
     if not parsed:
-        return (False, f"unparseable output: {line!r}")
-    return (parsed.get("ok") == "1", line)
+        detail = proc.stderr.strip() or proc.stdout.strip()
+        return (False, f"unparseable output (exit {proc.returncode}): {detail!r}")
+
+    begin, end = owned_range
+    try:
+        emitted_begin = int(parsed["owned_begin"], 0)
+        emitted_end = int(parsed["owned_end"], 0)
+    except (KeyError, ValueError):
+        return (False, f"missing/malformed ownership bounds: {line}")
+    if (emitted_begin, emitted_end) != owned_range:
+        return (
+            False,
+            f"range mismatch: source=0x{begin:03x}-0x{end:03x}; {line}",
+        )
+
+    expected_hex_len = (end - begin + 1) * 2
+    decoded: dict[str, tuple[bool, list[tuple[int, int]]]] = {}
+    for state in ("initializer", "snapshot"):
+        raw_hex = parsed.get(f"{state}_bytes", "")
+        if (len(raw_hex) != expected_hex_len or
+                not re.fullmatch(r"[0-9a-fA-F]+", raw_hex)):
+            return (
+                False,
+                f"{state} byte dump length/format mismatch "
+                f"(expected {expected_hex_len} hex chars): {line}",
+            )
+        raw = bytes.fromhex(raw_hex)
+        nonzero = [(begin + index, value) for index, value in enumerate(raw) if value]
+        decoded[state] = (not nonzero, nonzero)
+
+    independently_ok = all(state_ok for state_ok, _ in decoded.values())
+    for state, (state_ok, _) in decoded.items():
+        reported = parsed.get(f"{state}_ok") == "1"
+        if parsed.get(f"{state}_ok") not in ("0", "1") or reported != state_ok:
+            return (False, f"binary {state}_ok= disagrees with decoded bytes: {line}")
+    reported_ok = parsed.get("ok") == "1"
+    if parsed.get("ok") not in ("0", "1") or reported_ok != independently_ok:
+        return (False, f"binary ok= disagrees with decoded byte ranges: {line}")
+    expected_exit = 0 if independently_ok else 1
+    if proc.returncode != expected_exit:
+        return (
+            False,
+            f"binary exit {proc.returncode}, expected {expected_exit} for decoded bytes: {line}",
+        )
+    for state, (_, nonzero) in decoded.items():
+        if nonzero:
+            cells = ", ".join(f"0x{addr:03x}=0x{value:02x}" for addr, value in nonzero)
+            return (False, f"non-zero {state} randomizer-owned WRAM ({cells}): {line}")
+    return (True, line)
 
 
 def main(argv: list[str]) -> int:
@@ -111,7 +167,12 @@ def main(argv: list[str]) -> int:
     parser.add_argument(
         "--strict",
         action="store_true",
-        help="exit non-zero if the scaffold cannot yet run (CI gate sanity check)",
+        help="deprecated compatibility flag; fail-closed is now the default",
+    )
+    parser.add_argument(
+        "--allow-missing-prerequisites",
+        action="store_true",
+        help="explicitly skip when savestates, RAM cells, or binary are absent",
     )
     parser.add_argument(
         "--binary",
@@ -120,19 +181,19 @@ def main(argv: list[str]) -> int:
     )
     args = parser.parse_args(argv)
 
-    cells = discover_rando_kram_cells()
+    owned_range = discover_rando_owned_range()
     chapters = sorted(SAVES_REF.glob("Chapter*.sav")) if SAVES_REF.exists() else []
 
     if not chapters:
         print(f"check_init_order: no Chapter*.sav files under {SAVES_REF}.")
-        return 1 if args.strict else 0
+        return 0 if args.allow_missing_prerequisites else 2
 
-    if not cells:
+    if owned_range is None:
         print(
-            "check_init_order: no rando kRam_* cells declared yet in src/features.h.\n"
-            "  scaffold A0 pass — guard activates when task 1.1 lands kRam_Features1."
+            "check_init_order: missing, duplicate, or invalid randomizer WRAM "
+            "ownership bounds in src/features.h."
         )
-        return 1 if args.strict else 0
+        return 0 if args.allow_missing_prerequisites else 2
 
     # Resolve to an absolute path: `Path("./zelda3")` stringifies back to
     # "zelda3" (pathlib strips the leading "./"), and subprocess would then
@@ -142,11 +203,11 @@ def main(argv: list[str]) -> int:
     binary = Path(args.binary).resolve()
     if not binary.is_file():
         print(f"check_init_order: binary not found at {binary}")
-        return 1 if args.strict else 0
+        return 0 if args.allow_missing_prerequisites else 2
 
     failures = 0
     for sav in chapters:
-        ok, line = run_one_chapter(binary, sav)
+        ok, line = run_one_chapter(binary, sav, owned_range)
         marker = "OK  " if ok else "FAIL"
         print(f"  [{marker}] {line}")
         if not ok:
@@ -154,15 +215,17 @@ def main(argv: list[str]) -> int:
 
     if failures:
         print(
-            f"\ncheck_init_order: {failures} chapter(s) saw non-zero rando kRam_* state.\n"
-            f"  This means existing game code is writing to addresses claimed for\n"
-            f"  randomizer state (per audit.md §0.7). Investigate the collision."
+            f"\ncheck_init_order: {failures} initialization/snapshot check(s) violated the "
+            f"randomizer-owned WRAM contract.\n"
+            f"  ZeldaInitialize or a committed vanilla reference snapshot contains\n"
+            f"  data in addresses claimed for randomizer state. Investigate the collision."
         )
         return 1
 
     print(
-        f"\ncheck_init_order: {len(chapters)} chapter(s) clean — every rando kRam_*\n"
-        f"  cell retained zero through vanilla-mode replay."
+        f"\ncheck_init_order: {len(chapters)} initialization/snapshot checks clean — every byte\n"
+        f"  in 0x{owned_range[0]:03x}-0x{owned_range[1]:03x} was zero after "
+        "ZeldaInitialize and vanilla restore (no frames stepped)."
     )
     return 0
 
