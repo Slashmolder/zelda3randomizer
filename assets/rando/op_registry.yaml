@@ -399,6 +399,22 @@ ops:
       hardcoded HAS_ANY_COUNT(...,7) term.
     contexts: [can_reach, can_place]
 
+  - id: 31
+    name: OP_OW_FLUTE_VANILLA
+    phase: E
+    operands: []
+    semantics: |
+      True iff settings.flute_shuffle == off (add-rando-ow-warp-shuffle).
+      The CanFly macro's neutralization conjunct: CanFly's baked disjuncts
+      encode the eight VANILLA flute destinations, which stop existing under
+      an active flute shuffle — this op compiles the whole macro false then,
+      making the OW_FluteNet hub the sole source of flute reachability.
+      Reads the NORMALIZED flute_shuffle (apply_derived_rules zeroes it
+      under Inverted), so Inverted's intact CanFly uses are unaffected. A
+      NULL-settings evaluation context returns TRUE (vanilla behavior).
+      Settings-constant per evaluation, so reachability-monotone.
+    contexts: [can_reach, can_place]
+
 
 
 # ---------------------------------------------------------------------------

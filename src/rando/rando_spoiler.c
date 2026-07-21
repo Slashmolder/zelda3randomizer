@@ -43,6 +43,8 @@ extern uint8 Sprite_VanillaPrizeItem(uint8 source_index);
 
 // Generated tables — typedefs + extern declarations live in rando_logic.h.
 #include "rando_logic.h"
+#include "rando_generate.h"   // Rando_GetOwWarpGenerationLayout
+#include "shuffle_ow_warp.h"  // add-rando-ow-warp-shuffle spoiler section
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -731,6 +733,46 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
         fprintf(f, "\n      ]\n    }");
       }
       fprintf(f, "\n  },\n");
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // ow_warps — flute spot assignments + whirlpool pairs
+  // (add-rando-ow-warp-shuffle). Emitted ONLY when a warp axis is active
+  // (axes-off spoiler byte-identity); whirlpool pairs are in whirlpool-id
+  // (source-screen) space.
+  // -----------------------------------------------------------------------
+  {
+    const OwWarpLayout *wl = Rando_GetOwWarpGenerationLayout();
+    if (wl != NULL && wl->active != 0) {
+      fprintf(f, "  \"ow_warps\": {\n");
+      if (wl->active & 1) {
+        fprintf(f, "    \"flute\": [");
+        for (int s = 0; s < kOwWarpFluteSlots; s++) {
+          const RandoOwFluteCandidate *c =
+              &kRandoOwFluteCandidates[wl->flute_cand[s]];
+          fprintf(f, "%s\n      { \"slot\": %d, \"screen\": \"0x%02x\", "
+                     "\"region\": \"%s\" }",
+                  s ? "," : "", s, c->screen,
+                  Rando_GetRegionName(c->region));
+        }
+        fprintf(f, "\n    ]%s\n", (wl->active & 2) ? "," : "");
+      }
+      if (wl->active & 2) {
+        fprintf(f, "    \"whirlpools\": [");
+        bool first_wp = true;
+        for (uint32 i = 0; i < kRandoOwWhirlpoolsCount &&
+                           i < kOwWarpWhirlpoolMax; i++) {
+          uint8 p = wl->wp_partner[i];
+          if (p <= (uint8)i) continue;  // each pair once
+          fprintf(f, "%s\n      [\"0x%02x\", \"0x%02x\"]",
+                  first_wp ? "" : ",", kRandoOwWhirlpools[i].screen,
+                  kRandoOwWhirlpools[p].screen);
+          first_wp = false;
+        }
+        fprintf(f, "\n    ]\n");
+      }
+      fprintf(f, "  },\n");
     }
   }
 

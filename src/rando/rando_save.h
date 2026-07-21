@@ -73,7 +73,10 @@
 //   11 — add-rando-bonk-sanity: bonk registry identity in the extension
 //        (@51-57, same guard shape as pot/terrain/enemy-check). New writes
 //        are always v11.
-#define kRandoSidecar_FileFormatVersion 11
+// 12 — appends the OW warp layout identity (@58 ow_attempt, @59-61
+//      ow_digest24 LE) to the slot extension block
+//      (add-rando-ow-warp-shuffle). Both-direction gating as always.
+#define kRandoSidecar_FileFormatVersion 12
 #define kRandoSidecar_SlotCount         3       // mirrors sram.dat's 3-slot layout
 #define kRandoSidecar_FileHeaderSize    16
 #define kRandoSidecar_SlotHeaderSize    80
@@ -121,7 +124,8 @@
 //   @55-56  bonk_registry_count (u16 LE)
 //   @57     bonk_registry_present (u8; 1 = refuse bonk-enabled drift)
 #define kRandoSidecar_SlotExtV11Size    58
-#define kRandoSidecar_SlotExtCurrentSize kRandoSidecar_SlotExtV11Size
+#define kRandoSidecar_SlotExtV12Size    62
+#define kRandoSidecar_SlotExtCurrentSize kRandoSidecar_SlotExtV12Size
 
 // Per randomizer-save spec § Slot header: 3-value discriminator.
 // Empty=0 is the all-zeroes default, distinguishable from an explicit
@@ -288,6 +292,12 @@ typedef struct RandoSlotHeader {
   // interior layout can make the certified-beatable placement unbeatable —
   // unlike entrance shuffle's non-blocking drift warning). Both zero on
   // vanilla-door slots / pre-field writers.
+  // add-rando-ow-warp-shuffle (ext v12 @58-61): accepted warp attempt +
+  // layout digest24. Regenerated at activation from (seed, settings,
+  // ow_attempt); digest mismatch hard-fails (door-gate class). 0/0 on
+  // non-warp slots and pre-v12 files.
+  uint8 ow_attempt;             // ext v12 @58
+  uint32 ow_digest24;           // ext v12 @59-61 (3 bytes LE on disk)
   uint8 door_attempt;           // @76
   uint32 door_digest24;         // @77-79 (3 bytes LE on disk)
   // FIX #4 — entrance-shuffle analogue of door_digest24. The entrance

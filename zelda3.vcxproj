@@ -419,6 +419,7 @@
     <ClCompile Include="src\rando\souls.c" />
     <ClCompile Include="src\rando\customizer.c" />
     <ClCompile Include="src\rando\shuffle_entrance.c" />
+    <ClCompile Include="src\rando\shuffle_ow_warp.c" />
     <ClCompile Include="src\rando\shuffle_cosmetic.c" />
     <ClCompile Include="src\rando\inverted_entrances.c" />
     <ClCompile Include="src\rando\rando_shuffles.c" />
@@ -1031,6 +1032,7 @@
     <RandoCodegenOptionalInput Include="assets\rando\enemy_drops.gen.yaml" Condition="Exists('assets\rando\enemy_drops.gen.yaml')" />
     <RandoCodegenOptionalInput Include="assets\rando\enemy_checks.gen.yaml" Condition="Exists('assets\rando\enemy_checks.gen.yaml')" />
     <RandoCodegenOptionalInput Include="assets\rando\soul_rooms.gen.yaml" Condition="Exists('assets\rando\soul_rooms.gen.yaml')" />
+    <RandoCodegenOptionalInput Include="assets\rando\ow_graph.gen.yaml" Condition="Exists('assets\rando\ow_graph.gen.yaml')" />
     <RandoCodegenPresenceInput Include="assets\rando\logic.schema.yaml" Condition="Exists('assets\rando\logic.schema.yaml')" />
     <RandoCodegenPresenceInput Include="zelda3_assets.dat" Condition="Exists('zelda3_assets.dat')" />
     <RandoCodegenInput Include="@(RandoCodegenOptionalInput)" />

@@ -1,6 +1,7 @@
 #include "messaging.h"
 #include "zelda_rtl.h"
 #include "rando/rando.h"  // Phase B Slice 1 — Rando_OnGameSave
+#include "rando/shuffle_ow_warp.h"  // add-rando-ow-warp-shuffle flute blips
 #include "variables.h"
 #include "config.h"
 #include "features.h"
@@ -268,10 +269,12 @@ static const uint8 kOverworldMap_tab1[333] = {
 };
 static const uint8 kOverworldMapData[7] = {0x79, 0x6e, 0x6f, 0x6d, 0x7c, 0x6c, 0x7f};
 static const uint8 kBirdTravel_tab1[8] = {0x7f, 0x79, 0x6c, 0x6d, 0x6e, 0x6f, 0x7c, 0x7d};
-static const uint8 kBirdTravel_x_lo[8] = {0x80, 0xcf, 0x10, 0xb8, 0x30, 0x70, 0x70, 0xf0};
-static const uint8 kBirdTravel_x_hi[8] = {6, 0xc, 2, 8, 0xf, 0, 7, 0xe};
-static const uint8 kBirdTravel_y_lo[8] = {0x5b, 0x98, 0xc0, 0x20, 0x50, 0xb0, 0x30, 0x80};
-static const uint8 kBirdTravel_y_hi[8] = {3, 5, 7, 0xb, 0xb, 0xf, 0xf, 0xf};
+// non-static: add-rando-ow-warp-shuffle reuses the hand-tuned vanilla blip
+// positions (shuffle_ow_warp.c) — single source for the rando path + oracle.
+const uint8 kBirdTravel_x_lo[8] = {0x80, 0xcf, 0x10, 0xb8, 0x30, 0x70, 0x70, 0xf0};
+const uint8 kBirdTravel_x_hi[8] = {6, 0xc, 2, 8, 0xf, 0, 7, 0xe};
+const uint8 kBirdTravel_y_lo[8] = {0x5b, 0x98, 0xc0, 0x20, 0x50, 0xb0, 0x30, 0x80};
+const uint8 kBirdTravel_y_hi[8] = {3, 5, 7, 0xb, 0xb, 0xf, 0xf, 0xf};
 static const uint8 kPendantBitMask[3] = {4, 1, 2};
 static const uint8 kCrystalBitMask[7] = {2, 0x40, 8, 0x20, 1, 4, 0x10};
 static const uint16 kOwMapCrystal0_x[9] = {0x7ff, 0x2c0, 0xd00, 0xf31, 0x6d, 0x7e0, 0xf40, 0xf40, 0x8dc};
@@ -1145,6 +1148,22 @@ void FluteMenu_HandleSelection() {  // 8ab78b
   uint16 ybak = link_y_coord_spexit;
   uint16 xbak = link_x_coord_spexit;
   for (int i = 7; i >= 0; i--) {
+    // add-rando-ow-warp-shuffle — under an active flute shuffle the blips
+    // follow the per-seed spots (vanilla screens keep the hand-tuned
+    // positions; shuffled ones derive from the landing). Falls through to
+    // the vanilla const tables otherwise.
+    uint16 rando_bx, rando_by;
+    if (Rando_OwWarp_FluteBlip((uint8)i, &rando_bx, &rando_by)) {
+      bird_travel_x_lo[i] = (uint8)(rando_bx & 0xff);
+      bird_travel_x_hi[i] = (uint8)(rando_bx >> 8);
+      link_x_coord_spexit = rando_bx;
+      bird_travel_y_lo[i] = (uint8)(rando_by & 0xff);
+      bird_travel_y_hi[i] = (uint8)(rando_by >> 8);
+      link_y_coord_spexit = rando_by;
+      if (WorldMap_CalculateOamCoordinates(&pt))
+        WorldMap_AddSprite(i, 0, (i == birdtravel_var1[0]) ? 0x30 + (frame_counter & 6) : 0x32, kBirdTravel_tab1[i], pt.x, pt.y);
+      continue;
+    }
     bird_travel_x_lo[i] = kBirdTravel_x_lo[i];
     bird_travel_x_hi[i] = kBirdTravel_x_hi[i];
     link_x_coord_spexit = kBirdTravel_x_hi[i] << 8 | kBirdTravel_x_lo[i];

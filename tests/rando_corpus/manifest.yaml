@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 153  # bump_rando_corpus.py --apply - gate north-Kakariko portal-pocket bushes
+generator_version: 155  # bump_rando_corpus.py --apply
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -1513,3 +1513,31 @@ entries:
 #     seed: "0xTBD"
 #     label: "completionist-open"
 #     expected_digest: "<filled-after-first-run>"
+
+  # add-rando-ow-warp-shuffle — flute-spot + whirlpool warp axes. The
+  # customizer composition is selftest-verified (no customizer corpus lane).
+  - settings: { mode.state: open, goal: fast_ganon, flute_shuffle: balanced }
+    seed: "0x0000000000000154"
+    label: "warp-flute-balanced-open"
+    expected_digest: "75c173d29429f6adba11d23a700496d53019c0f8f948ae918e19b669828e14fb"
+    expected_sphere_digest: "375e9f7f8f4e79b564dce71bd3fae945630c595b26b610c841e6c57f81eb4408"
+  - settings: { mode.state: open, goal: ganon, flute_shuffle: random, whirlpool_shuffle: true }
+    seed: "0x0000000000000155"
+    label: "warp-flute-random-whirlpool-open"
+    expected_digest: "edc32972664de84dfdec2b5d780b69af90aca3d319d4e1f631183512e38fbf36"
+    expected_sphere_digest: "e7eeb7e846e15cd1e37747d55dbfb3851b97e9b49b8c2eb9dab01bede5887a1f"
+  - settings: { mode.state: standard, goal: fast_ganon, flute_shuffle: random, whirlpool_shuffle: true }
+    seed: "0x0000000000000156"
+    label: "warp-standard-both"
+    expected_digest: "10ee527f29fcd804732142ad5af8f2f9c74c5b99b653b79c3ff4efcc257532dc"
+    expected_sphere_digest: "141767ad0ae3d4b9be8626b05e06ae7c7ae6984ca8f3955cebe7e251d73179cd"
+  - settings: { mode.state: retro, goal: fast_ganon, flute_shuffle: balanced }
+    seed: "0x0000000000000157"
+    label: "warp-retro-flute"
+    expected_digest: "50a1a3fdd0d18af4938ead4ba448f22f4014d22063bcbbbbcbadd4fa6a8a16fe"
+    expected_sphere_digest: "e724b0157843d946b7aedc11bb4070a1c40a528d9a59e7d90b97988beb5d766a"
+  - settings: { mode.state: open, goal: "triforce-hunt", pieces_required: 20, pieces_placed: 30, accessibility: none, flute_shuffle: random, whirlpool_shuffle: true }
+    seed: "0x0000000000000158"
+    label: "warp-hunt-none"
+    expected_digest: "edd3447bedff66849a2155547bf3d4db33036fc8466b10e2674e22edae6597dc"
+    expected_sphere_digest: "3a94247df6f6824a52b05df37ee03ffa674d474605a0c20406453af6e699df6b"

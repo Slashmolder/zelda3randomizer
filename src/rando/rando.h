@@ -41,7 +41,9 @@
 //      bumped independently off the pre-153 base; merged below.
 // 154: merge union of both parallel 153 lines (north-Kakariko gating +
 //      grant transactions); corpus regenerated on the merged behavior.
-#define kGeneratorVersion 154u  // merge union: kak-pocket gating + grant transactions
+// 155: 154 union + add-rando-ow-warp-shuffle (flute/whirlpool axes + OW
+//      screen-component substrate) — reconciled on the feature merge.
+#define kGeneratorVersion 155u  // 154 union + OW warp shuffle
 // The share-string binary layout packs version into 1 byte
 // (rando_share.h: ShareString.version is uint8). Compile-time enforce
 // kGeneratorVersion ≤ 255 so silent truncation can't ship.
@@ -1344,9 +1346,16 @@ void Rando_ClearDeferredPotConfirmation(void);
 // when the cold path actually superseded process state (the caller then arms
 // the fail-closed entrance-layout pending check); false on the warm same-slot
 // early-return.
+// add-rando-ow-warp-shuffle — the ACTIVE slot's regenerated warp layout for
+// the runtime hooks (flute menu/map, whirlpool partner remap); NULL when no
+// warp axis is active.
+typedef struct OwWarpLayout OwWarpLayout;
+const OwWarpLayout *Rando_ActiveOwWarpLayout(void);
+
 bool Rando_SnapshotColdReplayRestore(const RandoSettings *s,
                                      const uint8 *share_string_raw,
-                                     uint8 prize_attempt);
+                                     uint8 prize_attempt, uint8 ow_attempt,
+                                     uint32 ow_digest24);
 void Rando_ClearSnapshotDoorReplayRestore(void);
 bool Rando_SnapshotDoorReplayRestore(const RandoSettings *s,
                                      const uint8 *share_string_raw,

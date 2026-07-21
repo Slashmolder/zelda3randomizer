@@ -100,6 +100,9 @@ TERRAIN_ARTIFACT_RELS = (
 # zelda3_assets.dat alone (gen_bonk_tables.py), so mirror-else-regenerate
 # like soul_rooms. Absent => bonk tiers fail closed via the registry guard.
 BONK_REGISTRY_REL = os.path.join("assets", "rando", "bonk.gen.yaml")
+# add-rando-ow-warp-shuffle: the OW screen-component graph. Regenerable only
+# when the ALttPDoorRandomizer sibling checkout is present, so mirror-first.
+OW_GRAPH_REL = os.path.join("assets", "rando", "ow_graph.gen.yaml")
 # add-enemy-souls: kill-gated-room soul requirements. Local/gitignored; read by
 # rando_logic_gen.py. Absent => kRandoSoulRoomsBaked=0 and souls_shuffle=all
 # seeds fail closed in BuildItemPool (loud, not silent), but a worktree that
@@ -695,6 +698,25 @@ def main() -> int:
                 print(f"setup_worktree: WARNING could not produce {BONK_REGISTRY_REL} "
                       f"-- bonk_shuffle seeds will fail closed in this worktree "
                       f"build.", file=sys.stderr)
+
+    # add-rando-ow-warp-shuffle: ow_graph.gen.yaml — mirror, else regenerate
+    # from the upstream ALttPDoorRandomizer checkout (gen_ow_graph_tables.py;
+    # only possible when the sibling checkout exists). Absence is fail-closed
+    # for the warp axes, so best-effort + loud warning.
+    dst_owg = cwd / OW_GRAPH_REL
+    if not dst_owg.is_file():
+        src_owg = source / OW_GRAPH_REL
+        if src_owg.is_file():
+            dst_owg.parent.mkdir(parents=True, exist_ok=True)
+            print(f"setup_worktree: copy {src_owg} -> {dst_owg}")
+            shutil.copy2(src_owg, dst_owg)
+        else:
+            gen = cwd / "assets" / "scripts" / "gen_ow_graph_tables.py"
+            rc = subprocess.call([sys.executable, str(gen)], cwd=str(cwd))
+            if rc or not dst_owg.is_file():
+                print(f"setup_worktree: WARNING could not produce {OW_GRAPH_REL} "
+                      f"-- flute/whirlpool shuffle seeds will fail closed in "
+                      f"this worktree build.", file=sys.stderr)
 
     if copied_assets or not (cwd / VANILLA_ASSETS_HASH_REL).is_file():
         rc = ensure_vanilla_assets_hash(cwd)

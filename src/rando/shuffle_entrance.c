@@ -447,7 +447,13 @@ uint16 Entrance_DungeonSourceExitRoom(uint8 vanilla_entrance_id) {
 // dungeon (single-inbound-edge dungeons only; TR/GT excluded — multi-source ⇒
 // ambiguous predicate to inherit). assign[e] = the endpoint now behind e's door.
 // ---------------------------------------------------------------------------
-#define kCrossVoidRegion 63  // unreachable sink: removes a dungeon's original
+// Unreachable sink: removes a dungeon's original edge under Crossed. Was a
+// hardcoded 63 — safe when the region table had ~40 rows, but the OW
+// substrate grew it past 63 and the selfcheck caught the collision with a
+// real component region. The sink is now the RESERVED top-of-cap id (codegen
+// budgets real regions to kReachabilityMaxRegions - 1), which stays inside
+// every cap-sized bitset (harmlessly settable) and can never be real.
+#define kCrossVoidRegion (kReachabilityMaxRegions - 1)  // sink: removes original
                              // door-edge when a cave lands behind it. Safe:
                              // 63 < kReachabilityMaxRegions(256); no locs/edges.
 

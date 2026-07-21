@@ -139,6 +139,9 @@ void Settings_SetDefaults(RandoSettings *s) {
   s->skeleton_key = 0;
   s->shopsanity = 0;  // add-rando-shopsanity default off ([29] bit 4 stays 0)
   s->bonk_shuffle = kTerrainShuffle_Off;  // add-rando-bonk-sanity ([29] bits 5-6 stay 0)
+  // add-rando-ow-warp-shuffle default off ([30] bits 3-5 stay 0).
+  s->flute_shuffle = kFluteShuffle_Off;
+  s->whirlpool_shuffle = 0;
 }
 
 // Apply derived-from-other-fields normalization rules.
@@ -218,6 +221,14 @@ static void apply_derived_rules(RandoSettings *s) {
       s->world_state != kWorldState_Standard) {
     s->shuffle_cave_entrances = 0;
     s->shuffle_dungeon_entrances = 0;
+  }
+  // add-rando-ow-warp-shuffle — v1 scope excludes Inverted ONLY (Inverted
+  // rewrites the overworld and flute semantics; the spot data is LW-indexed).
+  // Deliberately NOT the entrance axes' broader "not Open/Standard" guard
+  // above: Retro warps are in scope and must survive normalization.
+  if (s->world_state == kWorldState_Inverted) {
+    s->flute_shuffle = kFluteShuffle_Off;
+    s->whirlpool_shuffle = 0;
   }
   // The Ganon's Tower opt-in only means anything when dungeon entrances are
   // being shuffled (GT joins the dungeon pool); normalize it off otherwise so
@@ -505,8 +516,12 @@ int Settings_CanonicalSerialize(const RandoSettings *s_in,
   // add-rando-key-rings-skeleton-key — preserve the REQUESTED ring policy.
   // Effective-off semantics are computed by Settings_EffectiveKeyRings and are
   // deliberately not part of apply_derived_rules.
+  // add-rando-ow-warp-shuffle — [30] bits 3-5 (defaults 0 = byte-stable).
   out[30] = (uint8)(((s->key_rings << kKeyRingsAxis_Shift) & kKeyRingsAxis_Mask) |
-                    (s->skeleton_key ? kSkeletonKeyAxis_Enabled : 0));
+                    (s->skeleton_key ? kSkeletonKeyAxis_Enabled : 0) |
+                    (s->whirlpool_shuffle ? kWhirlpoolAxis_Enabled : 0) |
+                    ((s->flute_shuffle << kFluteShuffleAxis_Shift) &
+                     kFluteShuffleAxis_Mask));
   return kSettingsCanonicalLen;
 }
 
@@ -623,10 +638,16 @@ int Settings_CanonicalDeserialize(const uint8 in[kSettingsCanonicalLen],
   if (s.grass_shuffle > kTerrainShuffle_All || s.rock_shuffle > kTerrainShuffle_All) return -2;
   // add-rando-key-rings-skeleton-key — [30] is strict append-only data. Older
   // containers zero-extend a 30-byte blob before calling this function.
-  if (in[30] & ~(uint8)kKeyRingsAxis_DefinedMask) return -2;
+  if (in[30] & ~(uint8)kCanon30_DefinedMask) return -2;
   s.key_rings = (uint8)((in[30] & kKeyRingsAxis_Mask) >> kKeyRingsAxis_Shift);
   s.skeleton_key = (in[30] & kSkeletonKeyAxis_Enabled) ? 1 : 0;
   if (s.key_rings > kKeyRings_All) return -2;
+  // add-rando-ow-warp-shuffle — [30] bits 3-5; flute enum value 3 is
+  // refused-undefined (never aliased to a defined mode).
+  s.whirlpool_shuffle = (in[30] & kWhirlpoolAxis_Enabled) ? 1 : 0;
+  s.flute_shuffle = (uint8)((in[30] & kFluteShuffleAxis_Mask) >>
+                            kFluteShuffleAxis_Shift);
+  if (s.flute_shuffle > kFluteShuffle_Random) return -2;
   // FIX #5 — refuse out-of-range enum bytes. The permissiveness documented
   // above is for the undefined BITS of the flag bytes [25]-[27] (already
   // masked); the raw enum bytes [0..17] have defined ranges and a value
@@ -711,6 +732,10 @@ bool Settings_Validate(const RandoSettings *s) {
   if (s->bonk_shuffle > kTerrainShuffle_All) return false;
   // [30] bits 0-1: requested key-ring mode; bit2: Skeleton Key item toggle.
   if (s->key_rings > kKeyRings_All || s->skeleton_key > 1) return false;
+  // [30] bit 3: whirlpool_shuffle strict bool; bits 4-5: flute_shuffle 0..2
+  // (add-rando-ow-warp-shuffle); value 3 is refused-undefined.
+  if (s->whirlpool_shuffle > 1) return false;
+  if (s->flute_shuffle > kFluteShuffle_Random) return false;
   return true;
 }
 
@@ -866,11 +891,32 @@ void Settings_SelfCheck(void) {
       fprintf(stderr, "Settings_SelfCheck: Retro Generic Keys must disable key rings\n");
       exit(2);
     }
-    blob[30] |= 0x08;
+    // add-rando-ow-warp-shuffle claimed [30] bits 3-5, so the
+    // undefined-bit probe relocates from bit 3 (0x08) to bit 6 (0x40).
+    blob[30] |= 0x40;
     if (Settings_CanonicalDeserialize(blob, &round) == 0) {
       fprintf(stderr, "Settings_SelfCheck: undefined canonical [30] bits must be refused\n");
       exit(2);
     }
+    blob[30] = (uint8)(blob[30] & ~0x40u);
+    // Flute enum value 3 ([30] bits 4-5 both set) must be refused, not
+    // aliased.
+    blob[30] |= (uint8)kFluteShuffleAxis_Mask;
+    if (Settings_CanonicalDeserialize(blob, &round) == 0) {
+      fprintf(stderr, "Settings_SelfCheck: flute_shuffle value 3 must be refused\n");
+      exit(2);
+    }
+    blob[30] = (uint8)(blob[30] & ~(uint8)kFluteShuffleAxis_Mask);
+    // Round-trip the defined warp bits.
+    blob[30] |= (uint8)(kWhirlpoolAxis_Enabled |
+                        (kFluteShuffle_Random << kFluteShuffleAxis_Shift));
+    if (Settings_CanonicalDeserialize(blob, &round) != 0 ||
+        round.whirlpool_shuffle != 1 ||
+        round.flute_shuffle != kFluteShuffle_Random) {
+      fprintf(stderr, "Settings_SelfCheck: warp-axis [30] round-trip failed\n");
+      exit(2);
+    }
+    blob[30] = 0;  // restore the defaults blob for any later probe
     Settings_SetDefaults(&kr);
     if (Settings_ParseCsv("key_rings=random,skeleton_key=true", &kr) != 0 ||
         kr.key_rings != kKeyRings_Random || !kr.skeleton_key) {
@@ -2399,6 +2445,14 @@ static int parse_pot_shuffle(const char *v, int vlen, uint8 *out) {
   return -1;
 }
 
+// add-rando-ow-warp-shuffle — parse the flute-spot shuffle mode.
+static int parse_flute_shuffle(const char *v, int vlen, uint8 *out) {
+  if (csv_str_eq(v, vlen, "off") || csv_str_eq(v, vlen, "0"))      { *out = kFluteShuffle_Off;      return 0; }
+  if (csv_str_eq(v, vlen, "balanced") || csv_str_eq(v, vlen, "1")) { *out = kFluteShuffle_Balanced; return 0; }
+  if (csv_str_eq(v, vlen, "random") || csv_str_eq(v, vlen, "2"))   { *out = kFluteShuffle_Random;   return 0; }
+  return -1;
+}
+
 // add-rando-enemy-drop-sanity — parse the enemy_drop_checks tier.
 static int parse_enemy_drop_checks(const char *v, int vlen, uint8 *out) {
   if (csv_str_eq(v, vlen, "off") || csv_str_eq(v, vlen, "0"))  { *out = kEnemyDropChecks_Off;      return 0; }
@@ -2519,6 +2573,8 @@ enum {
   KEY_rock_shuffle,
   KEY_key_rings,       // add-rando-key-rings-skeleton-key
   KEY_skeleton_key,
+  KEY_flute_shuffle,   // add-rando-ow-warp-shuffle
+  KEY_whirlpool_shuffle,
   KEY_shopsanity,      // add-rando-shopsanity
   KEY_bonk_shuffle,    // add-rando-bonk-sanity
 };
@@ -2769,6 +2825,15 @@ static int handle_kv(const char *key, int klen, const char *val, int vlen,
     // (off|junk|all). Serialized in canonical [29] bits 2-3.
     MARK_SEEN(KEY_rock_shuffle);
     if (parse_terrain_shuffle(val, vlen, &s->rock_shuffle) != 0) goto bad_value;
+  } else if (csv_str_eq(key, klen, "flute_shuffle")) {
+    // add-rando-ow-warp-shuffle — flute-spot shuffle (off|balanced|random).
+    // Serialized in canonical [30] bits 4-5.
+    MARK_SEEN(KEY_flute_shuffle);
+    if (parse_flute_shuffle(val, vlen, &s->flute_shuffle) != 0) goto bad_value;
+  } else if (csv_str_eq(key, klen, "whirlpool_shuffle")) {
+    // add-rando-ow-warp-shuffle — whirlpool re-pairing. Canonical [30] bit 3.
+    MARK_SEEN(KEY_whirlpool_shuffle);
+    if (parse_bool(val, vlen, &s->whirlpool_shuffle) != 0) goto bad_value;
   } else if (csv_str_eq(key, klen, "key_rings")) {
     MARK_SEEN(KEY_key_rings);
     if (parse_key_rings(val, vlen, &s->key_rings) != 0) goto bad_value;

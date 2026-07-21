@@ -96,6 +96,7 @@ MSBUILD_OPTIONAL_CODEGEN_INPUTS = {
     "assets/rando/enemy_drops.gen.yaml",
     "assets/rando/enemy_checks.gen.yaml",
     "assets/rando/soul_rooms.gen.yaml",
+    "assets/rando/ow_graph.gen.yaml",  # add-rando-ow-warp-shuffle
 }
 
 MSBUILD_PRESENCE_CODEGEN_INPUTS = {

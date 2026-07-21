@@ -26,6 +26,7 @@
 #include "rando_hints.h"      // Rando_GenerateHints (populate hints[] before spoiler write)
 #include "shuffle_doors.h"    // door-shuffle generation (add-rando-door-shuffle)
 #include "shuffle_chains.h"   // dungeon-chain layout generation
+#include "shuffle_ow_warp.h"  // add-rando-ow-warp-shuffle (per-seed warp layout)
 
 // add-rando-door-shuffle — generation-side layout + accepted-attempt state.
 // The layout must outlive Rando_PlaceWithEntrances: the installed logic
@@ -33,6 +34,43 @@
 // sphere/goal computation.
 static DoorShuffleLayout g_door_gen_layout;
 static uint8 g_door_gen_attempt;
+
+// add-rando-ow-warp-shuffle — generation-side warp layout (door pattern:
+// file-scope accepted state + accessor consumed at slot assembly).
+static OwWarpLayout g_ow_gen_layout;
+static uint8 g_ow_gen_attempt;
+static uint32 g_ow_gen_digest24;
+
+void Rando_GetOwWarpGeneration(uint8 *attempt_out, uint32 *digest_out) {
+  if (attempt_out) *attempt_out = g_ow_gen_attempt;
+  if (digest_out) *digest_out = g_ow_gen_digest24;
+}
+
+// Generation-time layout for the spoiler writer (the activation global is
+// not populated on the headless path). NULL when no warp axis was active.
+const OwWarpLayout *Rando_GetOwWarpGenerationLayout(void) {
+  return g_ow_gen_layout.active != 0 ? &g_ow_gen_layout : NULL;
+}
+
+// Per-attempt warp application: compute + install (composes on the current
+// overlay; Begins it when warp runs alone). False = fail-closed refusal
+// (axis requested, graph tables absent) — no attempt can fix that.
+static bool ow_warp_apply_attempt(const RandoSettings *settings,
+                                  uint64 seed_u64, uint32 att) {
+  bool warp_on = settings != NULL &&
+                 (settings->flute_shuffle != kFluteShuffle_Off ||
+                  settings->whirlpool_shuffle != 0);
+  g_ow_gen_attempt = 0;
+  g_ow_gen_digest24 = 0;
+  memset(&g_ow_gen_layout, 0, sizeof(g_ow_gen_layout));
+  if (!warp_on) return true;
+  if (!OwWarp_Compute(settings, seed_u64, att, &g_ow_gen_layout))
+    return false;
+  OwWarp_InstallLogicEdges(&g_ow_gen_layout);
+  g_ow_gen_attempt = (uint8)att;
+  g_ow_gen_digest24 = OwWarp_Digest24(&g_ow_gen_layout);
+  return true;
+}
 static uint32 g_door_gen_digest24;
 #include "shuffle_entrance.h" // Phase C entrance shuffle (cave permutation + region overrides)
 #include "shuffle_boss.h"     // BossShuffle_ComputeAssignment (Slice 7 spoiler)
@@ -499,6 +537,10 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
       if (cross_decoupled_on) {
         reg->cross_decoupled_count = Entrance_ComputeCrossDecoupledExit(settings, seed_u64, (uint8)att, reg->cross_decoupled_assign);
       }
+      // add-rando-ow-warp-shuffle — warp layout shares the entrance retry
+      // index; installs compose on this attempt's overlay.
+      if (!ow_warp_apply_attempt(settings, seed_u64, (uint32)att))
+        break;  // graph absent: deterministic fail-closed, no retry helps
       table->count = 0;
       if (rando_place_assumed_fill_counted(settings, seed_u64,
                                            budget_seconds, table)) {
@@ -541,6 +583,12 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
         continue;
       }
       Rando_SetDoorLogicLayout(&g_door_gen_layout, g_door_gen_layout.shuffled_mask);
+      // add-rando-ow-warp-shuffle — warp composes with door shuffle; the
+      // door loop doesn't use the edge overlay, so clear + own it per
+      // attempt (retry-accumulation lesson).
+      Entrance_ClearEdgeOverrides();
+      if (!ow_warp_apply_attempt(settings, seed_u64, datt))
+        break;
       table->count = 0;
       if (rando_place_assumed_fill_counted(settings, seed_u64,
                                            budget_seconds, table) &&
@@ -576,6 +624,9 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
         continue;
       }
       Chains_ApplyEdgeOverrides(&chains_layout);
+      // add-rando-ow-warp-shuffle — composes on the chains overlay.
+      if (!ow_warp_apply_attempt(settings, seed_u64, catt))
+        break;
       table->count = 0;
       if (rando_place_assumed_fill_counted(settings, seed_u64,
                                            budget_seconds, table) &&
@@ -600,8 +651,41 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
     // sphere/goal computation must see the chain reachability.
     if (!placed)
       Entrance_ClearEdgeOverrides();
+  } else if (settings != NULL &&
+             (settings->flute_shuffle != kFluteShuffle_Off ||
+              settings->whirlpool_shuffle != 0)) {
+    // add-rando-ow-warp-shuffle — warp-only retry loop (no other retrying
+    // feature active): the layout varies per attempt so a warp arrangement
+    // the accessibility tier rejects can be retried (mirrors the entrance
+    // loop; the accepted attempt persists via Rando_GetOwWarpGeneration).
+    const int kOwWarpMaxRetry = 64;
+    for (int watt = 0; watt < kOwWarpMaxRetry; watt++) {
+      Entrance_ClearEdgeOverrides();
+      if (!ow_warp_apply_attempt(settings, seed_u64, (uint32)watt))
+        break;  // graph absent: deterministic fail-closed
+      table->count = 0;
+      // Counted wrapper per the merged validation-hardening convention (its
+      // invariant sweep audits per-generation placement-attempt totals).
+      if (rando_place_assumed_fill_counted(settings, seed_u64, budget_seconds,
+                                           table) &&
+          Accessibility_SeedAcceptable(settings, seed_u64, table)) {
+        placed = true;
+        break;
+      }
+      if (Customizer_LastError()[0] != '\0')
+        break;  // deterministic customizer pin error
+    }
+    if (!placed)
+      Entrance_ClearEdgeOverrides();
+    // NB: the accepted layout's overlay edges stay ACTIVE for the caller's
+    // sphere/goal computation (entrance/chains precedent).
   } else {
     if (g_generate_profile_active) g_generate_profile.plain_calls++;
+    // audit M3: reset the file-scope warp generation state (warp is off on
+    // this arm, so this is a pure reset) — without it a non-warp seed
+    // generated after a warp seed in the same process inherits the stale
+    // spoiler ow_warps block and header identity.
+    (void)ow_warp_apply_attempt(settings, seed_u64, 0);
     placed = rando_place_assumed_fill_counted(settings, seed_u64,
                                               budget_seconds, table);
     if (placed && !Accessibility_SeedAcceptable(settings, seed_u64, table)) {
@@ -940,6 +1024,11 @@ bool Rando_GenerateSlotWithShapeFilter(const RandoSettings *settings, uint64 see
   // 0 when no entrance axis is active. Reads share_string + world_state +
   // settings_ext_present from the header, all populated above.
   slot.header.entrance_digest24 = Rando_EntranceLayoutDigest24(&slot.header);
+  // add-rando-ow-warp-shuffle — accepted warp attempt + layout digest
+  // (ext v12 @58-61; 0/0 when no warp axis was active). Activation
+  // regenerates the layout from these + the settings blob and hard-fails on
+  // digest mismatch (door-gate class).
+  Rando_GetOwWarpGeneration(&slot.header.ow_attempt, &slot.header.ow_digest24);
   // format_version 2: persist the FULL canonical settings blob so a reloaded
   // slot can reproduce the seed's settings + prize/medallion shuffle
   // assignments for the runtime reachability (tracker) engine. The reserved-tail

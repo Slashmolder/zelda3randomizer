@@ -126,7 +126,15 @@ typedef enum {
   // conservatively to 7 without a seed. Default tower=7 is byte-identical
   // to the old hardcoded term.
   OP_TOWER_CRYSTALS_MET = 30,
-  OP__COUNT = 31,
+  // OW_FLUTE_VANILLA (no operands) — true iff settings->flute_shuffle is
+  // off (add-rando-ow-warp-shuffle). The CanFly neutralization conjunct:
+  // CanFly bakes the eight VANILLA flute destinations into every predicate
+  // referencing it; under an active flute shuffle those routes don't exist,
+  // so this op compiles the macro false and the OW_FluteNet hub becomes the
+  // sole flute-reachability source. NULL-settings contexts evaluate TRUE
+  // (vanilla behavior). Settings-constant → reachability-monotone.
+  OP_OW_FLUTE_VANILLA = 31,
+  OP__COUNT = 32,
 } RandoOp;
 
 // ---------------------------------------------------------------------------
@@ -366,6 +374,62 @@ extern const uint32 kRandoLocationsCount;
 // (codegen-asserted), so a loop that does not need inactive terrain rows can
 // bound by this instead of kRandoLocationsCount.
 extern const uint32 kRandoNonTerrainLocationsCount;
+
+// add-rando-ow-warp-shuffle raised 256 -> 512 (the ~211 OW screen-component
+// regions push the total past 256; regions at/above the cap are SILENTLY
+// never walked — the codegen budget assert + Logic_SelfCheck guard make that
+// loud). The TOP id (kReachabilityMaxRegions - 1) is RESERVED as the
+// entrance cross-void sink (kCrossVoidRegion, shuffle_entrance.c) and may
+// never be a real region: codegen budgets regions to cap - 1. Keep in sync
+// with rando_logic_gen.py's _REACHABILITY_MAX_REGIONS. Memory:
+// g_inverted_pair_set grows 8KB -> 32KB.
+#define kReachabilityMaxRegions 512
+
+// --- add-rando-ow-warp-shuffle — OW screen-component substrate --------------
+// The warp regions (components + the OW_FluteNet hub) are the contiguous
+// TRAILING region-index suffix starting at kRandoOwRegionsFirst, and the
+// static warp edges are the trailing kRandoEdges suffix: when no warp axis
+// is active the reachability edge scan bounds at kRandoNonWarpEdgesCount and
+// the substrate costs nothing (the terrain inert-suffix pattern, edge-side).
+// kRandoOwGraphPresent/Digest gate generation + slot activation fail-closed
+// (assetless builds refuse warp seeds; drifted graphs refuse certified
+// slots — the chest_lookup fail-open class, closed explicitly).
+extern const uint32 kRandoOwRegionsFirst;
+extern const uint32 kRandoNonWarpEdgesCount;
+extern const uint8 kRandoOwGraphPresent;
+extern const uint32 kRandoOwGraphDigest;
+extern const uint16 kRandoOwFluteHubRegion;  // 0xFFFF when graph absent
+
+// One flute candidate per eligible LW screen (ported upstream flute_data):
+// the arrival tableau columns feed the runtime resolver verbatim; icon_y/x
+// are upstream-map-space (cross-check only — the fork's map blips are
+// DERIVED, see shuffle_ow_warp).
+typedef struct RandoOwFluteCandidate {
+  uint8 screen;      // LW overworld screen id
+  uint16 region;     // component region index (kRandoRegions)
+  uint8 forced;      // upstream Desert/Mire-guarantee forced entry
+  uint16 slot, vram, bg_y, bg_x, link_y, link_x, cam_y, cam_x;
+  uint16 unk1, unk2; // engine arrival unknowns (kBirdTravel_Unk1/Unk3 class)
+  uint16 icon_y, icon_x;
+  uint16 sector;     // vanilla-connectivity sector (spot spread; flood
+                     // reproduced per upstream build_sectors, portals excl.)
+} RandoOwFluteCandidate;
+extern const RandoOwFluteCandidate kRandoOwFluteCandidates[];
+extern const uint32 kRandoOwFluteCandidatesCount;
+// Balanced-mode pairwise conflict bitmask (upstream getIgnored port): row i
+// bit j = candidates i,j too close to both host spots.
+extern const uint32 kRandoOwFluteConflicts[][2];
+extern const uint32 kRandoOwFluteConflictWords;
+extern const uint8 kRandoOwVanillaFluteScreens[8];
+
+typedef struct RandoOwWhirlpool {
+  uint8 screen;          // source screen (kWhirlpoolAreas identity)
+  uint8 partner_screen;  // vanilla partner's source screen
+  uint16 region;         // water component region index
+  uint16 partner_region;
+} RandoOwWhirlpool;
+extern const RandoOwWhirlpool kRandoOwWhirlpools[];
+extern const uint32 kRandoOwWhirlpoolsCount;
 
 // ---------------------------------------------------------------------------
 // Single location-id ceiling for the whole randomizer module.

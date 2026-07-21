@@ -153,6 +153,9 @@ static bool g_has_ctx = false;
 // one, so the type-2 TLV is suppressed.
 static uint8 g_ctx_settings_canonical[kSettingsCanonicalLen];
 static uint8 g_ctx_prize_attempt = 0;
+static uint8 g_ctx_ow_attempt = 0;      // add-rando-ow-warp-shuffle
+static uint32 g_ctx_ow_digest24 = 0;    // (cleared beside prize_attempt in
+                                        // Rando_ClearSnapshotOptionalContexts)
 static bool g_has_settings_ctx = false;
 static uint8 g_ctx_door_attempt = 0;
 static uint32 g_ctx_door_digest24 = 0;
@@ -171,6 +174,8 @@ static void Rando_ClearSnapshotOptionalContexts(void) {
   g_has_settings_ctx = false;
   memset(g_ctx_settings_canonical, 0, sizeof(g_ctx_settings_canonical));
   g_ctx_prize_attempt = 0;
+  g_ctx_ow_attempt = 0;      // add-rando-ow-warp-shuffle (audit-2 LOW-3)
+  g_ctx_ow_digest24 = 0;
   g_ctx_door_attempt = 0;
   g_ctx_door_digest24 = 0;
   g_has_door_ctx = false;
@@ -200,15 +205,23 @@ void Rando_SetSnapshotContext(uint16 generator_version,
 }
 
 void Rando_SetSnapshotSettingsContext(const uint8 *settings_canonical_or_null,
-                                      uint8 prize_attempt) {
+                                      uint8 prize_attempt, uint8 ow_attempt,
+                                      uint32 ow_digest24) {
   if (settings_canonical_or_null == NULL) {
     g_has_settings_ctx = false;
     memset(g_ctx_settings_canonical, 0, sizeof(g_ctx_settings_canonical));
     g_ctx_prize_attempt = 0;
+    g_ctx_ow_attempt = 0;
+    g_ctx_ow_digest24 = 0;
     return;
   }
   memcpy(g_ctx_settings_canonical, settings_canonical_or_null, kSettingsCanonicalLen);
   g_ctx_prize_attempt = prize_attempt;
+  // add-rando-ow-warp-shuffle — the warp layout identity rides the type-2
+  // payload (format_version 2 appended tail) so a cold replay can
+  // regenerate + digest-gate the layout exactly like slot activation.
+  g_ctx_ow_attempt = ow_attempt;
+  g_ctx_ow_digest24 = ow_digest24 & 0xFFFFFFu;
   g_has_settings_ctx = true;
 }
 
@@ -429,8 +442,12 @@ bool RandoSnapshotTail_Save(FILE *f) {
   // slot leaves g_has_settings_ctx false → no type-2 TLV, and a cold replay then
   // degrades to placement-only (type-1).
   if (g_has_settings_ctx) {
-    uint8 sp[7 + kSettingsCanonicalLen];  // constant size (kSettingsCanonicalLen is a #define)
-    sp[0] = 1u;                           // format_version
+    // format_version 2 appends the warp-layout identity AFTER the settings
+    // blob (add-rando-ow-warp-shuffle) — offsets of the v1 fields are
+    // unchanged, so a v1 reader parses the prefix and a v2 reader checks
+    // the payload length for the tail.
+    uint8 sp[7 + kSettingsCanonicalLen + 4];
+    sp[0] = 2u;                           // format_version
     sp[1] = g_ctx_prize_attempt;
     sp[2] = g_rando_mushroom_held;        // 4 process-static ownership bytes, LIVE
     sp[3] = g_rando_flute_shovel_owned;
@@ -438,6 +455,10 @@ bool RandoSnapshotTail_Save(FILE *f) {
     sp[5] = g_rando_bow_owned;
     sp[6] = (uint8)kSettingsCanonicalLen;
     memcpy(sp + 7, g_ctx_settings_canonical, kSettingsCanonicalLen);
+    sp[7 + kSettingsCanonicalLen + 0] = g_ctx_ow_attempt;
+    sp[7 + kSettingsCanonicalLen + 1] = (uint8)(g_ctx_ow_digest24 & 0xff);
+    sp[7 + kSettingsCanonicalLen + 2] = (uint8)((g_ctx_ow_digest24 >> 8) & 0xff);
+    sp[7 + kSettingsCanonicalLen + 3] = (uint8)((g_ctx_ow_digest24 >> 16) & 0xff);
     uint32 sp_len = (uint32)sizeof(sp);
     uint8 shdr[16];
     memcpy(shdr, kRandoSnapshotTail_Magic, kRandoSnapshotTail_MagicLen);
@@ -828,7 +849,11 @@ int RandoSnapshotTail_Load(FILE *f) {
       uint8 own_boomerang    = head2[4];
       uint8 own_bow          = head2[5];
       uint8 settings_len     = head2[6];
-      if ((uint32)length != 7u + (uint32)settings_len) {
+      // v1 payload = 7 + settings_len; v2 (add-rando-ow-warp-shuffle)
+      // appends ow_attempt[1] + ow_digest24[3] after the blob.
+      bool v2_tail = (fmt >= 2u) &&
+                     (uint32)length == 7u + (uint32)settings_len + 4u;
+      if ((uint32)length != 7u + (uint32)settings_len && !v2_tail) {
         // Inner-size mismatch — skip the declared remainder and continue.
         long remaining = (long)length - 7L;
         if (remaining > 0 && fseek(f, remaining, SEEK_CUR) != 0) FINISH_LOAD();
@@ -860,11 +885,22 @@ int RandoSnapshotTail_Load(FILE *f) {
       memset(blob, 0, sizeof(blob));
       uint32 copy = settings_len;
       if (copy > 0 && fread(blob, 1, copy, f) != copy) FINISH_LOAD();
-      // Everything below is interpreted per format_version 1. An UNKNOWN fmt is a
-      // newer writer's payload layout we can't parse — the bytes were already
-      // consumed above, so just count the TLV recognized and move on WITHOUT
-      // touching ownership/settings (head2[]/blob[] may not mean what we assume).
-      if (fmt == 1u) {
+      // v2 tail: warp layout identity (zeros under v1 = vanilla warps).
+      uint8 ow_attempt = 0;
+      uint32 ow_digest24 = 0;
+      if (v2_tail) {
+        uint8 tail4[4];
+        if (fread(tail4, 1, 4, f) != 4) FINISH_LOAD();
+        ow_attempt = tail4[0];
+        ow_digest24 = (uint32)tail4[1] | ((uint32)tail4[2] << 8) |
+                      ((uint32)tail4[3] << 16);
+      }
+      // Everything below is interpreted per format_version 1/2 (v2 only adds
+      // the tail above). An UNKNOWN fmt is a newer writer's payload layout we
+      // can't parse — the bytes were already consumed above, so just count
+      // the TLV recognized and move on WITHOUT touching ownership/settings
+      // (head2[]/blob[] may not mean what we assume).
+      if (fmt == 1u || fmt == 2u) {
         // Settings-derived reconstruction (world_state + prize/medallion/boss/drop/
         // enemy assignments + Inverted installs) — GATED inside the restore helper
         // to fire only on a true cold replay (no slot active). Needs the base seed,
@@ -971,9 +1007,12 @@ int RandoSnapshotTail_Load(FILE *f) {
           // cold-replayed-then-resaved snapshot would emit type-1 only and lose
           // world_state/Inverted/shuffle reconstruction on its next cold replay.
           // `blob` is already zero-extended to kSettingsCanonicalLen.
-          Rando_SetSnapshotSettingsContext(blob, prize_attempt);
+          Rando_SetSnapshotSettingsContext(blob, prize_attempt, ow_attempt,
+                                           ow_digest24);
           bool cold_restored =
-              Rando_SnapshotColdReplayRestore(&s, g_ctx.share_string, prize_attempt);
+              Rando_SnapshotColdReplayRestore(&s, g_ctx.share_string,
+                                              prize_attempt, ow_attempt,
+                                              ow_digest24);
           pending_settings_header_clear = false;
           pending_chain_layout = Settings_EffectiveDungeonChains(&s);
           // Cold restore tore down any stale entrance overlay; an
@@ -1558,7 +1597,12 @@ void RandoSnapshotTail_SelfCheck(void) {
     // (A) Round-trip with a settings sub-context.
     Placement_Install(&m4_table);
     Rando_SetSnapshotContext(0x0074, settings_hash, share_string);
-    Rando_SetSnapshotSettingsContext(open_canon, /*prize_attempt=*/3);
+    // audit-2 LOW-2: nonzero warp identity so the v2 payload tail is
+    // exercised end-to-end (write offsets vs read offsets), not just with
+    // zeros.
+    Rando_SetSnapshotSettingsContext(open_canon, /*prize_attempt=*/3,
+                                     /*ow_attempt=*/0x05,
+                                     /*ow_digest24=*/0xABCDEFu);
     g_rando_mushroom_held      = 0x02;
     g_rando_flute_shovel_owned = 0x05;
     g_rando_boomerang_owned    = 0x03;
@@ -1588,6 +1632,40 @@ void RandoSnapshotTail_SelfCheck(void) {
     for (int i = 0; i < 12; i++)
       if (Souls_Flags()[i] != (uint8)(0x11 * (i + 1)))
         selfcheck_die("soul_flags not restored from the type-8 TLV");
+    // audit-2 LOW-2: byte-inspect the SAVED type-2 payload's v2 warp tail
+    // (fmt==2; ow_attempt + ow_digest24 LE after the settings blob).
+    {
+      fseek(fm, 0, SEEK_END);
+      long fm_len = ftell(fm);
+      fseek(fm, 0, SEEK_SET);
+      if (fm_len <= 0 || fm_len > 1 << 20)
+        selfcheck_die("v2-tail probe: bad snapshot length");
+      uint8 *fb = (uint8 *)malloc((size_t)fm_len);
+      if (fb == NULL || fread(fb, 1, (size_t)fm_len, fm) != (size_t)fm_len)
+        selfcheck_die("v2-tail probe: file read failed");
+      bool tail_ok = false;
+      for (long o = 0; o + 16 <= fm_len; o++) {
+        if (memcmp(fb + o, kRandoSnapshotTail_Magic,
+                   kRandoSnapshotTail_MagicLen) != 0)
+          continue;
+        uint32 ty = (uint32)fb[o + 8] | ((uint32)fb[o + 9] << 8) |
+                    ((uint32)fb[o + 10] << 16) | ((uint32)fb[o + 11] << 24);
+        if (ty != kRandoSnapshotTail_Type_RandoSettings) continue;
+        uint32 ln = (uint32)fb[o + 12] | ((uint32)fb[o + 13] << 8) |
+                    ((uint32)fb[o + 14] << 16) | ((uint32)fb[o + 15] << 24);
+        const uint8 *pp = fb + o + 16;
+        if (ln != 7u + kSettingsCanonicalLen + 4u || pp[0] != 2u)
+          selfcheck_die("v2-tail probe: type-2 payload not v2-shaped");
+        const uint8 *tl = pp + 7 + kSettingsCanonicalLen;
+        if (tl[0] != 0x05 || tl[1] != 0xEF || tl[2] != 0xCD || tl[3] != 0xAB)
+          selfcheck_die("v2-tail probe: warp identity bytes wrong in payload");
+        tail_ok = true;
+        break;
+      }
+      free(fb);
+      if (!tail_ok) selfcheck_die("v2-tail probe: type-2 TLV not found");
+      fseek(fm, 0, SEEK_SET);
+    }
     fclose(fm);
 
     // the type-2 load reinstalled the settings sub-context, so a RE-SAVE
@@ -1612,7 +1690,7 @@ void RandoSnapshotTail_SelfCheck(void) {
     // (B) Suppression: no settings sub-context → no type-2 → ownership untouched.
     Placement_Install(&m4_table);
     Rando_SetSnapshotContext(0x0074, settings_hash, share_string);
-    Rando_SetSnapshotSettingsContext(NULL, 0);  // v1/no-blob slot
+    Rando_SetSnapshotSettingsContext(NULL, 0, 0, 0);  // v1/no-blob slot
     FILE *fb = tmpfile();
     if (fb == NULL) selfcheck_die("tmpfile() (B) returned NULL");
     if (!RandoSnapshotTail_Save(fb)) selfcheck_die("Save (B) returned false");
@@ -1641,7 +1719,7 @@ void RandoSnapshotTail_SelfCheck(void) {
       g_wanted_zelda_features &= ~kFeatures0_RestoreJpGlitches;
       enhanced_features0 &= ~kFeatures0_RestoreJpGlitches;
       Placement_Install(&m4_table);
-      Rando_SnapshotColdReplayRestore(&glitch_settings, share_string, 0);
+      Rando_SnapshotColdReplayRestore(&glitch_settings, share_string, 0, 0, 0);
       if (!(g_wanted_zelda_features & kFeatures0_RestoreJpGlitches) ||
           !(enhanced_features0 & kFeatures0_RestoreJpGlitches))
         selfcheck_die("suppression — cold replay did not force JP glitches");
@@ -1649,7 +1727,7 @@ void RandoSnapshotTail_SelfCheck(void) {
       Placement_Install(&m4_table);
       Rando_ClearSnapshotContext();
       Rando_SetSnapshotContext(0x0075, settings_hash, share_string);
-      Rando_SetSnapshotSettingsContext(NULL, 0);
+      Rando_SetSnapshotSettingsContext(NULL, 0, 0, 0);
       FILE *fc = tmpfile();
       if (fc == NULL) selfcheck_die("tmpfile() (C) returned NULL");
       if (!RandoSnapshotTail_Save(fc)) selfcheck_die("Save (C) returned false");
@@ -1727,7 +1805,7 @@ void RandoSnapshotTail_SelfCheck(void) {
       Rando_SetSnapshotContext((uint16)kGeneratorVersion,
                                active_slot.header.settings_hash,
                                active_slot.header.share_string);
-      Rando_SetSnapshotSettingsContext(active_slot.settings_canonical, 0);
+      Rando_SetSnapshotSettingsContext(active_slot.settings_canonical, 0, 0, 0);
       FILE *fcur = tmpfile();
       if (fcur == NULL) selfcheck_die("type-2 active entrance: tmpfile() returned NULL");
       if (!RandoSnapshotTail_Save(fcur))
@@ -1759,7 +1837,7 @@ void RandoSnapshotTail_SelfCheck(void) {
       Placement_Install(&m4_table);
       Rando_ClearSnapshotContext();
       Rando_SetSnapshotContext((uint16)kGeneratorVersion, settings_hash, share_string);
-      Rando_SetSnapshotSettingsContext(NULL, 0);
+      Rando_SetSnapshotSettingsContext(NULL, 0, 0, 0);
       FILE *fno = tmpfile();
       if (fno == NULL) selfcheck_die("no-type-2 active-settings: tmpfile() returned NULL");
       if (!RandoSnapshotTail_Save(fno))
@@ -1829,7 +1907,7 @@ void RandoSnapshotTail_SelfCheck(void) {
       Rando_ClearSnapshotContext();
       Rando_SetSnapshotContext((uint16)(kGeneratorVersion - 1u),
                                settings_hash, share_string);
-      Rando_SetSnapshotSettingsContext(enemy_canon, /*prize_attempt=*/0);
+      Rando_SetSnapshotSettingsContext(enemy_canon, /*prize_attempt=*/0, 0, 0);
       FILE *fd = tmpfile();
       if (fd == NULL) selfcheck_die("type-2 enemy drift: tmpfile() returned NULL");
       if (!RandoSnapshotTail_Save(fd)) selfcheck_die("type-2 enemy drift: Save returned false");
@@ -2006,7 +2084,7 @@ void RandoSnapshotTail_SelfCheck(void) {
     Placement_Install(&door_table);
     Rando_ClearSnapshotContext();
     Rando_SetSnapshotContext(0x00D5, door_ss.settings_hash, door_share);
-    Rando_SetSnapshotSettingsContext(door_canon, /*prize_attempt=*/0);
+    Rando_SetSnapshotSettingsContext(door_canon, /*prize_attempt=*/0, 0, 0);
     Rando_SetSnapshotDoorContext(door_attempt, door_digest24, true);
 
     FILE *fd = tmpfile();
@@ -2049,7 +2127,7 @@ void RandoSnapshotTail_SelfCheck(void) {
     Placement_Install(&door_table);
     Rando_ClearSnapshotContext();
     Rando_SetSnapshotContext(0x00D7, door_ss.settings_hash, door_share);
-    Rando_SetSnapshotSettingsContext(door_canon, /*prize_attempt=*/0);
+    Rando_SetSnapshotSettingsContext(door_canon, /*prize_attempt=*/0, 0, 0);
     FILE *fmissing = tmpfile();
     if (fmissing == NULL) selfcheck_die("type-5: missing tmpfile() returned NULL");
     if (!RandoSnapshotTail_Save(fmissing)) selfcheck_die("type-5: missing Save returned false");
@@ -2071,7 +2149,7 @@ void RandoSnapshotTail_SelfCheck(void) {
     Placement_Install(&door_table);
     Rando_ClearSnapshotContext();
     Rando_SetSnapshotContext(0x00D6, door_ss.settings_hash, door_share);
-    Rando_SetSnapshotSettingsContext(door_canon, /*prize_attempt=*/0);
+    Rando_SetSnapshotSettingsContext(door_canon, /*prize_attempt=*/0, 0, 0);
     Rando_SetSnapshotDoorContext(door_attempt, door_digest24 ^ 1u, true);
     FILE *fbad = tmpfile();
     if (fbad == NULL) selfcheck_die("type-5: bad-digest tmpfile() returned NULL");
@@ -2093,7 +2171,7 @@ void RandoSnapshotTail_SelfCheck(void) {
     Placement_Install(NULL);
     Rando_ClearSnapshotContext();
     Rando_SetSnapshotContext((uint16)kGeneratorVersion, door_ss.settings_hash, door_share);
-    Rando_SetSnapshotSettingsContext(door_canon, /*prize_attempt=*/0);
+    Rando_SetSnapshotSettingsContext(door_canon, /*prize_attempt=*/0, 0, 0);
     FILE *fstaledoor = tmpfile();
     if (fstaledoor == NULL) selfcheck_die("type-5: stale-context tmpfile() returned NULL");
     uint8 bad_state[16];
@@ -2265,7 +2343,7 @@ void RandoSnapshotTail_SelfCheck(void) {
     Placement_Install(&chain_table);
     Rando_ClearSnapshotContext();
     Rando_SetSnapshotContext(0x00C7, chain_ss.settings_hash, chain_share);
-    Rando_SetSnapshotSettingsContext(chain_canon, /*prize_attempt=*/0);
+    Rando_SetSnapshotSettingsContext(chain_canon, /*prize_attempt=*/0, 0, 0);
     Rando_SetSnapshotChainsContext(chains_attempt, chains_digest24, true);
     if (!Chains_RuntimeInstallLayout(&chain_layout))
       selfcheck_die("type-7: could not install chain layout for session save");
@@ -2327,7 +2405,7 @@ void RandoSnapshotTail_SelfCheck(void) {
     Placement_Install(&chain_table);
     Rando_ClearSnapshotContext();
     Rando_SetSnapshotContext(0x00C8, chain_ss.settings_hash, chain_share);
-    Rando_SetSnapshotSettingsContext(chain_canon, /*prize_attempt=*/0);
+    Rando_SetSnapshotSettingsContext(chain_canon, /*prize_attempt=*/0, 0, 0);
     FILE *fmissing = tmpfile();
     if (fmissing == NULL) selfcheck_die("type-7: missing tmpfile() returned NULL");
     if (!RandoSnapshotTail_Save(fmissing)) selfcheck_die("type-7: missing Save returned false");
@@ -2348,7 +2426,7 @@ void RandoSnapshotTail_SelfCheck(void) {
     Placement_Install(&chain_table);
     Rando_ClearSnapshotContext();
     Rando_SetSnapshotContext(0x00C9, chain_ss.settings_hash, chain_share);
-    Rando_SetSnapshotSettingsContext(chain_canon, /*prize_attempt=*/0);
+    Rando_SetSnapshotSettingsContext(chain_canon, /*prize_attempt=*/0, 0, 0);
     Rando_SetSnapshotChainsContext(chains_attempt, chains_digest24 ^ 1u, true);
     FILE *fbad = tmpfile();
     if (fbad == NULL) selfcheck_die("type-7: bad-digest tmpfile() returned NULL");

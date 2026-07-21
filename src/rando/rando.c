@@ -36,6 +36,7 @@
 #include "rando_hints.h"  // Rando_ClearHints (Phase B Slice 5)
 #include "rando_dialogue.h"  // randomized reward-aware NPC text
 #include "shuffle_entrance.h"  // Phase C entrance shuffle (overlay + self-check)
+#include "shuffle_ow_warp.h"   // add-rando-ow-warp-shuffle (layout + self-check)
 #include "inverted_entrances.h"  // #82 static Inverted entrance/exit override
 #include "inverted_maps.h"  // InvertedHoleBlocks_Install (no-art Ganon pit shadow)
 #include "shuffle_cosmetic.h"  // Cosmetic_SetSeed (cosmetic_seed=0 -> slot seed)
@@ -4708,8 +4709,27 @@ static bool rando_instant_flute_active(void) {
 // + v1 slots (XOR 0 == the legacy base-seed derivation). DropShuffle ignores the
 // placement-table arg (shuffle_drops.c), so g_session_placement_table being empty
 // on the cold-replay path is harmless.
-static void install_active_shuffles(const RandoSettings *s, uint64 base_seed,
-                                    uint8 prize_attempt) {
+// add-rando-ow-warp-shuffle — the ACTIVE slot's regenerated warp layout,
+// consumed by the runtime hooks (flute menu/map, whirlpool partner remap).
+// Valid only while g_rando_active_ow_warp.
+static OwWarpLayout g_rando_active_ow_layout;
+static bool g_rando_active_ow_warp = false;
+
+const OwWarpLayout *Rando_ActiveOwWarpLayout(void) {
+  return g_rando_active_ow_warp ? &g_rando_active_ow_layout : NULL;
+}
+
+static void rando_clear_ow_warp_runtime(void) {
+  g_rando_active_ow_warp = false;
+  memset(&g_rando_active_ow_layout, 0, sizeof(g_rando_active_ow_layout));
+}
+
+// Returns false ONLY on a warp-layout failure that must refuse the slot
+// (fail-closed graph absence, or digest drift — a drifted layout can strand
+// a certified placement; door-gate class, not the entrance warn class).
+static bool install_active_shuffles(const RandoSettings *s, uint64 base_seed,
+                                    uint8 prize_attempt, uint8 ow_attempt,
+                                    uint32 ow_digest24) {
   RandoRng shuffle_rng;
   uint64 shuffle_seed = base_seed ^ ((uint64)prize_attempt * 0x9E3779B97F4A7C15ull);
   Rng_SeedFromU64(&shuffle_rng, shuffle_seed);
@@ -4721,6 +4741,46 @@ static void install_active_shuffles(const RandoSettings *s, uint64 base_seed,
   (void)BossShuffle_Generate(s, base_seed, g_rando_active_boss_assignment);
   Rando_SetBossAssignment(g_rando_active_boss_assignment);
   (void)EnemyShuffle_Generate(s, base_seed);
+  // add-rando-ow-warp-shuffle — regenerate + digest-gate + install the warp
+  // layout. Runs AFTER any entrance overlay install (activation order) and
+  // composes on it; Begins the overlay itself when warp runs alone.
+  rando_clear_ow_warp_runtime();
+  bool warp_on = s != NULL && (s->flute_shuffle != kFluteShuffle_Off ||
+                               s->whirlpool_shuffle != 0);
+  if (!warp_on) return true;
+  OwWarpLayout l;
+  if (!OwWarp_Compute(s, base_seed, ow_attempt, &l)) {
+    fprintf(stderr, "Rando: warp-axis slot but the OW graph tables are "
+                    "absent/empty — refusing slot (fail-closed)\n");
+    return false;
+  }
+  uint32 digest = OwWarp_Digest24(&l) & 0xFFFFFFu;
+  if (digest != (ow_digest24 & 0xFFFFFFu)) {
+    fprintf(stderr, "Rando: OW warp layout drift (regen digest %06x != saved "
+                    "%06x) — refusing slot\n",
+            (unsigned)digest, (unsigned)(ow_digest24 & 0xFFFFFFu));
+    return false;
+  }
+  OwWarp_InstallLogicEdges(&l);
+  g_rando_active_ow_layout = l;
+  g_rando_active_ow_warp = true;
+  // Activation-time layout summary (the runtime-debugging convention: the
+  // layout is static per slot, so one stderr line at install serves the
+  // F12-dump role for warp state). RACE GATE: spot identities are hidden
+  // info on race slots — print only the non-revealing identity there.
+  if (Rando_ActiveSlotHidesSpoiler()) {
+    fprintf(stderr, "Rando: OW warp layout active=%u attempt=%u digest=%06x "
+                    "(race slot — spots hidden)\n",
+            l.active, ow_attempt, (unsigned)digest);
+  } else {
+    fprintf(stderr, "Rando: OW warp layout active=%u attempt=%u digest=%06x "
+                    "flute={", l.active, ow_attempt, (unsigned)digest);
+    for (int i = 0; i < kOwWarpFluteSlots; i++)
+      fprintf(stderr, "%s%02x", i ? "," : "",
+              kRandoOwFluteCandidates[l.flute_cand[i]].screen);
+    fprintf(stderr, "}\n");
+  }
+  return true;
 }
 
 // snapshot replay restore. Called by RandoSnapshotTail_Load when a type-2
@@ -4741,7 +4801,8 @@ static void install_active_shuffles(const RandoSettings *s, uint64 base_seed,
 // does not touch.
 bool Rando_SnapshotColdReplayRestore(const RandoSettings *s,
                                      const uint8 *share_string_raw,
-                                     uint8 prize_attempt) {
+                                     uint8 prize_attempt, uint8 ow_attempt,
+                                     uint32 ow_digest24) {
   if (s == NULL || share_string_raw == NULL) return false;
   bool preserve_active_header =
       g_rando_active_header_valid &&
@@ -4770,7 +4831,14 @@ bool Rando_SnapshotColdReplayRestore(const RandoSettings *s,
   g_rando_active_world_state = s->world_state;
   uint64 seed = SlotSeedFromShareString(share_string_raw);
   g_rando_active_seed_u64 = seed;  // price/derivation seed (see declaration)
-  install_active_shuffles(&g_rando_active_settings, seed, prize_attempt);
+  if (!install_active_shuffles(&g_rando_active_settings, seed, prize_attempt,
+                               ow_attempt, ow_digest24)) {
+    // Warp layout drift/absence on a cold replay: refuse the restore — the
+    // replayed placement was certified against a layout this build cannot
+    // reproduce (door-gate class).
+    Rando_DeactivateSlot();
+    return false;
+  }
   // add-rando-random-crystals — the cold-replay restore is the THIRD
   // settings_valid=true writer (implementation-review F1): without this
   // resolve the five cached-getter consumers keep the previous slot's (or
@@ -5219,7 +5287,8 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   // slot) suppresses the type-2 TLV, so cold replay degrades to placement-only.
   Rando_SetSnapshotSettingsContext(
       src->header.settings_present ? src->settings_canonical : NULL,
-      src->header.prize_attempt);
+      src->header.prize_attempt, src->header.ow_attempt,
+      src->header.ow_digest24);
   Rando_SetSnapshotDoorContext(src->header.door_attempt,
                                src->header.door_digest24,
                                door_active);
@@ -5354,8 +5423,16 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
       // recovered (settings, seed, prize_attempt). Factored into a shared helper
       // (above) so the snapshot cold-replay restore re-derives identically — see
       // the helper comment for the FIX #6 / falling-prize rationale.
-      install_active_shuffles(&g_rando_active_settings, ss.seed_u64,
-                              src->header.prize_attempt);
+      if (!install_active_shuffles(&g_rando_active_settings, ss.seed_u64,
+                                   src->header.prize_attempt,
+                                   src->header.ow_attempt,
+                                   src->header.ow_digest24)) {
+        // Warp layout drift/absence: refuse the whole slot (the placement
+        // was certified against a layout this build cannot reproduce).
+        // Activation is void — deactivate + return is the refusal idiom.
+        Rando_DeactivateSlot();
+        return;
+      }
       // add-rando-random-crystals — resolve + cache the effective counts
       // HERE, inside the block where both the canonical deserialize AND the
       // share decode succeeded ("valid settings but no seed" cannot occur).
@@ -5612,6 +5689,13 @@ void Rando_ReinstallActiveSlotLogicOverlays(void) {
     }
     Chains_ApplyEdgeOverrides(&s_active_chains_layout);
   }
+  // add-rando-ow-warp-shuffle — replay the warp overlay edges (audit M1:
+  // this function exists because generation clears the shared stores; the
+  // active layout is process-static and needs no recompute, just
+  // re-install — composing on the entrance/chains overlay, self-Begins
+  // when warp is alone).
+  if (g_rando_active_ow_warp)
+    OwWarp_InstallLogicEdges(&g_rando_active_ow_layout);
   // Force a tracker recompute (mirrors activation): the stores round-tripped
   // through a cleared state, so don't trust any cached reachability.
   g_reachability_state_counter++;
@@ -5624,6 +5708,10 @@ void Rando_DeactivateSlot(void) {
   // cold-replay gap on warm processes; keep the invariant explicit).
   g_rando_effective_crystals_ganon = 7;
   g_rando_effective_crystals_tower = 7;
+  // add-rando-ow-warp-shuffle — drop the active warp layout (its overlay
+  // edges are cleared by the entrance teardown below, which owns the shared
+  // override stores).
+  rando_clear_ow_warp_runtime();
   // dungeon-chains owns the same overworld entrance-id asset as entrance
   // shuffle, so drop it before the generic entrance teardown clears the shared
   // logic override stores.
@@ -10152,6 +10240,7 @@ static const RandoSelfCheckEntry kRandoSelfChecks[] = {
   { kRandoSelfCheckGroup_Ui,          Hints_SelfCheck },
   { kRandoSelfCheckGroup_Ui,          RandoDialogue_SelfCheck },
   { kRandoSelfCheckGroup_Generation,  Entrance_SelfCheck },
+  { kRandoSelfCheckGroup_Generation,  OwWarp_SelfCheck },  // add-rando-ow-warp-shuffle
   { kRandoSelfCheckGroup_Generation,  InvertedEntrances_SelfCheck },
   { kRandoSelfCheckGroup_Runtime,     Rando_EntranceContaminationSelfCheck },
   { kRandoSelfCheckGroup_Runtime,     Rando_ReinstallOverlaysSelfCheck },

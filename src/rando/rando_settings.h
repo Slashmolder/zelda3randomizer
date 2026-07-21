@@ -239,6 +239,11 @@ typedef struct RandoSettings {
   // doors.
   uint8 key_rings;    // KeyRingsMode
   uint8 skeleton_key; // bool
+  // add-rando-ow-warp-shuffle — overworld warp axes (canonical [30] bits
+  // 3-5). Normalized to 0 under Inverted by apply_derived_rules (v1 scope);
+  // Open/Standard/Retro honor them.
+  uint8 flute_shuffle;      // FluteShuffle: 0 off / 1 balanced / 2 random
+  uint8 whirlpool_shuffle;  // bool
   // add-rando-shopsanity — the 27 regular shop slots (LOCTYPE_Shop, ids
   // 237-263) become ordinary open fill locations in every world state, with
   // seed-derived prices and buy-once-then-vanilla-restock runtime semantics.
@@ -282,6 +287,21 @@ enum {
   kKeyRingsAxis_Mask = 3u << 0,
   kSkeletonKeyAxis_Enabled = 1u << 2,
   kKeyRingsAxis_DefinedMask = kKeyRingsAxis_Mask | kSkeletonKeyAxis_Enabled,
+  // add-rando-ow-warp-shuffle — canonical [30] bits 3-5. Bits 6-7 stay
+  // refused-undefined (the Settings_SelfCheck probe moved to bit 6).
+  kWhirlpoolAxis_Enabled = 1u << 3,
+  kFluteShuffleAxis_Shift = 4,
+  kFluteShuffleAxis_Mask = 3u << 4,
+  kCanon30_DefinedMask = kKeyRingsAxis_DefinedMask | kWhirlpoolAxis_Enabled |
+                         kFluteShuffleAxis_Mask,
+};
+
+// add-rando-ow-warp-shuffle — flute-spot shuffle modes. Values are part of
+// the canonical encoding ([30] bits 4-5); 3 is refused-undefined.
+enum FluteShuffle {
+  kFluteShuffle_Off = 0,
+  kFluteShuffle_Balanced = 1,
+  kFluteShuffle_Random = 2,
 };
 
 // add-rando-pot-sanity — pot_shuffle tiers. Values are part of the determinism

@@ -14,6 +14,7 @@
 #include "features.h"   // enhanced_features1 / kFeatures1_RandomizerActive
 #include "zelda_rtl.h"
 #include "rando/rando.h"  // Phase B Slice 1 §38 — Rando_BumpReachabilityCounter
+#include "rando/shuffle_ow_warp.h"  // add-rando-ow-warp-shuffle runtime hooks
 #include "rando/chains_runtime.h"
 #include "rando/location_ids.h"  // LOC_Hammer_Pegs (Phase B Slice 8 §67/#79)
 #include "rando/item_ids.h"      // ITEM_PieceOfHeart
@@ -2327,6 +2328,42 @@ void FluteMenu_LoadTransport() {  // 82ec39
 }
 
 void Overworld_LoadBirdTravelPos(int k) {  // 82ec47
+  // add-rando-ow-warp-shuffle — under an active flute shuffle, slots 0-7
+  // install the per-seed candidate's arrival tableau (same field writes as
+  // the vanilla body below; the OwWarp selfcheck oracle pins the candidate
+  // columns byte-equal to the kBirdTravel_* rows for the vanilla screens).
+  // Whirlpool rows (k >= 9) never take this branch.
+  const RandoOwFluteCandidate *rc = Rando_OwWarp_FluteSpotForBirdIndex(k);
+  if (rc != NULL) {
+    num_memorized_tiles = 0;
+    BG1VOFS_copy2 = BG2VOFS_copy2 = BG1VOFS_copy = BG2VOFS_copy = rc->bg_y;
+    BG1HOFS_copy2 = BG2HOFS_copy2 = BG1HOFS_copy = BG2HOFS_copy = rc->bg_x;
+    link_y_coord = rc->link_y;
+    link_x_coord = rc->link_x;
+    overworld_unk1 = (uint16)rc->unk1;
+    overworld_unk3 = (uint16)rc->unk2;
+    overworld_unk1_neg = -overworld_unk1;
+    overworld_unk3_neg = -overworld_unk3;
+    overworld_area_index = overworld_screen_index = (uint8)rc->screen;
+    map16_load_src_off = rc->vram;
+    map16_load_var2 = (map16_load_src_off - 0x400 & 0xf80) >> 7;
+    map16_load_dst_off = (map16_load_src_off - 0x10 & 0x3e) >> 1;
+    camera_y_coord_scroll_low = rc->cam_y;
+    camera_y_coord_scroll_hi = camera_y_coord_scroll_low - 2;
+    camera_x_coord_scroll_low = rc->cam_x;
+    camera_x_coord_scroll_hi = camera_x_coord_scroll_low - 2;
+    ow_entrance_value = 0;
+    big_rock_starting_address = 0;
+    Overworld_LoadNewScreenProperties();
+    Sprite_ResetAll();
+    Sprite_ReloadAll_Overworld();
+    is_standing_in_doorway = 0;
+    // audit M2: the vanilla body below ends with this unconditional reset
+    // (select-interactive ancilla termination + run/aux/handler state);
+    // omitting it let live state carry across a shuffled-flute warp.
+    Dungeon_ResetTorchBackgroundAndPlayerInner();
+    return;
+  }
   BG1VOFS_copy2 = BG2VOFS_copy2 = BG1VOFS_copy = BG2VOFS_copy = kBirdTravel_ScrollY[k];
   BG1HOFS_copy2 = BG2HOFS_copy2 = BG1HOFS_copy = BG2HOFS_copy = kBirdTravel_ScrollX[k];
   link_y_coord = kBirdTravel_LinkYCoord[k];
@@ -2363,6 +2400,10 @@ void FluteMenu_LoadSelectedScreenPalettes() {  // 82ecdd
 
 void FindPartnerWhirlpoolExit() {  // 82ed08
   int j = FindInWordArray(kWhirlpoolAreas, overworld_screen_index, kWhirlpoolAreas_SIZE / 2);
+  // add-rando-ow-warp-shuffle — re-pair: swap the ENTERED row for the row
+  // whose (+9) tableau lands at the per-seed partner (identity when the
+  // axis is off; screen-keyed so table order cannot desync).
+  if (j >= 0) j = Rando_OwWarp_WhirlpoolBirdRow((uint8)j);
   if (j >= 0) {
     num_memorized_tiles = 0;
     Overworld_LoadBirdTravelPos(j + 9);

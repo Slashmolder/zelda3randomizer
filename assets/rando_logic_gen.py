@@ -55,6 +55,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import json
 import os
 import re
 import struct
@@ -143,9 +144,15 @@ def _region_ids_for_codegen(regions: dict[str, "RegionDef"]) -> list[str]:
     renumber existing entrance/door graph regions.
     """
     base = sorted(rid for rid in regions.keys()
-                  if rid not in _CHAIN_BOSS_ROOM_REGION_ID_SET)
+                  if rid not in _CHAIN_BOSS_ROOM_REGION_ID_SET and
+                  rid not in _OW_REGION_ID_SET)
     generated = [rid for rid in _CHAIN_BOSS_ROOM_REGION_IDS if rid in regions]
-    return base + generated
+    # add-rando-ow-warp-shuffle: components + hub append LAST (after the
+    # chain suffix) in load order, so every pre-existing region id is stable
+    # (guarded by region_ids.lock.json) and the warp group is a contiguous
+    # trailing suffix (kRandoOwRegionsFirst; inertness fast-path).
+    ow = [rid for rid in _OW_REGION_IDS if rid in regions]
+    return base + generated + ow
 
 
 # ---------------------------------------------------------------------------
@@ -1091,6 +1098,274 @@ def load_terrain(path: Path, logic_regions: dict[str, RegionDef] | None = None):
         rows.append((int(t["screen"]), int(t["pos"]), int(t["id"]),
                      _world_state_mask(list(wsf))))
     return out, rows
+
+
+# --- add-rando-ow-warp-shuffle — OW screen-component substrate ---------------
+# Populated by load_ow_graph(); consumed by _region_ids_for_codegen so the
+# warp regions are a LAST id-suffix group (the chain-boss precedent: appending
+# after the alphabetical base + chain suffix keeps every existing region id
+# stable, which the region_ids.lock.json guard enforces).
+_OW_REGION_IDS: list[str] = []
+_OW_REGION_ID_SET: set[str] = set()
+
+# The 11 hand-written overworld surface zones (quotient domain). Membership is
+# validated against the loaded graph at codegen time.
+OW_SURFACE_ZONES = frozenset({
+    "LightWorld_NorthWest", "LightWorld_NorthEast", "LightWorld_South",
+    "LightWorld_DeathMountain_West", "LightWorld_DeathMountain_East",
+    "DarkWorld_NorthWest", "DarkWorld_NorthEast", "DarkWorld_South",
+    "DarkWorld_Mire", "DarkWorld_DeathMountain_West",
+    "DarkWorld_DeathMountain_East",
+})
+OW_LW_SURFACE_ZONES = frozenset(z for z in OW_SURFACE_ZONES
+                                if z.startswith("LightWorld"))
+OW_FLUTE_HUB_REGION = "OW_FluteNet"
+
+
+def _ow_region_id(component_name: str) -> str:
+    """Component region id: prefixed + sanitized (upstream names carry spaces
+    and parens; region ids elsewhere are identifier-ish)."""
+    out = []
+    for ch in component_name:
+        out.append(ch if ch.isalnum() else "_")
+    ident = "".join(out)
+    while "__" in ident:
+        ident = ident.replace("__", "_")
+    return "OWC_" + ident.strip("_")
+
+
+def _strip_canfly_conjunct(pred: str, ctx: str) -> str:
+    """Remove the `CanFly(world)` conjunct from a teleporter zone-edge
+    predicate (design D1: the zone edge conflates reaching the portal with
+    operating it; verbatim reuse would compile false under an active flute
+    shuffle). Hard-fails on shapes it cannot safely elide."""
+    p = pred.strip()
+    if "CanFly" not in p:
+        return p
+    for pat in (" AND CanFly(world)", "CanFly(world) AND "):
+        if pat in p:
+            out = p.replace(pat, "", 1).strip()
+            if not out or "CanFly" in out:
+                sys.exit(f"ow-graph: cannot safely strip CanFly from "
+                         f"predicate {pred!r} ({ctx})")
+            return out
+    sys.exit(f"ow-graph: teleporter predicate {pred!r} ({ctx}) is not a "
+             f"conjunction CanFly can be elided from")
+
+
+def load_ow_graph(path: Path,
+                  logic_regions: dict[str, "RegionDef"],
+                  logic_edges: list["EdgeDef"]):
+    """Load assets/rando/ow_graph.gen.yaml (gitignored, from
+    gen_ow_graph_tables.py — add-rando-ow-warp-shuffle).
+
+    Returns (ow_regions, ow_edges, meta). ow_regions/ow_edges are APPENDED by
+    the caller after everything else so components form the trailing region-id
+    suffix and warp edges the trailing kRandoEdges suffix (the reachability
+    walker bounds its edge scan at kRandoNonWarpEdgesCount when no warp axis
+    is active). Absent file: WARNING + empty tables (the terrain precedent —
+    assetless builds emit no warp graph and generation/activation fail closed
+    via kRandoOwGraphPresent/digest guards)."""
+    meta = {"present": 0, "digest": 0, "flute": [], "whirlpools": [],
+            "vanilla_flute": [], "hub_region": None, "sectors": []}
+    if not path.exists():
+        print(f"WARNING: {path} not found - emitting NO ow-warp graph. "
+              f"Run assets/scripts/gen_ow_graph_tables.py (needs the "
+              f"ALttPDoorRandomizer sibling checkout) to enable "
+              f"flute/whirlpool shuffle in this build.", file=sys.stderr)
+        return {}, [], meta
+    doc = load_yaml(path)
+    comps = doc.get("components", []) or []
+    if not comps:
+        sys.exit(f"{path}: components list empty")
+    digest = doc.get("identity_digest")
+    if not isinstance(digest, int):
+        sys.exit(f"{path}: identity_digest missing")
+
+    by_name = {}
+    ow_regions: dict[str, RegionDef] = {}
+    for c in comps:
+        name, zone = c["name"], c["zone"]
+        if zone not in logic_regions:
+            sys.exit(f"{path}: component {name!r} zone {zone!r} is not a "
+                     f"logic region")
+        if zone not in OW_SURFACE_ZONES:
+            sys.exit(f"{path}: component {name!r} zone {zone!r} not an OW "
+                     f"surface zone")
+        rid = _ow_region_id(name)
+        if rid in by_name.values() or rid in logic_regions:
+            sys.exit(f"{path}: region id collision for {name!r} -> {rid}")
+        by_name[name] = rid
+        ow_regions[rid] = RegionDef(
+            id=rid, name=f"OW: {name}", parent=zone,
+            source="ow_graph.gen.yaml")
+
+    hub = RegionDef(id=OW_FLUTE_HUB_REGION, name="OW flute network",
+                    source="ow_graph.gen.yaml")
+    ow_regions[OW_FLUTE_HUB_REGION] = hub
+
+    ow_edges: list[EdgeDef] = []
+
+    def edge(f, t, pred, one_way=True, why=""):
+        ow_edges.append(EdgeDef(from_=f, to=t, predicate=pred,
+                                one_way=one_way,
+                                source=f"ow_graph:{why}"))
+
+    # comp->zone (unconditional) for every non-stub component.
+    stubs = {c["name"] for c in comps if c.get("stub")}
+    for c in comps:
+        if c["name"] not in stubs:
+            edge(by_name[c["name"]], c["zone"], "TRUE()", why="egress")
+
+    # zone->whirlpool-water entry (Flippers).
+    wps = doc.get("whirlpools", []) or []
+    wp_names = set()
+    for wp in wps:
+        for key in ("component", "partner_component"):
+            n = wp[key]
+            if n in wp_names:
+                continue
+            wp_names.add(n)
+            if n in stubs:
+                sys.exit(f"{path}: whirlpool water {n!r} is a stub")
+            zone = next(c["zone"] for c in comps if c["name"] == n)
+            edge(zone, by_name[n], "HAS_ITEM(Flippers)", why="whirlpool-entry")
+
+    # directed drops.
+    for src, dst in (doc.get("drops", []) or []):
+        edge(by_name[src], by_name[dst], "TRUE()", why="drop")
+
+    # portal edges (flute-candidate hosts; CanFly-stripped predicate reuse).
+    _portal_pairs = []
+    flute = doc.get("flute_candidates", []) or []
+    cand_comps = {e["component"] for e in flute}
+    ow_zone_edges = [e for e in logic_edges
+                     if e.from_ in OW_SURFACE_ZONES and
+                     e.to in OW_SURFACE_ZONES]
+    for t in (doc.get("teleporters", []) or []):
+        if t["host"] not in cand_comps:
+            continue
+        tz, hz = t["target_zone"], t["host_zone"]
+        # Predicate reuse is TARGET-keyed: prefer the edge from the host's
+        # own zone, then the flute-carried edge (the Desert/Mire class),
+        # then a single unambiguous edge into the target (the host's screen
+        # may be zone-bound differently than the edge's from-zone — the
+        # terrain screen map and the hand-written graph partition DM screens
+        # differently). Multiple ambiguous candidates = hard error.
+        cands = [e for e in ow_zone_edges if e.to == tz]
+        pick = next((e for e in cands if e.from_ == hz), None) or \
+            next((e for e in cands if "CanFly" in e.predicate), None) or \
+            (cands[0] if len(cands) == 1 else None)
+        if pick is None:
+            sys.exit(f"{path}: no unambiguous zone edge into {tz!r} to "
+                     f"derive the portal predicate for teleporter "
+                     f"{t['name']!r} (candidates: "
+                     f"{[(e.from_, e.predicate) for e in cands]})")
+        pred = _strip_canfly_conjunct(pick.predicate, t["name"])
+        edge(by_name[t["host"]], tz, pred, why=f"portal:{t['name']}")
+        _portal_pairs.append((ow_edges[-1], hz))
+
+    # hub feeders: LW surface zones -> hub, activation-only macro (never
+    # CanFly — its neutralization would dead-end the hub; round-2 H1).
+    for z in sorted(OW_LW_SURFACE_ZONES):
+        edge(z, OW_FLUTE_HUB_REGION, "CanUseFluteTravel(world)",
+             why="flute-hub")
+
+    # NOTE: hub->spot edges are PER-SEED (installed through the added-edge
+    # overlay by shuffle_ow_warp.c), never static.
+
+    _portal_zone_pairs = sorted({(zone_of_host, e.to)
+                                 for e, zone_of_host in _portal_pairs})
+    _drop_zone_pairs = sorted({
+        (next(c["zone"] for c in comps if c["name"] == s),
+         next(c["zone"] for c in comps if c["name"] == d))
+        for s, d in (doc.get("drops", []) or [])
+        if next(c["zone"] for c in comps if c["name"] == s) !=
+        next(c["zone"] for c in comps if c["name"] == d)})
+    meta.update({
+        "portal_zone_pairs": _portal_zone_pairs,
+        "drop_zone_pairs": _drop_zone_pairs,
+        "present": 1, "digest": digest & 0xFFFFFFFF,
+        "flute": [{**e, "region_id": by_name[e["component"]]} for e in flute],
+        "whirlpools": [{**wp,
+                        "region_id": by_name[wp["component"]],
+                        "partner_region_id": by_name[wp["partner_component"]]}
+                       for wp in wps],
+        "vanilla_flute": doc.get("vanilla_flute_screens", []) or [],
+        "hub_region": OW_FLUTE_HUB_REGION,
+        "sectors": doc.get("sectors", []) or [],
+        "adjacency_cross_zone": doc.get("adjacency_cross_zone", []) or [],
+        "comp_zone": {c["name"]: c["zone"] for c in comps},
+    })
+    global _OW_REGION_IDS, _OW_REGION_ID_SET
+    _OW_REGION_IDS = list(ow_regions.keys())
+    _OW_REGION_ID_SET = set(_OW_REGION_IDS)
+    return ow_regions, ow_edges, meta
+
+
+def ow_quotient_check(meta, logic_edges, locations, allowlist_path: Path,
+                      all_errors: list):
+    """Design D1's quotient cross-check: collapse the component graph by zone
+    and reconcile against the hand-written OW zone edges, both directions,
+    through a committed carrier-validated allowlist."""
+    if not meta["present"]:
+        return
+    zone_of = meta["comp_zone"]
+    derived = set()
+    for a, b in meta["adjacency_cross_zone"]:
+        derived.add((zone_of[a], zone_of[b]))
+        derived.add((zone_of[b], zone_of[a]))
+    # Portal and drop edges are part of the derived graph too — a hand
+    # zone edge realized by a teleporter or a ledge drop is witnessed.
+    for pair in meta.get("portal_zone_pairs", []):
+        derived.add(tuple(pair))
+    for pair in meta.get("drop_zone_pairs", []):
+        derived.add(tuple(pair))
+    allow = {}
+    if allowlist_path.exists():
+        for row in (load_yaml(allowlist_path).get("allow", []) or []):
+            allow[(row["from"], row["to"])] = row
+            carrier = row.get("carrier", "")
+            ok = False
+            if carrier.startswith("predicate:"):
+                token = carrier.split(":", 1)[1]
+                ok = any(token in e.predicate for e in logic_edges
+                         if {e.from_, e.to} == {row["from"], row["to"]} or
+                         token in e.predicate and
+                         (e.from_ in (row["from"], row["to"]) or
+                          e.to in (row["from"], row["to"])))
+            elif carrier.startswith("location:"):
+                ok = carrier.split(":", 1)[1] in locations
+            elif carrier.startswith("mechanism:"):
+                ok = carrier.split(":", 1)[1] in ("mirror", "flute",
+                                                  "whirlpool", "portal")
+            elif carrier.startswith("conservative:"):
+                # Reviewed deliberate omission: upstream witnesses the
+                # adjacency but the fork graph intentionally lacks the edge
+                # (item-gated link kept predicate-side, or connectivity
+                # redundant by hub construction). Requires a non-empty
+                # reviewed note; the UNDER-grant direction is placement-safe.
+                ok = len(carrier.split(":", 1)[1].strip()) > 0
+            if not ok:
+                all_errors.append(
+                    f"ow_quotient_allowlist: entry {row['from']}->{row['to']}"
+                    f" carrier {carrier!r} does not resolve")
+    hand = set()
+    for e in logic_edges:
+        if e.from_ in OW_SURFACE_ZONES and e.to in OW_SURFACE_ZONES:
+            hand.add((e.from_, e.to))
+            if not e.one_way:
+                hand.add((e.to, e.from_))
+    for pair in sorted(derived):
+        if pair not in hand and pair not in allow:
+            all_errors.append(
+                f"ow-quotient: derived zone adjacency {pair[0]}->{pair[1]} "
+                f"has no hand-written zone edge and no allowlist entry")
+    for pair in sorted(hand):
+        if pair not in derived and pair not in allow:
+            all_errors.append(
+                f"ow-quotient: hand-written zone edge {pair[0]}->{pair[1]} "
+                f"is unwitnessed by component adjacency and not allowlisted")
 
 
 def load_bonk(path: Path, logic_regions: dict[str, RegionDef] | None = None):
@@ -2642,6 +2917,9 @@ def _emit_operands(op_name: str, args, out: bytearray, items, regions):
     elif op_name == "TOWER_CRYSTALS_MET":
         if args:
             raise ParseError("OP_TOWER_CRYSTALS_MET takes no operands")
+    elif op_name == "OW_FLUTE_VANILLA":
+        if args:
+            raise ParseError("OP_OW_FLUTE_VANILLA takes no operands")
     elif op_name == "INSTANT_FLUTE":
         if args:
             raise ParseError("OP_INSTANT_FLUTE takes no operands")
@@ -3848,6 +4126,9 @@ def emit_logic_data(
     door_enemy_drop_bridge_digest: int = 0,
     door_enemy_check_rows: list[dict] | None = None,
     door_enemy_check_bridge_digest: int = 0,
+    ow_meta: dict | None = None,
+    ow_non_warp_edges: int = 0,
+    ow_regions_first: int = 0,
     souls_baked: bool = False,
     soul_pin_rooms: list[int] | None = None,
 ):
@@ -4241,6 +4522,94 @@ def emit_logic_data(
     else:
         out.append("const RandoRegionDef kRandoRegions[1] = { {0, 0xFFFF, 0xFF, 0} };  // placeholder")
     out.append(f"const uint32 kRandoRegionsCount = {len(region_list)};")
+    # add-rando-ow-warp-shuffle — substrate consts + runtime tables.
+    # kRandoOwRegionsFirst: first warp-region index (contiguous trailing
+    # suffix, asserted in main()); kRandoNonWarpEdgesCount: the reachability
+    # edge-scan bound when no warp axis is active. Present/digest gate
+    # generation + activation fail-closed (empty-graph builds refuse warp
+    # seeds; drifted graphs refuse certified slots).
+    _ow = ow_meta or {"present": 0, "digest": 0, "flute": [],
+                      "whirlpools": [], "vanilla_flute": [],
+                      "hub_region": None}
+    out.append(f"const uint32 kRandoOwRegionsFirst = {ow_regions_first};")
+    out.append(f"const uint32 kRandoNonWarpEdgesCount = {ow_non_warp_edges};")
+    out.append(f"const uint8 kRandoOwGraphPresent = {_ow['present']};")
+    out.append(f"const uint32 kRandoOwGraphDigest = 0x{_ow['digest']:08x}u;")
+    _hub = region_index.get(_ow["hub_region"], 0xFFFF) \
+        if _ow.get("hub_region") else 0xFFFF
+    out.append(f"const uint16 kRandoOwFluteHubRegion = 0x{_hub:04x};")
+    _fl = _ow["flute"]
+    if _fl:
+        _scr_idx = {e["screen"]: i for i, e in enumerate(_fl)}
+        out.append(f"const RandoOwFluteCandidate kRandoOwFluteCandidates[{len(_fl)}] = {{")
+        for e in _fl:
+            ridx = region_index[e["region_id"]]
+            out.append(
+                "  { 0x%02x, 0x%04x, %d, %d, 0x%04x, 0x%04x, 0x%04x, 0x%04x, "
+                "0x%04x, 0x%04x, 0x%04x, 0x%04x, 0x%04x, 0x%04x, 0x%04x, "
+                "0x%04x },  // %s" % (
+                    e["screen"], ridx, 1 if e["forced"] else 0,
+                    e["slot"], e["vram"], e["bg_y"], e["bg_x"], e["link_y"],
+                    e["link_x"], e["cam_y"], e["cam_x"], e["unk1"], e["unk2"],
+                    e["icon_y"], e["icon_x"], e["sector"], e["component"]))
+        out.append("};")
+        out.append(f"const uint32 kRandoOwFluteCandidatesCount = {len(_fl)};")
+        # Balanced-mode pairwise conflict bitmask (upstream getIgnored port):
+        # row i bit j set = candidates i and j may not both host spots.
+        _words = (len(_fl) + 31) // 32
+        out.append(f"const uint32 kRandoOwFluteConflicts[{len(_fl)}][{_words}] = {{")
+        for e in _fl:
+            bits = [0] * _words
+            for cs in e.get("conflicts", []):
+                j = _scr_idx.get(cs)
+                if j is None:
+                    sys.exit(f"ow-graph: conflict screen 0x{cs:02x} of "
+                             f"candidate 0x{e['screen']:02x} is not a "
+                             f"candidate")
+                bits[j >> 5] |= (1 << (j & 31))
+            out.append("  { %s },  // 0x%02x" % (
+                ", ".join(f"0x{b:08x}u" for b in bits), e["screen"]))
+        out.append("};")
+        out.append(f"const uint32 kRandoOwFluteConflictWords = {_words};")
+    else:
+        out.append("const RandoOwFluteCandidate kRandoOwFluteCandidates[1] = "
+                   "{ {0,0xFFFF,0,0,0,0,0,0,0,0,0,0,0,0,0,0} };  // absent")
+        out.append("const uint32 kRandoOwFluteCandidatesCount = 0;")
+        out.append("const uint32 kRandoOwFluteConflicts[1][2] = { {0, 0} };  // absent")
+        out.append("const uint32 kRandoOwFluteConflictWords = 2;")
+    _vf = _ow["vanilla_flute"]
+    if _vf:
+        out.append("const uint8 kRandoOwVanillaFluteScreens[8] = { %s };" %
+                   ", ".join(f"0x{s:02x}" for s in _vf))
+    else:
+        out.append("const uint8 kRandoOwVanillaFluteScreens[8] = {0};  // absent")
+    _wp = _ow["whirlpools"]
+    if _wp:
+        # One row per whirlpool SIDE (2 per pair): the runtime keys landings
+        # by individual whirlpool (kWhirlpoolAreas identity), so both sides
+        # need rows — a pairs-only table left the B sides unindexable (the
+        # OwWarp selfcheck caught exactly that).
+        _sides = []
+        for w0 in _wp:
+            _sides.append((w0["screen"], w0["partner_screen"],
+                           region_index[w0["region_id"]],
+                           region_index[w0["partner_region_id"]],
+                           w0["name"], w0["partner_name"]))
+            _sides.append((w0["partner_screen"], w0["screen"],
+                           region_index[w0["partner_region_id"]],
+                           region_index[w0["region_id"]],
+                           w0["partner_name"], w0["name"]))
+        _sides.sort()
+        out.append(f"const RandoOwWhirlpool kRandoOwWhirlpools[{len(_sides)}] = {{")
+        for s0, ps, r0, pr, n0, pn in _sides:
+            out.append("  { 0x%02x, 0x%02x, 0x%04x, 0x%04x },  // %s -> %s" % (
+                s0, ps, r0, pr, n0, pn))
+        out.append("};")
+        out.append(f"const uint32 kRandoOwWhirlpoolsCount = {len(_sides)};")
+    else:
+        out.append("const RandoOwWhirlpool kRandoOwWhirlpools[1] = "
+                   "{ {0,0,0xFFFF,0xFFFF} };  // absent")
+        out.append("const uint32 kRandoOwWhirlpoolsCount = 0;")
     out.append("")
     # EdgeDef table — typedef lives in rando_logic.h.
     out.append("// Edge table — one row per logic.yaml `edges:` entry.")
@@ -4517,6 +4886,10 @@ def _dungeon_id_or_ff(name) -> int:
 def main(argv=None):
     p = argparse.ArgumentParser(description="Generate rando C data and headers")
     p.add_argument("--strict", action="store_true", help="Fail on any well-formedness warning")
+    p.add_argument("--update-region-lock", action="store_true",
+                   help="Rewrite assets/rando/region_ids.lock.json from the "
+                        "current region set (add-rando-ow-warp-shuffle; only "
+                        "after an INTENDED region-set change)")
     p.add_argument("--out-headers", default=str(RANDO_SRC), help="Destination for emitted headers (default: src/rando/)")
     p.add_argument("--out-data", default=str(RANDO_SRC), help="Destination for emitted logic_data.c (default: src/rando/)")
     p.add_argument("--logic", default=None, help="Path to logic.yaml (optional)")
@@ -4611,6 +4984,70 @@ def main(argv=None):
     locations.update(bonk_locs)
     logic_loc_preds.update(bonk_locs)
 
+    # add-rando-ow-warp-shuffle — OW screen-component substrate. Regions
+    # merge LAST (load_ow_graph populated _OW_REGION_IDS, so
+    # _region_ids_for_codegen appends them after the chain suffix — every
+    # pre-existing id stays put, guarded by region_ids.lock.json below), and
+    # the warp edges are appended at the TAIL of logic_edges so they form the
+    # kRandoEdges suffix bounded by kRandoNonWarpEdgesCount when no warp axis
+    # is active. Adds NO locations.
+    ow_non_warp_edge_count = len(logic_edges)
+    ow_regions, ow_edges, ow_meta = load_ow_graph(
+        Path("assets/rando/ow_graph.gen.yaml"), logic_regions, logic_edges)
+    for _rid, _r in ow_regions.items():
+        if _rid in logic_regions:
+            sys.exit(f"ow-graph: region id {_rid!r} collides with an "
+                     f"existing logic region")
+        logic_regions[_rid] = _r
+    logic_edges.extend(ow_edges)
+    # Quotient cross-check runs below, once all_errors exists (its findings
+    # ride the standard soft-error channel; --strict fails on any).
+    ow_pre_warp_edges = logic_edges[:ow_non_warp_edge_count]
+
+    # Region-id lock: the committed snapshot of every NON-warp region's
+    # name->id binding. Drift = renumbering = digest break; regenerate with
+    # --update-region-lock after an INTENDED region-set change.
+    _region_lock_path = Path("assets/rando/region_ids.lock.json")
+    _all_rids = _region_ids_for_codegen(logic_regions)
+    _non_warp_map = {rid: i for i, rid in enumerate(_all_rids)
+                     if rid not in _OW_REGION_ID_SET}
+    if "--update-region-lock" in sys.argv:
+        with open(_region_lock_path, "w", encoding="utf-8", newline="\n") as f:
+            json.dump(_non_warp_map, f, indent=1, sort_keys=True)
+            f.write("\n")
+        print(f"region-id lock updated: {_region_lock_path}")
+    elif _region_lock_path.exists():
+        with open(_region_lock_path, "r", encoding="utf-8") as f:
+            _locked = json.load(f)
+        if _locked != _non_warp_map:
+            _drift = sorted(set(_locked.items()) ^ set(_non_warp_map.items()))
+            sys.exit(f"region_ids.lock.json drift ({len(_drift)} entries, "
+                     f"e.g. {_drift[:4]}). If the region-set change is "
+                     f"intended, rerun with --update-region-lock and review "
+                     f"the diff.")
+    else:
+        sys.exit(f"{_region_lock_path} missing — run with "
+                 f"--update-region-lock once to create it.")
+
+    # Region budget: the reachability walker's structures are sized by
+    # kReachabilityMaxRegions (rando_logic.c) = 512 after this change;
+    # regions at or above the cap are silently never walked, so the budget
+    # is a hard codegen error, not a warning.
+    # Keep in sync with rando_logic.h. The budget is cap - 1: the TOP id is
+    # the reserved entrance cross-void sink (kCrossVoidRegion) and may never
+    # be a real region.
+    _REACHABILITY_MAX_REGIONS = 512 - 1
+    if len(_all_rids) > _REACHABILITY_MAX_REGIONS:
+        sys.exit(f"region budget exceeded: {len(_all_rids)} regions > "
+                 f"kReachabilityMaxRegions ({_REACHABILITY_MAX_REGIONS}); "
+                 f"non-warp {len(_non_warp_map)}, warp "
+                 f"{len(_OW_REGION_IDS)}")
+    # Warp regions must be the contiguous trailing suffix (inertness).
+    _ow_first = len(_all_rids) - len(_OW_REGION_IDS)
+    if _all_rids[_ow_first:] != _OW_REGION_IDS:
+        sys.exit("ow-graph: warp regions are not the trailing region-id "
+                 "suffix — _region_ids_for_codegen ordering regressed")
+
     # Registry-wide duplicate-id hard-fail. Every generated family allocates
     # ids from its own base block, and a block overlap silently corrupts every
     # id-keyed consumer (reachability bitsets, placement digests, dispatch
@@ -4688,6 +5125,12 @@ def main(argv=None):
 
     # ----- Well-formedness checks (task 3.10) -----
     all_errors = []
+
+    # add-rando-ow-warp-shuffle — quotient cross-check (design D1): findings
+    # join the soft-error channel so --strict fails on any unreconciled pair.
+    ow_quotient_check(ow_meta, ow_pre_warp_edges, locations,
+                      Path("assets/rando/ow_quotient_allowlist.yaml"),
+                      all_errors)
 
     ids_to_names: dict[int, list[str]] = {}
     for loc in locations.values():
@@ -5098,6 +5541,8 @@ def main(argv=None):
     emit_item_ids(items, out_headers / "item_ids.h")
     emit_logic_data(locations, logic_regions, logic_edges, location_predicates, edge_predicates,
                     out_data / "logic_data.c", items=items, logic_loc_preds=logic_loc_preds,
+                    ow_meta=ow_meta, ow_non_warp_edges=ow_non_warp_edge_count,
+                    ow_regions_first=_ow_first,
                     compiled_overrides=compiled_overrides,
                     compiled_world_state_edges=compiled_world_state_edges,
                     trick_status_rows=trick_status_rows,

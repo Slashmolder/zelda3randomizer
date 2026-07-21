@@ -114,7 +114,8 @@ const uint8 *Rando_GetSnapshotShareString(void);   // [32]
 // cold replay degrades to placement-only. Independent of the type-1 context above
 // — Rando_ClearSnapshotContext clears both.
 void Rando_SetSnapshotSettingsContext(const uint8 *settings_canonical_or_null,
-                                      uint8 prize_attempt);
+                                      uint8 prize_attempt, uint8 ow_attempt,
+                                      uint32 ow_digest24);
 
 // Optional door-shuffle layout identity for snapshot replay.
 void Rando_SetSnapshotDoorContext(uint8 door_attempt, uint32 door_digest24,

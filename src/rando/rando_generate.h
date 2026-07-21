@@ -76,6 +76,11 @@ void Rando_SpoilerSetEntranceFields(struct RandoSpoiler *spoiler,
 // phase (zero when door shuffle was off). Persisted at sidecar @76-79 so
 // activation can regenerate + drift-check.
 void Rando_GetDoorGeneration(uint8 *attempt_out, uint32 *digest24_out);
+// add-rando-ow-warp-shuffle — accepted warp attempt + layout digest24 (0/0
+// when no warp axis was active), consumed at slot assembly (door pattern).
+void Rando_GetOwWarpGeneration(uint8 *attempt_out, uint32 *digest_out);
+typedef struct OwWarpLayout OwWarpLayout;
+const OwWarpLayout *Rando_GetOwWarpGenerationLayout(void);
 
 // Clears every per-generation logic overlay Rando_PlaceWithEntrances may have
 // left installed (entrance region/edge overrides + the door logic layout).

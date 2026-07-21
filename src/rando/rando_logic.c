@@ -272,6 +272,7 @@ static void skip_pred(Cursor *c) {
   switch (op) {
     // no operands
     case OP_INSTANT_FLUTE:
+    case OP_OW_FLUTE_VANILLA:
     case OP_NPC_SOULS_ACTIVE:
     case OP_TOWER_CRYSTALS_MET:
     case OP_POT_KEYS_ON:
@@ -456,6 +457,7 @@ static bool predicate_reachability_monotone(Cursor *c, bool negated) {
       // settings-constant negation-immune group below.
       return !c->error && !negated;
     case OP_INSTANT_FLUTE:
+    case OP_OW_FLUTE_VANILLA:
     case OP_NPC_SOULS_ACTIVE:
     case OP_POT_KEYS_ON:
     case OP_POT_KEYS_WILD:
@@ -565,6 +567,16 @@ static bool eval_souls_tier(Cursor *c, const PredicateContext *ctx) {
 static bool eval_instant_flute(Cursor *c, const PredicateContext *ctx) {
   (void)c;
   return ctx->settings != NULL && ctx->settings->instant_flute != 0;
+}
+
+// add-rando-ow-warp-shuffle — the CanFly neutralization conjunct: true iff
+// flute spots are VANILLA (flute_shuffle off). NULL-settings contexts are
+// vanilla by definition. Reads the normalized axis (apply_derived_rules
+// zeroes it under Inverted), so Inverted's CanFly uses stay intact.
+static bool eval_ow_flute_vanilla(Cursor *c, const PredicateContext *ctx) {
+  (void)c;
+  return ctx->settings == NULL ||
+         ctx->settings->flute_shuffle == kFluteShuffle_Off;
 }
 
 // add-npc-souls — the npc_souls toggle (no operands; no derived rules).
@@ -722,6 +734,7 @@ static bool eval(Cursor *c, const PredicateContext *ctx) {
     case OP_DOORS_ACTIVE:           return eval_doors_active(c, ctx);
     case OP_DOORS_LOC_REACHABLE:    return eval_doors_loc_reachable(c, ctx);
     case OP_INSTANT_FLUTE:          return eval_instant_flute(c, ctx);
+    case OP_OW_FLUTE_VANILLA:       return eval_ow_flute_vanilla(c, ctx);
     case OP_POT_KEYS_ON:            return eval_pot_keys_on(c, ctx);
     case OP_POT_KEYS_WILD:          return eval_pot_keys_wild(c, ctx);
     case OP_POT_KEYS_DUNGEON:       return eval_pot_keys_dungeon(c, ctx);
@@ -873,7 +886,12 @@ static bool g_entrance_edge_active = false;
 // Stage 3 (cross-category): per-seed ADDED edges (overworld region → dungeon
 // entry) for dungeons that land behind cave doors. Walked alongside kRandoEdges
 // when g_entrance_edge_active. pred_len 0 = unconditional (cave-door access).
-#define kEntranceAddedEdgeMax 64
+// add-rando-ow-warp-shuffle raised 64 -> 128: decoupled entrance mode alone
+// adds up to kEntranceCaveInteriorCount (40) exit edges, warp shuffle adds
+// ~20, and overflow DROPS SILENTLY below — 60 left <= 4 slots of headroom
+// for cross-mode edges and any future consumer. The OwWarp selfcheck
+// asserts the combined post-injection count stays in range.
+#define kEntranceAddedEdgeMax 128
 static struct {
   uint16 from_region, to_region;
   uint32 pred_off;
@@ -1458,7 +1476,9 @@ uint8 Rando_DoorKeySourceDungeon(uint16 loc_id, uint16 item_id) {
 // completes in microseconds.
 // ---------------------------------------------------------------------------
 
-#define kReachabilityMaxRegions 256
+// kReachabilityMaxRegions moved to rando_logic.h (add-rando-ow-warp-shuffle):
+// the region budget is now a cross-file contract — shuffle_entrance.c derives
+// its cross-void sink from it, and the codegen budget assert mirrors it.
 // Sized by the module-wide location ceiling (rando_logic.h) so the location
 // bitset always spans the full registry. A registry past capacity is caught by
 // the LOC__COUNT <= kRandoLocationCapacity name-tie in rando.c.
@@ -1770,7 +1790,16 @@ static const RandoReachability *logic_compute_reachability_internal(
     // Under Inverted both tables are walked, BUT a base edge shadowed by an
     // inverted edge for the same (from,to) is skipped (L7) so the Inverted graph
     // REPLACES — not unions with — the base graph for those pairs.
-    for (uint32 e = 0; e < kRandoEdgesCount; e++) {
+    // add-rando-ow-warp-shuffle — the static warp edges are the trailing
+    // kRandoEdges suffix; when no warp axis is active the scan bounds at
+    // kRandoNonWarpEdgesCount so the substrate is free for non-warp seeds
+    // (the terrain inert-suffix pattern, edge-side). NULL settings = vanilla.
+    uint32 edge_scan_n = (ctx.settings != NULL &&
+                          (ctx.settings->flute_shuffle != kFluteShuffle_Off ||
+                           ctx.settings->whirlpool_shuffle))
+                             ? kRandoEdgesCount
+                             : kRandoNonWarpEdgesCount;
+    for (uint32 e = 0; e < edge_scan_n; e++) {
       const RandoEdgeDef *edge = &kRandoEdges[e];
       if (edge->from_region == 0xFFFF || edge->to_region == 0xFFFF) continue;
       if (inverted && base_edge_inverted_shadowed(edge->from_region, edge->to_region))
@@ -2581,6 +2610,38 @@ void Logic_SelfCheck(void) {
     LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &off) == false,
                "OP_INSTANT_FLUTE should be false when instant_flute=0");
   }
+  // add-rando-ow-warp-shuffle — OP_OW_FLUTE_VANILLA: the CanFly
+  // neutralization conjunct. True at defaults (flute vanilla), false under
+  // an active flute shuffle.
+  {
+    uint8 bc[] = { OP_OW_FLUTE_VANILLA };
+    LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &settings) == true,
+               "OP_OW_FLUTE_VANILLA should be true under default settings");
+    RandoSettings fs = settings;
+    fs.flute_shuffle = kFluteShuffle_Random;
+    LSC_ASSERT(Predicate_Evaluate(bc, sizeof(bc), &counts, &fs) == false,
+               "OP_OW_FLUTE_VANILLA should be false under flute_shuffle");
+  }
+  // add-rando-ow-warp-shuffle — substrate invariants: the region budget
+  // (regions at/above kReachabilityMaxRegions are silently never walked),
+  // the warp suffix bounds, and present/absent coherence.
+  LSC_ASSERT(kRandoRegionsCount < kReachabilityMaxRegions,
+             "kRandoRegionsCount must stay BELOW kReachabilityMaxRegions "
+             "(the top id is the reserved entrance cross-void sink)");
+  LSC_ASSERT(kRandoOwRegionsFirst <= kRandoRegionsCount,
+             "kRandoOwRegionsFirst must be within the region table");
+  LSC_ASSERT(kRandoNonWarpEdgesCount <= kRandoEdgesCount,
+             "kRandoNonWarpEdgesCount must be within the edge table");
+  LSC_ASSERT(kRandoOwGraphPresent
+                 ? (kRandoOwRegionsFirst < kRandoRegionsCount &&
+                    kRandoNonWarpEdgesCount < kRandoEdgesCount &&
+                    kRandoOwFluteCandidatesCount > 0 &&
+                    kRandoOwWhirlpoolsCount > 0 &&
+                    kRandoOwFluteHubRegion < kRandoRegionsCount)
+                 : (kRandoOwRegionsFirst == kRandoRegionsCount &&
+                    kRandoNonWarpEdgesCount == kRandoEdgesCount &&
+                    kRandoOwFluteCandidatesCount == 0),
+             "OW graph present/absent tables must be coherent");
 
   // Enemy-drop key-depth mode ops: Wild and Dungeon are distinct because Wild
   // keys must be held before entry, while Dungeon keys can be collected en route.

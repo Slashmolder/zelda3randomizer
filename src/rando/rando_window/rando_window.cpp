@@ -1442,6 +1442,34 @@ static void Panel_Shuffles() {
                   "anything. Checked trees swarm/drop apples as normal.");
     }
 
+    // add-rando-ow-warp-shuffle — overworld warp axes. Inverted normalizes
+    // both off (v1 scope), so the controls disable with a reason there;
+    // Open/Standard/Retro honor them.
+    {
+      static const char *kFluteShuffleLabels[3] = {"Off", "Balanced", "Random"};
+      bool inv = s->world_state == kWorldState_Inverted;
+      if (inv) ImGui::BeginDisabled();
+      uint8 flute_value = s->flute_shuffle;
+      if (EnumCombo("Flute spots", &flute_value, kFluteShuffleLabels, 3)) {
+        s->flute_shuffle = flute_value;
+        changed = true;
+      }
+      HelpTooltip("Shuffles the eight flute destinations across the Light "
+                  "World (Desert/Mire access spot guaranteed). Balanced "
+                  "spreads spots apart; Random is unconstrained.");
+      bool wp = s->whirlpool_shuffle != 0;
+      if (ImGui::Checkbox("Whirlpool shuffle", &wp)) {
+        s->whirlpool_shuffle = wp ? 1 : 0;
+        changed = true;
+      }
+      HelpTooltip("Re-pairs the six Light World whirlpools (two-way). The "
+                  "Dark World pair stays vanilla.");
+      if (inv) {
+        ImGui::EndDisabled();
+        ImGui::TextDisabled("(warp shuffles are unavailable under Inverted)");
+      }
+    }
+
     if (EnumCombo("Traps", &s->traps, kTrapFrequencyLabels, 5)) {
       changed = true;
     }

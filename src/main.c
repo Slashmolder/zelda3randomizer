@@ -1602,6 +1602,11 @@ static void PrintRandoSelfCheckGroups(FILE *stream) {
 }
 
 static int RunRandoSelfCheckCli(const char *argument) {
+  // add-rando-ow-warp-shuffle — load assets when available so the
+  // asset-backed oracle vectors (flute tableau vs kBirdTravel rows)
+  // actually run; assetless environments (public CI) skip them gracefully
+  // inside the checks. Harmless for group runs that don't need assets.
+  LoadAssetsIfPresent();
   const char *group = NULL;
   if (strcmp(argument, "--rando-grant-check") == 0) {
     group = "grant";

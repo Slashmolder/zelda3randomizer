@@ -118,6 +118,7 @@ static uint32 settings_blob_len_versioned(uint16 format_version) {
 }
 
 static uint32 slot_ext_len_versioned(uint16 format_version) {
+  if (format_version >= 12) return kRandoSidecar_SlotExtV12Size;
   if (format_version >= 11) return kRandoSidecar_SlotExtV11Size;
   if (format_version >= 9) return kRandoSidecar_SlotExtV9Size;
   if (format_version >= 8) return kRandoSidecar_SlotExtV8Size;
@@ -443,6 +444,15 @@ uint32 RandoSave_SerializeSlot(const RandoSidecarSlot *slot, uint8 *buf, uint32 
     put_u16le(p + 48, slot->header.enemy_check_registry_count);
     p[50] = 1;
   }
+  // format_version 12: OW warp layout identity @58-61
+  // (add-rando-ow-warp-shuffle): accepted attempt + 24-bit layout digest.
+  // The layout itself is never serialized — activation regenerates it from
+  // (seed, settings, ow_attempt) and HARD-FAILS on digest mismatch (a
+  // drifted layout can strand a certified placement — door-gate class).
+  p[58] = slot->header.ow_attempt;
+  p[59] = (uint8)(slot->header.ow_digest24 & 0xff);
+  p[60] = (uint8)((slot->header.ow_digest24 >> 8) & 0xff);
+  p[61] = (uint8)((slot->header.ow_digest24 >> 16) & 0xff);
   return size;
 }
 
@@ -594,6 +604,16 @@ static uint32 deserialize_slot_versioned_ext(const uint8 *buf, uint32 buf_size,
       out->header.enemy_check_registry_digest = 0;
       out->header.enemy_check_registry_count = 0;
       out->header.enemy_check_registry_present = 0;
+    }
+    if (format_version >= 12 && ext_len >= kRandoSidecar_SlotExtV12Size) {
+      // add-rando-ow-warp-shuffle: warp layout identity @58-61. Older files
+      // read 0/0 = vanilla warps (no warp axis existed to set them).
+      out->header.ow_attempt = p[58];
+      out->header.ow_digest24 =
+          (uint32)p[59] | ((uint32)p[60] << 8) | ((uint32)p[61] << 16);
+    } else {
+      out->header.ow_attempt = 0;
+      out->header.ow_digest24 = 0;
     }
   } else {
     // v1/v2 files physically lack the block — digest 0 = "absent", which keeps
@@ -1068,6 +1088,9 @@ void RandoSave_SelfCheck(void) {
   src.header.chains_present = 1;
   src.header.chains_attempt = 0x09;
   src.header.chains_digest24 = 0x654321u;
+  // add-rando-ow-warp-shuffle layout identity round-trip (v12 ext @58-61).
+  src.header.ow_attempt = 0x05;
+  src.header.ow_digest24 = 0xABCDEFu;
   // add-enemy-souls soul-ownership round-trip coverage (v6 extension block).
   src.header.souls_present = 1;
   for (int i = 0; i < 12; i++) src.header.soul_flags[i] = (uint8)(0x81 + i);
@@ -1163,6 +1186,9 @@ void RandoSave_SelfCheck(void) {
   if (used != wrote) selfcheck_die("deserialize used != serialize wrote");
 
   // Compare round-trip fields.
+  if (dst.header.ow_attempt != src.header.ow_attempt ||
+      dst.header.ow_digest24 != src.header.ow_digest24)
+    selfcheck_die("ow warp identity round-trip (v12 ext)");
   if (dst.header.slot_kind != src.header.slot_kind) selfcheck_die("slot_kind round-trip");
   if (dst.header.generator_version != src.header.generator_version) selfcheck_die("gen_version round-trip");
   if (memcmp(dst.header.settings_hash, src.header.settings_hash, 16) != 0) selfcheck_die("settings_hash round-trip");

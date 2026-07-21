@@ -200,7 +200,7 @@ macros:
   # ===========================================================================
   - name: CanFly
     parameters: [world]
-    body: "HAS_ITEM(OcarinaInactive) AND (OP_INSTANT_FLUTE() OR CanActivateOcarina(world))"
+    body: "HAS_ITEM(OcarinaInactive) AND (OP_INSTANT_FLUTE() OR CanActivateOcarina(world)) AND OP_OW_FLUTE_VANILLA()"
     source: "app/Support/ItemCollection.php:415-418"
     notes: |
       ALTTPR: `OcarinaActive OR (OcarinaInactive AND canActivateOcarina())`.
@@ -209,6 +209,24 @@ macros:
       state (`link_item_flute = 3` + `kRandoFluteShovel_FluteActive`). If
       instant_flute=false, the predicate falls back to ALTTPR's separate
       canActivateOcarina route.
+      add-rando-ow-warp-shuffle: CanFly's DESTINATIONS are the eight vanilla
+      flute spots, baked into every edge/location that references this macro.
+      Under an active flute shuffle those routes no longer exist, so the
+      OP_OW_FLUTE_VANILLA conjunct compiles the whole macro false and flute
+      reachability flows solely through the OW_FluteNet hub (whose feeders
+      use CanUseFluteTravel below — possession+activation, no destinations).
+      With the axis off the op is true and behavior is byte-identical.
+
+  # ===========================================================================
+  # CanUseFluteTravel — flute possession + activation WITHOUT destination
+  # semantics (add-rando-ow-warp-shuffle). CanFly's body verbatim minus the
+  # vanilla-destinations conjunct; gates the zone -> OW_FluteNet hub feeders.
+  # NEVER add OP_OW_FLUTE_VANILLA here — that would dead-end the hub.
+  # ===========================================================================
+  - name: CanUseFluteTravel
+    parameters: [world]
+    body: "HAS_ITEM(OcarinaInactive) AND (OP_INSTANT_FLUTE() OR CanActivateOcarina(world))"
+    source: "ow_graph substrate (design D6)"
 
   # ===========================================================================
   # canActivateOcarina — inverted-world ocarina-cutscene gate. PRIVATE in

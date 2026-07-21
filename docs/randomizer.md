@@ -828,6 +828,40 @@ column, the Bomb Shop, and the witch's powder trade. The axis composes with
 every other setting — including Retro, where the take-any/economy machinery
 runs alongside the shop checks — and has no derived-rule normalization.
 
+### Overworld warp shuffle (experimental)
+
+Two composable axes shuffle the overworld's warp connections
+(add-rando-ow-warp-shuffle; canonical byte `[30]` bits 3-5):
+
+- `flute_shuffle=off|balanced|random` — relocates the eight flute
+  destinations across the Light World candidate screens. The Desert/Mire
+  teleporter-ledge spot is always among the eight (it is the only route to
+  Misery Mire without glitches), and spots spread across the overworld's
+  disconnected walking sectors. `balanced` additionally keeps spots apart
+  (with a rare deliberate exception, ported from the upstream OW
+  randomizer); `random` is unconstrained beyond the guarantees. The flute
+  map's blips, cursor order, and landings all follow the seed; vanilla
+  screens keep their hand-tuned blip positions.
+- `whirlpool_shuffle=true` — re-pairs the six Light World whirlpools
+  (travel stays two-way). The single Dark World pair keeps its vanilla
+  pairing at this stage.
+
+Both axes are honored under Open, Standard, and Retro; **Inverted
+normalizes them off** (its overworld is a different map — composition is a
+future stage). Logic models the shuffled connections truthfully: under an
+active flute shuffle the vanilla flute routes are compiled out and
+reachability flows only through the seed's actual spots, so the placer can
+neither rely on a vanished vanilla route nor ignore a new one. Generation
+retries layouts that fail the seed's accessibility tier.
+
+The layout is never stored: the sidecar carries the accepted attempt plus
+a 24-bit identity digest, and slot activation (or a snapshot cold replay)
+regenerates the layout and **refuses the slot on mismatch** — the same
+hard gate as door shuffle, because a drifted layout could strand a
+certified placement. The spoiler gains an `ow_warps` section (flute slot →
+screen/region, whirlpool pairs) exactly when a warp axis is active; race
+mode hides it like everything else.
+
 ### Traps
 
 When `traps` is `low` / `medium` / `high`, the generator replaces 4 / 8 / 16
