@@ -22,7 +22,7 @@ Usage (A0):
 Usage (activated):
   python assets/scripts/run_rando_corpus.py --binary=./zelda3
   python assets/scripts/run_rando_corpus.py --binary=./zelda3 --skip-pot-shuffle
-  python assets/scripts/run_rando_corpus.py --binary=./zelda3 --skip-pot-shuffle --skip-enemy-drop-checks --skip-enemy-souls --skip-terrain-shuffle
+  python assets/scripts/run_rando_corpus.py --binary=./zelda3 --skip-pot-shuffle --skip-enemy-drop-checks --skip-enemy-souls --skip-terrain-shuffle --skip-ow-warp
 """
 from __future__ import annotations
 
@@ -140,6 +140,25 @@ def entry_uses_terrain_shuffle(entry: dict) -> bool:
         if _setting_truthy(settings.get(axis, "off")):
             return True
     return False
+
+
+def entry_uses_ow_warp(entry: dict) -> bool:
+    """True when a flute-spot or whirlpool warp axis is active.
+
+    Public CI builds without the gitignored OW screen-component graph
+    (assets/rando/ow_graph.gen.yaml → baked kRandoOwGraph* tables), and
+    OwWarp_Compute refuses warp-axis generation fail-closed when the tables
+    are absent/empty (add-rando-ow-warp-shuffle). Skip these rows on
+    assetless runs; local checks run the full corpus.
+    """
+    settings = entry.get("settings", {}) or {}
+    flute = settings.get("flute_shuffle", "off")
+    if isinstance(flute, str):
+        if flute.lower() not in ("", "0", "off", "false", "none"):
+            return True
+    elif bool(flute):
+        return True
+    return _setting_truthy(settings.get("whirlpool_shuffle", False))
 
 
 def entry_needs_local_soul_rooms(entry: dict) -> bool:
@@ -274,6 +293,7 @@ def _run_one_entry_impl(binary: Path, idx: int, entry: dict,
                         skip_enemy_drop_checks: bool,
                         skip_enemy_souls: bool,
                         skip_terrain_shuffle: bool,
+                        skip_ow_warp: bool,
                         timeout: int) -> CorpusResult:
     settings = entry.get("settings", {})
     seed = str(entry.get("seed", entry.get("seed_u64", "")))
@@ -290,6 +310,8 @@ def _run_one_entry_impl(binary: Path, idx: int, entry: dict,
         skip_reasons.append("souls_shuffle=all")
     if skip_terrain_shuffle and entry_uses_terrain_shuffle(entry):
         skip_reasons.append("terrain_shuffle")
+    if skip_ow_warp and entry_uses_ow_warp(entry):
+        skip_reasons.append("ow_warp")
     if skip_reasons:
         result.lines.append(
             f"  SKIP [{idx}] {label}: {'+'.join(skip_reasons)} entry "
@@ -419,6 +441,7 @@ def _run_one_entry(binary: Path, idx: int, entry: dict,
                    skip_enemy_drop_checks: bool,
                    skip_enemy_souls: bool,
                    skip_terrain_shuffle: bool,
+                   skip_ow_warp: bool,
                    timeout: int) -> CorpusResult:
     """Run and time one row inside its worker, including reveal/verification.
 
@@ -431,7 +454,7 @@ def _run_one_entry(binary: Path, idx: int, entry: dict,
     try:
         result = _run_one_entry_impl(
             binary, idx, entry, skip_pot_shuffle, skip_enemy_drop_checks,
-            skip_enemy_souls, skip_terrain_shuffle, timeout,
+            skip_enemy_souls, skip_terrain_shuffle, skip_ow_warp, timeout,
         )
     except Exception as exc:
         result = CorpusResult(
@@ -520,7 +543,8 @@ def _print_slowest(results: list[CorpusResult]) -> None:
 def run_activated(binary: Path, manifest: dict, skip_pot_shuffle: bool = False,
                   skip_enemy_drop_checks: bool = False,
                   skip_enemy_souls: bool = False,
-                  skip_terrain_shuffle: bool = False, jobs: int = 1,
+                  skip_terrain_shuffle: bool = False,
+                  skip_ow_warp: bool = False, jobs: int = 1,
                   timeout: int = 60, timings_json: Path | None = None,
                   manifest_path: Path = MANIFEST) -> int:
     # Resolve to an absolute path: `Path("./zelda3")` stringifies back to
@@ -559,6 +583,7 @@ def run_activated(binary: Path, manifest: dict, skip_pot_shuffle: bool = False,
             "skip_enemy_drop_checks": skip_enemy_drop_checks,
             "skip_enemy_souls": skip_enemy_souls,
             "skip_terrain_shuffle": skip_terrain_shuffle,
+            "skip_ow_warp": skip_ow_warp,
         },
         "results": [],
     }
@@ -615,7 +640,7 @@ def run_activated(binary: Path, manifest: dict, skip_pot_shuffle: bool = False,
         for idx, entry in enumerate(entries):
             result = _run_one_entry(binary, idx, entry, skip_pot_shuffle,
                                     skip_enemy_drop_checks, skip_enemy_souls,
-                                    skip_terrain_shuffle, timeout)
+                                    skip_terrain_shuffle, skip_ow_warp, timeout)
             results_by_index[idx] = result
             failed_delta, skipped_delta = _emit_result(result)
             failures += failed_delta
@@ -629,7 +654,7 @@ def run_activated(binary: Path, manifest: dict, skip_pot_shuffle: bool = False,
                 executor.submit(_run_one_entry, binary, idx, entry,
                                 skip_pot_shuffle, skip_enemy_drop_checks,
                                 skip_enemy_souls, skip_terrain_shuffle,
-                                timeout): idx
+                                skip_ow_warp, timeout): idx
                 for idx, entry in enumerate(entries)
             }
             for future in as_completed(future_to_idx):
@@ -722,6 +747,12 @@ def main(argv: list[str]) -> int:
                              "Public CI uses this when the local ROM-derived "
                              "terrain registry (terrain.gen.yaml) is absent; local "
                              "checks run the full corpus.")
+    parser.add_argument("--skip-ow-warp", action="store_true",
+                        help="skip entries that request flute_shuffle/whirlpool_shuffle. "
+                             "Public CI uses this when the gitignored OW graph "
+                             "(ow_graph.gen.yaml) is absent — the generator refuses "
+                             "warp axes fail-closed without it; local checks run "
+                             "the full corpus.")
     parser.add_argument("--jobs", type=int, default=default_jobs(),
                         help="number of corpus entries to run concurrently "
                              "(default: min(8, CPU count)).")
@@ -772,7 +803,8 @@ def main(argv: list[str]) -> int:
 
     return run_activated(args.binary, data, args.skip_pot_shuffle,
                          args.skip_enemy_drop_checks, args.skip_enemy_souls,
-                         args.skip_terrain_shuffle, args.jobs, args.timeout,
+                         args.skip_terrain_shuffle, args.skip_ow_warp,
+                         args.jobs, args.timeout,
                          args.timings_json, args.manifest)
 
 

@@ -10,7 +10,11 @@ placement algorithm or RNG behavior changed. This tool:
   2. Updates each entry's ``expected_digest`` to the new value.
   3. Updates the manifest's ``generator_version`` field to the current
      ``kGeneratorVersion``.
-  4. Prints a summary of changed digests for inclusion in the commit message.
+  4. Re-pins ``tests/rando_benchmarks/manifest.yaml`` (its ``generator_version``
+     and every per-sample ``expected_digest`` copied from the corpus rows it
+     references) so the benchmark suite's pins never go stale against a bumped
+     corpus.
+  5. Prints a summary of changed digests for inclusion in the commit message.
 
 Regeneration is fail-closed: a missing binary, failed generator invocation, or
 missing spoiler/digest aborts the entire operation before the manifest version
@@ -37,6 +41,15 @@ REPO = Path(__file__).resolve().parent.parent.parent
 MANIFEST = REPO / "tests" / "rando_corpus" / "manifest.yaml"
 RANDO_H = REPO / "src" / "rando" / "rando.h"
 BINARY = REPO / "zelda3"
+
+
+def benchmarks_manifest_for(corpus_manifest: Path) -> Path:
+    """The benchmark manifest that pins digests from this corpus manifest.
+
+    tests/rando_benchmarks/manifest.yaml sits beside tests/rando_corpus/; a
+    worktree-pointed --manifest resolves to that worktree's sibling copy.
+    """
+    return corpus_manifest.parent.parent / "rando_benchmarks" / "manifest.yaml"
 
 
 def current_generator_version() -> int:
@@ -140,6 +153,94 @@ def replace_entry_field(text: str, label: str, field: str, new_value: str) -> tu
     return text[:block_start] + new_block + text[block_end:], True
 
 
+def repin_benchmarks(bench_path: Path, entries: list, current: int,
+                     apply: bool, required: bool) -> int:
+    """Re-pin the benchmark manifest's generator_version + per-sample digests.
+
+    The benchmark suite pins each referenced corpus row's placement digest so a
+    renamed or rebaselined corpus row cannot silently change what it measures —
+    which means every corpus digest change invalidates those pins. Refresh them
+    from the (already-updated) corpus entries so the two manifests stay in
+    lock-step; check_corpus_version_sync.py and the benchmark schema gate both
+    fail when they drift.
+
+    Returns 0 on success/no-op, 1 on a re-pin problem (fail-closed).
+    """
+    if not bench_path.is_file():
+        if required:
+            print(f"ERROR: {bench_path} not found; its digest pins would go "
+                  "stale against the bumped corpus.", file=sys.stderr)
+            return 1
+        print(f"WARNING: no benchmark manifest beside {bench_path.parent.parent} "
+              "— skipping benchmark re-pin.", file=sys.stderr)
+        return 0
+
+    digest_by_label: dict[str, str] = {}
+    for entry in entries:
+        label = entry.get("label")
+        digest = entry.get("expected_digest")
+        if isinstance(label, str) and is_sha256_hex(digest):
+            digest_by_label[label] = digest
+
+    text = bench_path.read_text(encoding="utf-8")
+    new_text, version_hits = re.subn(
+        r"^generator_version:[^\n]*", f"generator_version: {current}",
+        text, count=1, flags=re.MULTILINE)
+    problems: list[str] = []
+    if version_hits != 1:
+        problems.append("generator_version line not found")
+
+    changed = 0
+    matched = 0
+
+    def sub_sample(m: re.Match) -> str:
+        nonlocal changed, matched
+        matched += 1
+        label = m.group("label")
+        new_digest = digest_by_label.get(label)
+        if new_digest is None:
+            problems.append(
+                f"benchmark sample references corpus row '{label}' which has "
+                "no digest in the corpus manifest")
+            return m.group(0)
+        if m.group("digest") != new_digest:
+            changed += 1
+        return f"{m.group('head')}{new_digest}"
+
+    # Samples are the two-line `- corpus_label:` / `expected_digest:` pairs.
+    sample_re = re.compile(
+        r"(?P<head>-\s+corpus_label:\s*(?P<label>[\w.\-]+)\s*\n"
+        r"\s*expected_digest:\s*)(?P<digest>[0-9a-fA-F]{64})")
+    new_text = sample_re.sub(sub_sample, new_text)
+
+    total_labels = len(re.findall(r"^\s*-\s+corpus_label:", text, re.MULTILINE))
+    if matched != total_labels:
+        problems.append(
+            f"only {matched}/{total_labels} sample pins matched the expected "
+            "corpus_label/expected_digest layout")
+
+    if problems:
+        print("\nERROR: benchmark manifest re-pin failed:", file=sys.stderr)
+        for problem in problems:
+            print(f"  - {problem}", file=sys.stderr)
+        print("Refusing to leave the benchmark pins stale against the bumped "
+              "corpus.", file=sys.stderr)
+        return 1
+
+    if new_text == text:
+        print(f"  benchmarks: {bench_path.name} already in lock-step "
+              f"(version {current}, {matched} pins).")
+        return 0
+    if apply:
+        write_lf(bench_path, new_text)
+        print(f"  benchmarks: re-pinned {bench_path} "
+              f"(version -> {current}, {changed} digest pin(s) updated).")
+    else:
+        print(f"  [dry-run] benchmarks: would re-pin {bench_path} "
+              f"(version -> {current}, {changed} digest pin(s)).")
+    return 0
+
+
 def regenerate_entry(binary: Path, settings: dict, seed: str) -> tuple[str | None, str | None]:
     """Run --generate-seed for one entry, return (placement_digest, sphere_digest)."""
     if not binary.exists():
@@ -221,12 +322,18 @@ def main(argv: list[str]) -> int:
     print(f"  manifest generator_version = {in_manifest}")
     print(f"  manifest entries = {len(entries)}")
 
+    bench_path = benchmarks_manifest_for(args.manifest.resolve())
+    bench_required = args.manifest.resolve() == MANIFEST.resolve()
+
     if in_manifest == current:
         if entries:
             print("\nNo bump needed — manifest is already at current version.")
         else:
             print("\nNo bump needed — manifest version matches and is empty.")
-        return 0
+        # The benchmark pins can still be stale (e.g. a hand-bumped corpus);
+        # verify/heal lock-step even when the corpus itself needs no work.
+        return repin_benchmarks(bench_path, entries, current,
+                                apply=args.apply, required=bench_required)
 
     if not entries:
         # Version mismatch but no entries to regenerate. Just bump the manifest version.
@@ -237,7 +344,8 @@ def main(argv: list[str]) -> int:
             print(f"\nWrote generator_version: {current} to {args.manifest}")
         else:
             print(f"\n[dry-run] Would write generator_version: {current}")
-        return 0
+        return repin_benchmarks(bench_path, entries, current,
+                                apply=args.apply, required=bench_required)
 
     binary = args.binary.resolve()
     if not binary.is_file():
@@ -318,9 +426,15 @@ def main(argv: list[str]) -> int:
         print(f"\nWrote updated manifest to {args.manifest}")
         print(f"  generator_version: {in_manifest} -> {current}")
         print(f"  {len(changed)} digest(s) updated")
+        if repin_benchmarks(bench_path, entries, current,
+                            apply=True, required=bench_required):
+            return 1
     else:
         print(f"\n[dry-run] Would update generator_version: {in_manifest} -> {current}")
         print(f"[dry-run] Would update {len(changed)} digest(s)")
+        if repin_benchmarks(bench_path, entries, current,
+                            apply=False, required=bench_required):
+            return 1
         print("\nRe-run with --apply to write the changes.")
 
     return 0

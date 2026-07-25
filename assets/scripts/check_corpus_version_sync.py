@@ -31,6 +31,7 @@ from pathlib import Path
 
 RANDO_H = Path("src/rando/rando.h")
 MANIFEST = Path("tests/rando_corpus/manifest.yaml")
+BENCHMARKS = Path("tests/rando_benchmarks/manifest.yaml")
 
 # `#define kGeneratorVersion 53u  // ...`  — tolerate an optional u/U suffix.
 _DEFINE_RE = re.compile(r"#define\s+kGeneratorVersion\s+(\d+)[uU]?\b")
@@ -86,7 +87,36 @@ def main(argv: list[str]) -> int:
         )
         return 1
 
-    print(f"check_corpus_version_sync: OK (generator_version == kGeneratorVersion == {code_ver}).")
+    # The benchmark manifest pins corpus digests, so its version must march in
+    # the same lock-step; bump_rando_corpus.py re-pins it on every bump. The
+    # per-sample digest pins themselves are validated by the (heavier) benchmark
+    # schema gate; this guard covers the cheap version field.
+    benchmarks = _read(BENCHMARKS)
+    if benchmarks is None:
+        print(f"check_corpus_version_sync: {BENCHMARKS} not found; cannot verify "
+              "the benchmark-pin provenance contract.", file=sys.stderr)
+        return 2
+    bench_m = _MANIFEST_RE.search(benchmarks)
+    if not bench_m:
+        print(
+            f"check_corpus_version_sync: could not find a "
+            f"`generator_version: <n>` key in {BENCHMARKS}."
+        )
+        return 1
+    bench_ver = int(bench_m.group(1))
+    if code_ver != bench_ver:
+        print(
+            "check_corpus_version_sync: MISMATCH\n"
+            f"  {RANDO_H} kGeneratorVersion = {code_ver}\n"
+            f"  {BENCHMARKS} generator_version = {bench_ver}\n"
+            "  The benchmark manifest's pins are stale. Re-run\n"
+            "  `python assets/scripts/bump_rando_corpus.py --apply` to re-pin it\n"
+            "  from the corpus rows it references."
+        )
+        return 1
+
+    print("check_corpus_version_sync: OK (corpus + benchmarks generator_version "
+          f"== kGeneratorVersion == {code_ver}).")
     return 0
 
 

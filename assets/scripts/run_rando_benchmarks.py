@@ -255,6 +255,7 @@ def validate_and_resolve(
                     entry_needs_local_pot_registry,
                     entry_needs_local_soul_rooms,
                     entry_uses_enemy_drop_checks,
+                    entry_uses_ow_warp,
                     entry_uses_terrain_shuffle,
                 )
                 needs_local = []
@@ -266,6 +267,8 @@ def validate_and_resolve(
                     needs_local.append("soul-room registry")
                 if entry_uses_terrain_shuffle(entry):
                     needs_local.append("terrain registry")
+                if entry_uses_ow_warp(entry):
+                    needs_local.append("OW warp graph")
                 if needs_local:
                     errors.append(
                         f"{sample_prefix}: public sample requires local "

@@ -50,6 +50,7 @@ ASSETLESS_INPUTS = (
     "assets/rando/terrain_dump.gen.txt",
     "assets/rando/terrain.gen.yaml",
     "assets/rando/bonk.gen.yaml",
+    "assets/rando/ow_graph.gen.yaml",
 )
 
 
@@ -313,6 +314,12 @@ def assert_assetless_counts() -> None:
         raise RuntimeError("logic_data.c does not define kRandoSoulRoomsBaked")
     if int(souls.group(1)) != 0:
         nonzero.append(("kRandoSoulRoomsBaked", int(souls.group(1))))
+    ow_graph = re.search(r"const\s+uint8\s+kRandoOwGraphPresent\s*=\s*(\d+)\s*;",
+                         logic)
+    if ow_graph is None:
+        raise RuntimeError("logic_data.c does not define kRandoOwGraphPresent")
+    if int(ow_graph.group(1)) != 0:
+        nonzero.append(("kRandoOwGraphPresent", int(ow_graph.group(1))))
     if nonzero:
         raise RuntimeError("assetless registry counts are nonzero: "
                            + ", ".join(f"{name}={value}" for name, value in nonzero))
@@ -337,7 +344,8 @@ def runtime_common(runner: Runner, binary: Path, object_dir: Path,
     corpus_args = ["--binary", str(binary), "--timings-json", str(corpus_timings)]
     if not corpus_local:
         corpus_args += ["--skip-pot-shuffle", "--skip-enemy-drop-checks",
-                        "--skip-enemy-souls", "--skip-terrain-shuffle"]
+                        "--skip-enemy-souls", "--skip-terrain-shuffle",
+                        "--skip-ow-warp"]
     runner.run("regression corpus", script("run_rando_corpus.py", *corpus_args))
     slot_args = ["--binary", str(binary)]
     if not corpus_local:

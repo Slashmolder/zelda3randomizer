@@ -3,7 +3,7 @@
 # a renamed, duplicated, or rebaselined corpus row cannot silently change what
 # this suite measures.
 format_version: 1
-generator_version: 153
+generator_version: 155
 corpus_manifest: tests/rando_corpus/manifest.yaml
 
 scenarios:
@@ -63,7 +63,7 @@ scenarios:
     gating: true
     samples:
       - corpus_label: terrain-dungeon-entrance-composes
-        expected_digest: 57a0411c5d1aa49052c7ed622d530d32cc202361f7da1069fef7ffd64d9b32d9
+        expected_digest: 1b453144c3bf6c99b5b7e47f7826de9e87aabe2e170eddabe454f444543e9b61
 
   - name: chains-pots-souls
     suite: local
