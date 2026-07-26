@@ -64,6 +64,10 @@
 
 ## 6. Close-out
 
-- [ ] 6.1 Independent fresh-eyes review of the diff before declaring done
+- [x] 6.1 Independent fresh-eyes review of the diff before declaring done
+      (3 reviewers, distinct lenses; findings fixed in fcb6aa94 + d762eb2e:
+      the oracle re-derived instead of driving the resolver and was circular,
+      docs/spec contradicted decision D3, and the unknown marker is a red X
+      rather than the "?" every artifact claimed)
 - [ ] 6.2 Reconcile these deltas against as-built source, then
       `openspec archive fix-ow-map-prize-markers --yes` on the branch
