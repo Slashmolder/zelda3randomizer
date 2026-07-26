@@ -4039,6 +4039,15 @@ void Ancilla29_MilestoneItemReceipt(int k) {  // 88ca8c
       // spawn site. Boss prizes are the exception under rando: dispatch at
       // receipt time so falling before pickup leaves the prize uncollected.
       ancilla_type[k] = 0;
+      // Ether/Bombos tablet receipts arrive with the spell-cutscene player
+      // state still latched (sword held up, custom-anim flag, receiving
+      // handler); this collision is the only place vanilla releases it.
+      if (link_player_handler_state == kPlayerState_ReceivingEther ||
+          link_player_handler_state == kPlayerState_ReceivingBombos) {
+        flag_custom_spell_anim_active = 0;
+        link_force_hold_sword_up = 0;
+        link_player_handler_state = 0;
+      }
       item_receipt_method = 3;
       Link_ReceiveItem(receive_item, 0);
       return;

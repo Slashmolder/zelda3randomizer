@@ -629,8 +629,16 @@ int RandoSnapshotTail_Load(FILE *f) {
     } \
     /* Ownership depends on both the type-1 placement and the later type-3 */ \
     /* checked bitmap. Rebuild only after the complete TLV chain has run. */ \
-    if (accepted_rando_state && Rando_IsActive()) \
+    if (accepted_rando_state && Rando_IsActive()) { \
       Rando_RebuildKeyItemOwnership(); \
+      /* The type-2 settings restore installs the shuffle logic overlays */ \
+      /* (warp edges included), but the later door/chain/entrance layout */ \
+      /* TLVs reset the shared logic-edge stores as part of their own    */ \
+      /* installs. Rebuild the whole overlay set once, after every       */ \
+      /* record has landed, so cold replay converges on the same         */ \
+      /* activation-order state a fresh activation produces.             */ \
+      Rando_ReinstallActiveSlotLogicOverlays(); \
+    } \
     return recognized; \
   } while (0)
 

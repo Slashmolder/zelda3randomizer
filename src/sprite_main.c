@@ -12623,7 +12623,11 @@ show_later_msg:
         // rando-exempt: repeatable capacity identity; specialized commit below
         link_bomb_upgrades = i;
         dialogue_number[0] = link_bomb_filler = kMaxBombsForLevelHex[i];
-        if (result != kRandoGrantResult_NotActive) {
+        // A checked location needs no commit — later donations are the
+        // vanilla repeatable +5 even when the slot held a non-identity item
+        // (the identity commit would reject that placement and roll back the
+        // upgrade forever).
+        if (result == kRandoGrantResult_Accepted) {
           result = Rando_CommitRepeatableCapacityIdentity(
               LOC_Capacity_Upgrade_Bomb, ITEM_BombUpgrade5);
           if (!Sprite_GrantResultIsTerminal(result)) {
@@ -12696,7 +12700,8 @@ show_later_msg:
         // rando-exempt: repeatable capacity identity; specialized commit below
         link_arrow_upgrades = i;
         dialogue_number[0] = link_arrow_filler = kMaxArrowsForLevelHex[i];
-        if (result != kRandoGrantResult_NotActive) {
+        // A checked location needs no commit — see the bomb-capacity note.
+        if (result == kRandoGrantResult_Accepted) {
           result = Rando_CommitRepeatableCapacityIdentity(
               LOC_Capacity_Upgrade_Arrow, ITEM_ArrowUpgrade5);
           if (!Sprite_GrantResultIsTerminal(result)) {

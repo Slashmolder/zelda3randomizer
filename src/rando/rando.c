@@ -1835,9 +1835,13 @@ RandoGrantResult Rando_CommitRepeatableShopIdentity(
   if (def == NULL || placed != def->vanilla_item_id)
     return kRandoGrantResult_Invalid;
   RandoGrantPlan plan;
+  // A purchase made while the resource sits at cap resolves AcceptedNoOp;
+  // the player still paid and the vanilla shop item still delivered, so the
+  // identity row must be marked now, not on some later un-capped repurchase.
   if (!Rando_ResolveLiveGrantPlan(loc_id, placed, &plan) ||
       plan.opcode != kRandoGrantOp_Receive ||
-      plan.disposition != kRandoGrantDisposition_Receive ||
+      (plan.disposition != kRandoGrantDisposition_Receive &&
+       plan.disposition != kRandoGrantDisposition_AcceptedNoOp) ||
       plan.receive_code != vanilla_lttp_code)
     return kRandoGrantResult_Invalid;
   if (!Rando_IsLocationChecked(loc_id)) {
@@ -2762,9 +2766,14 @@ RandoGrantResult Rando_CommitStandingPieceOfHeartIdentity(
   if (result != kRandoGrantResult_Accepted)
     return result;
   const RandoGrantPlan *plan = &token->plan;
+  // At 20 hearts the plan resolves to AcceptedNoOp (nothing to apply), but the
+  // check must still commit: the caller's vanilla presentation is already the
+  // correct at-cap behavior, and rejecting would strand the location (and the
+  // sprite) uncollectable forever — capacity never decreases.
   if (plan->item_id != ITEM_PieceOfHeart ||
       plan->opcode != kRandoGrantOp_Receive ||
-      plan->disposition != kRandoGrantDisposition_Receive ||
+      (plan->disposition != kRandoGrantDisposition_Receive &&
+       plan->disposition != kRandoGrantDisposition_AcceptedNoOp) ||
       plan->receive_code != 0x17)
     return kRandoGrantResult_Invalid;
   Rando_MarkLocationChecked(plan->location_id);
@@ -10105,6 +10114,31 @@ static void Rando_GrantTransactionSelfCheck(void) {
                        Rando_CommitStandingPieceOfHeartIdentity(&poh_token) ==
                          kRandoGrantResult_AlreadyChecked,
                      "standing PoH identity bookkeeping applied inventory or failed", 500);
+
+    // At-cap plans resolve AcceptedNoOp; the identity commits must still
+    // record the check — a 20-heart standing PoH must not strand the sprite
+    // uncollectable, and an at-cap shop purchase must not defer its mark to
+    // a later un-capped repurchase.
+    memset(g_rando_checked_bitmap, 0, sizeof(g_rando_checked_bitmap));
+    link_health_capacity = 0xa0;
+    GRANT_TX_CHECK(Rando_PrepareGrant(
+                         500, ITEM_PieceOfHeart, 0x17, &poh_token) ==
+                         kRandoGrantResult_Accepted &&
+                       poh_token.plan.disposition ==
+                         kRandoGrantDisposition_AcceptedNoOp &&
+                       Rando_CommitStandingPieceOfHeartIdentity(&poh_token) ==
+                         kRandoGrantResult_Accepted &&
+                       Rando_IsLocationChecked(500),
+                     "at-cap standing PoH identity did not commit", 500);
+    link_health_capacity = 0x18;
+    memset(g_rando_checked_bitmap, 0, sizeof(g_rando_checked_bitmap));
+    link_item_bombs = 50;
+    GRANT_TX_CHECK(Rando_CommitRepeatableShopIdentity(
+                         0x0f, 0x6f, 2, 0x28) ==
+                         kRandoGrantResult_Accepted &&
+                       Rando_IsLocationChecked(239),
+                     "at-cap shop identity did not mark its row", 239);
+    link_item_bombs = 0;
   }
 
   GRANT_TX_CHECK(Ancilla_RandoFallingPrizeSelfCheck() == 0,

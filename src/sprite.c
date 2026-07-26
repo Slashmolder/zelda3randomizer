@@ -1824,8 +1824,15 @@ void SpriteModule_Drown(int k) {  // 86859c
     SpriteDraw_SingleLarge(k);
     OamEnt *oam = GetOamCurPtr();
     int j = sprite_delay_main[k];
-    if (j == 1)
-      Rando_ApplyDrownGrantOutcome(k, Sprite_ManuallySetDeathFlagUW(k));
+    if (j == 1) {
+      // Vanilla drowning despawns WITHOUT the persistent kill bit (drowned
+      // enemies respawn on re-entry, unlike falls); only the randomized
+      // enemy-check transaction takes the terminal-death helper.
+      if (enhanced_features1 & kFeatures1_RandomizerActive)
+        Rando_ApplyDrownGrantOutcome(k, Sprite_ManuallySetDeathFlagUW(k));
+      else
+        sprite_state[k] = 0;
+    }
     if (j != 0) {
       assert((j >> 1) < 11);
       oam->charnum = kSpriteDrown_Oam_Char[j >> 1];
@@ -1853,8 +1860,12 @@ void SpriteModule_Drown(int k) {  // 86859c
       sprite_delay_main[k]++;
     sprite_oam_flags[k] = 0;
     sprite_hit_timer[k] = 0;
-    if (!sprite_delay_main[k])
-      Rando_ApplyDrownGrantOutcome(k, Sprite_ManuallySetDeathFlagUW(k));
+    if (!sprite_delay_main[k]) {
+      if (enhanced_features1 & kFeatures1_RandomizerActive)
+        Rando_ApplyDrownGrantOutcome(k, Sprite_ManuallySetDeathFlagUW(k));
+      else
+        sprite_state[k] = 0;
+    }
     Sprite_DrawMultiple(k, &kSpriteDrown_Dmd[(sprite_delay_main[k] << 1 & 0xf8) >> 2], 2, NULL);
   }
 }
