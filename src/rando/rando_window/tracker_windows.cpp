@@ -546,6 +546,20 @@ static void DrawCheckTracker(void *) {
                        "unchecked only.");
     ImGui::PopStyleColor();
   }
+  // tracker-player-knowledge — hidden-identity dungeons the player hasn't
+  // entered render dark (the knowledge-limited flood keeps them out of every
+  // avail state/count); say so, or "0 avail" reads as a dead end.
+  uint16 unexplored_mask = Rando_HiddenUndiscoveredDungeonMask();
+  if (unexplored_mask != 0) {
+    int n_unx = 0;
+    for (uint16 m = unexplored_mask; m != 0; m &= (uint16)(m - 1)) n_unx++;
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.65f, 0.75f, 0.95f, 1));
+    // ASCII only: the default ImGui font atlas covers Basic Latin + Latin-1,
+    // so a non-ASCII dash (U+2014) renders as the fallback '?' glyph.
+    ImGui::TextWrapped("%d dungeon%s not yet entered (?) - their checks appear "
+                       "once you go inside.", n_unx, n_unx == 1 ? "" : "s");
+    ImGui::PopStyleColor();
+  }
 
   ImGui::Separator();
   ImGui::Checkbox("Hide checked", &s_hide_checked);
@@ -598,15 +612,28 @@ static void DrawCheckTracker(void *) {
     if (r_total == 0) continue;
 
     const char *rname = (region_id == 0xFFFF) ? "(unbound)" : Rando_GetRegionName(region_id);
+    // tracker-player-knowledge — mark unentered hidden-identity dungeons with a
+    // short "? " PREFIX rather than an inline "(unexplored)": these windows are
+    // narrow by default (the tiled layout gives the Check Tracker ~16% of the
+    // display) and a 13-char inline tag pushed the trailing counts off the
+    // right edge. "?" also matches the Item Tracker's unknown-prize cell.
+    bool unexplored = (ri < kRandoRegionsCount && kRandoRegions[ri].dungeon_id < 16 &&
+                       ((unexplored_mask >> kRandoRegions[ri].dungeon_id) & 1u) != 0);
+    const char *unx = unexplored ? "? " : "";
     char header[128];
     if (have_reach)
-      snprintf(header, sizeof header, "%s - %d avail, %d/%d checked###reg%u",
-               rname, r_avail, r_checked, r_total, region_id);
+      snprintf(header, sizeof header, "%s%s - %d avail, %d/%d checked###reg%u",
+               unx, rname, r_avail, r_checked, r_total, region_id);
     else
-      snprintf(header, sizeof header, "%s - %d/%d checked###reg%u",
-               rname, r_checked, r_total, region_id);
+      snprintf(header, sizeof header, "%s%s - %d/%d checked###reg%u",
+               unx, rname, r_checked, r_total, region_id);
 
-    if (!ImGui::CollapsingHeader(header, ImGuiTreeNodeFlags_DefaultOpen)) continue;
+    bool header_open = ImGui::CollapsingHeader(header, ImGuiTreeNodeFlags_DefaultOpen);
+    if (unexplored && ImGui::IsItemHovered()) {
+      ImGui::SetTooltip("Not yet entered - its checks stay hidden until you go\n"
+                        "inside, so the tracker can't spoil what's behind the door.");
+    }
+    if (!header_open) continue;
 
     ImGui::Indent();
     int r_pots_hidden = 0;  // pots that pass every filter but are hidden by !s_show_pots
@@ -921,6 +948,9 @@ static void DrawMapTracker(void *) {
   // ---- Dungeon regions (interiors have no overworld pin) ----
   ImGui::Spacing();
   ImGui::SeparatorText("Dungeons");
+  // tracker-player-knowledge — mark unentered hidden-identity dungeons so a
+  // dark row reads "go explore", not "dead end".
+  uint16 unexplored_mask = Rando_HiddenUndiscoveredDungeonMask();
   ImGui::BeginChild("##dungeons", ImVec2(0, 0), false);
   for (uint32 ri = 0; ri < kRandoRegionsCount; ri++) {
     uint16 rid = kRandoRegions[ri].id;
@@ -929,15 +959,21 @@ static void DrawMapTracker(void *) {
     RegionTally(pt, reach, have_reach, rid, &total, &checked, &avail);
     if (total == 0) continue;
     int st = RegionStatus(total, checked, avail);
+    // Short "? " prefix, matching the Check Tracker (narrow-window budget).
+    bool unexplored = (kRandoRegions[ri].dungeon_id < 16 &&
+                       ((unexplored_mask >> kRandoRegions[ri].dungeon_id) & 1u) != 0);
+    const char *unx = unexplored ? "? " : "";
     ImVec4 c = (st == kCheck_Checked) ? ImVec4(0.45f, 0.75f, 0.45f, 1)
                : (st == kCheck_Reachable) ? ImVec4(0.95f, 0.85f, 0.35f, 1)
                                           : ImVec4(0.55f, 0.55f, 0.58f, 1);
     ImGui::PushStyleColor(ImGuiCol_Text, c);
     if (have_reach)
-      ImGui::Text("%s - %d avail, %d/%d", Rando_GetRegionName(rid), avail, checked, total);
+      ImGui::Text("%s%s - %d avail, %d/%d", unx, Rando_GetRegionName(rid), avail, checked, total);
     else
-      ImGui::Text("%s - %d/%d", Rando_GetRegionName(rid), checked, total);
+      ImGui::Text("%s%s - %d/%d", unx, Rando_GetRegionName(rid), checked, total);
     ImGui::PopStyleColor();
+    if (unexplored && ImGui::IsItemHovered())
+      ImGui::SetTooltip("Not yet entered - its checks stay hidden until you go inside.");
   }
   ImGui::EndChild();
   ImGui::End();

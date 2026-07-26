@@ -46,6 +46,10 @@ void OwWarp_InstallLogicEdges(const OwWarpLayout *l);
 // row to use). Identity mapping when whirlpool shuffle is inactive.
 uint8 OwWarp_WhirlpoolLandingIndex(const OwWarpLayout *l, uint8 entered_idx);
 
+// tracker-player-knowledge — table-index bits of whirlpools in a shuffled
+// (non-identity) pair; the live knowledge mask hides them until ridden.
+uint8 OwWarp_ShuffledWhirlpoolMask(const OwWarpLayout *l);
+
 // --- runtime hooks (consume the ACTIVE slot's layout) -----------------------
 // Flute: candidate row for bird-travel index k (< 8) when the flute axis is
 // active on the current slot; NULL otherwise (vanilla path).

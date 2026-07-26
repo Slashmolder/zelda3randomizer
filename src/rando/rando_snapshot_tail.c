@@ -411,6 +411,27 @@ bool RandoSnapshotTail_Save(FILE *f) {
       return false;
   }
 
+  // tracker-player-knowledge — topology-discovery TLV (type 10). Emitted
+  // unconditionally alongside the checked bitmap (discovery is session state
+  // of the same class), read LIVE so it reflects the snapshot instant.
+  // Payload: format_version[1] + dungeons[2 LE] + whirlpools[1] + caves[8]
+  // + exits[8]. Length-tolerant on read (the door phase appends later).
+  {
+    uint8 kp[20];
+    uint16 kd; uint8 kw;
+    kp[0] = 1u;  // format_version
+    Rando_GetDiscoveryState(&kd, &kw, kp + 4, kp + 12);
+    kp[1] = (uint8)(kd & 0xff);
+    kp[2] = (uint8)(kd >> 8);
+    kp[3] = kw;
+    uint8 khdr[16];
+    memcpy(khdr, kRandoSnapshotTail_Magic, kRandoSnapshotTail_MagicLen);
+    put_u32le_bytes(khdr + 8, kRandoSnapshotTail_Type_Discovery);
+    put_u32le_bytes(khdr + 12, (uint32)sizeof(kp));
+    if (fwrite(khdr, 1, sizeof(khdr), f) != sizeof(khdr)) return false;
+    if (fwrite(kp, 1, sizeof(kp), f) != sizeof(kp)) return false;
+  }
+
   if (g_has_settings_ctx) {
     // PotRegistry TLV, payload format_version 4: pot identity (v1) followed by
     // the terrain registry identity (v2, add-rando-grass-rock-shuffle), the
@@ -633,6 +654,10 @@ int RandoSnapshotTail_Load(FILE *f) {
     /* checked bitmap. Rebuild only after the complete TLV chain has run. */ \
     if (accepted_rando_state && Rando_IsActive()) { \
       Rando_RebuildKeyItemOwnership(); \
+      /* tracker-player-knowledge: derive dungeon/cave discovery from the  */ \
+      /* type-3 checked bitmap (idempotent OR) — covers snapshots without  */ \
+      /* a type-10 TLV and self-heals newer checks on older discovery.     */ \
+      Rando_BackfillDiscoveryFromChecked(); \
       /* The type-2 settings restore installs the shuffle logic overlays */ \
       /* (warp edges included), but the later door/chain/entrance layout */ \
       /* TLVs reset the shared logic-edge stores as part of their own    */ \
@@ -1189,6 +1214,30 @@ int RandoSnapshotTail_Load(FILE *f) {
       continue;
     }
 
+    if (type == kRandoSnapshotTail_Type_Discovery) {
+      // tracker-player-knowledge — restore topology-discovery state. Payload:
+      // format_version[1] + dungeons[2 LE] + whirlpools[1] + caves[8] +
+      // exits[8] (20 bytes); a LONGER payload (future door-phase append) has
+      // its known prefix parsed and the excess skipped. Only applied to an
+      // accepted rando state, mirroring the type-3/type-8 scoping. Absent TLV
+      // → zeros + the FINISH_LOAD backfill from the checked bitmap.
+      if (length < 20u) {
+        if (fseek(f, (long)length, SEEK_CUR) != 0) FINISH_LOAD();
+        continue;
+      }
+      uint8 kp[20];
+      if (fread(kp, 1, sizeof(kp), f) != sizeof(kp)) FINISH_LOAD();
+      if (length > (uint32)sizeof(kp) &&
+          fseek(f, (long)(length - (uint32)sizeof(kp)), SEEK_CUR) != 0)
+        FINISH_LOAD();
+      if (kp[0] == 1u && accepted_rando_state) {
+        Rando_SetDiscoveryState((uint16)kp[1] | ((uint16)kp[2] << 8), kp[3],
+                                kp + 4, kp + 12);
+      }
+      recognized++;
+      continue;
+    }
+
     if (type == kRandoSnapshotTail_Type_Souls) {
       // add-enemy-souls — restore soul ownership. Payload: format_version[1] +
       // soul_flags[8]. Absent TLV leaves souls zeroed (RandoState acceptance
@@ -1292,7 +1341,7 @@ void RandoSnapshotTail_SelfCheck(void) {
 
   fseek(f, 0, SEEK_SET);
   int n = RandoSnapshotTail_Load(f);
-  if (n != 2) selfcheck_die("Load consumed != 2 recognized TLVs (RandoState + CheckedBitmap)");
+  if (n != 3) selfcheck_die("Load consumed != 3 recognized TLVs (RandoState + CheckedBitmap + Discovery)");
   if (g_rando_checked_bitmap[0] != 0x05 || g_rando_checked_bitmap[10] != 0x80)
     selfcheck_die("checked bitmap not restored from type-3 TLV");
   memset(g_rando_checked_bitmap, 0, kRandoCheckedBitmapBytes);  // restore startup state
@@ -1342,7 +1391,7 @@ void RandoSnapshotTail_SelfCheck(void) {
 
   fseek(f2, 0, SEEK_SET);
   int n2 = RandoSnapshotTail_Load(f2);
-  if (n2 != 2) selfcheck_die("Load (unknown-TLV test) didn't recognize 2 TLVs (state + bitmap)");
+  if (n2 != 3) selfcheck_die("Load (unknown-TLV test) didn't recognize 3 TLVs (state + bitmap + discovery)");
   if (!Rando_HasSnapshotContext()) selfcheck_die("context not restored (unknown-TLV test)");
   fclose(f2);
 
@@ -1397,7 +1446,7 @@ void RandoSnapshotTail_SelfCheck(void) {
     // "Replay-mode reload" — TLV consumer reinstalls placement + context.
     fseek(fsnap, 0, SEEK_SET);
     int recognized = RandoSnapshotTail_Load(fsnap);
-    if (recognized != 2) selfcheck_die("§8.9: replay reload should recognize 2 TLVs (state + bitmap)");
+    if (recognized != 3) selfcheck_die("§8.9: replay reload should recognize 3 TLVs (state + bitmap + discovery)");
     if (!Rando_HasSnapshotContext()) {
       selfcheck_die("§8.9: replay reload should restore snapshot context");
     }
@@ -1581,7 +1630,7 @@ void RandoSnapshotTail_SelfCheck(void) {
     Rando_ClearSnapshotContext();
     fseek(fmix, 0, SEEK_SET);
     int n_mix = RandoSnapshotTail_Load(fmix);
-    if (n_mix != 2) selfcheck_die("§8.10: mixed-tail should recognize 2 known TLVs (state + bitmap)");
+    if (n_mix != 3) selfcheck_die("§8.10: mixed-tail should recognize 3 known TLVs (state + bitmap + discovery)");
     if (Rando_GetSnapshotGeneratorVersion() != 0x0042) {
       selfcheck_die("§8.10: mixed-tail should restore generator_version through the skip");
     }
@@ -1626,6 +1675,12 @@ void RandoSnapshotTail_SelfCheck(void) {
     g_rando_bow_owned          = 0x02;
     // add-enemy-souls — soul ownership rides the type-8 TLV.
     for (int i = 0; i < 12; i++) Souls_Flags()[i] = (uint8)(0x11 * (i + 1));
+    // tracker-player-knowledge — discovery rides the type-10 TLV.
+    {
+      uint8 kc[8], ke[8];
+      for (int i = 0; i < 8; i++) { kc[i] = (uint8)(0x21 + i); ke[i] = (uint8)(0x41 + i); }
+      Rando_SetDiscoveryState(0x0A51, 0x1B, kc, ke);
+    }
 
     FILE *fm = tmpfile();
     if (fm == NULL) selfcheck_die("tmpfile() returned NULL");
@@ -1635,13 +1690,14 @@ void RandoSnapshotTail_SelfCheck(void) {
     g_rando_mushroom_held = 0; g_rando_flute_shovel_owned = 0;
     g_rando_boomerang_owned = 0; g_rando_bow_owned = 0;
     Souls_ResetFlags();  // only the type-8 load restores souls
+    Rando_SetDiscoveryState(0, 0, NULL, NULL);  // only type-10 restores discovery
     Placement_Install(NULL);
     Rando_ClearSnapshotContext();
 
     fseek(fm, 0, SEEK_SET);
     int nm = RandoSnapshotTail_Load(fm);
-    if (nm != 5)
-      selfcheck_die("Load should recognize 5 TLVs (RandoState + PotRegistry + RandoSettings + CheckedBitmap + Souls)");
+    if (nm != 6)
+      selfcheck_die("Load should recognize 6 TLVs (RandoState + PotRegistry + RandoSettings + CheckedBitmap + Discovery + Souls)");
     if (g_rando_mushroom_held != 0x02 || g_rando_flute_shovel_owned != 0x05 ||
         g_rando_boomerang_owned != 0x03 || g_rando_bow_owned != 0x02) {
       selfcheck_die("ownership bytes not restored from the type-2 TLV");
@@ -1649,6 +1705,14 @@ void RandoSnapshotTail_SelfCheck(void) {
     for (int i = 0; i < 12; i++)
       if (Souls_Flags()[i] != (uint8)(0x11 * (i + 1)))
         selfcheck_die("soul_flags not restored from the type-8 TLV");
+    {
+      uint16 kd; uint8 kw; uint8 kc[8], ke[8];
+      Rando_GetDiscoveryState(&kd, &kw, kc, ke);
+      if (kd != 0x0A51 || kw != 0x1B || kc[0] != 0x21 || kc[7] != 0x28 ||
+          ke[0] != 0x41 || ke[7] != 0x48)
+        selfcheck_die("discovery state not restored from the type-10 TLV");
+      Rando_SetDiscoveryState(0, 0, NULL, NULL);  // restore startup state
+    }
     // audit-2 LOW-2: byte-inspect the SAVED type-2 payload's v2 warp tail
     // (fmt==2; ow_attempt + ow_digest24 LE after the settings blob).
     {
@@ -1699,8 +1763,8 @@ void RandoSnapshotTail_SelfCheck(void) {
     Rando_ClearSnapshotContext();
     fseek(fr, 0, SEEK_SET);
     int nr = RandoSnapshotTail_Load(fr);
-    if (nr != 5)
-      selfcheck_die("re-save of a cold-replayed snapshot must perpetuate type-6 + type-2 + type-3 + type-8 TLVs");
+    if (nr != 6)
+      selfcheck_die("re-save of a cold-replayed snapshot must perpetuate type-6 + type-2 + type-3 + type-10 + type-8 TLVs");
     if (g_rando_mushroom_held != 0x09) selfcheck_die("re-saved ownership did not round-trip");
     fclose(fr);
 
@@ -1716,7 +1780,7 @@ void RandoSnapshotTail_SelfCheck(void) {
     Rando_ClearSnapshotContext();
     fseek(fb, 0, SEEK_SET);
     int nb = RandoSnapshotTail_Load(fb);
-    if (nb != 2) selfcheck_die("suppression — Load should recognize the type-1 + type-3 TLVs (no type-2)");
+    if (nb != 3) selfcheck_die("suppression — Load should recognize the type-1 + type-3 + type-10 TLVs (no type-2)");
     if (g_rando_mushroom_held != 0x33) {
       selfcheck_die("suppression — ownership must be untouched when no type-2 was emitted");
     }
@@ -1752,8 +1816,8 @@ void RandoSnapshotTail_SelfCheck(void) {
       Rando_ClearSnapshotContext();
       fseek(fc, 0, SEEK_SET);
       int nc = RandoSnapshotTail_Load(fc);
-      if (nc != 2)
-        selfcheck_die("suppression — cold replay clear should recognize type-1 + type-3 only");
+      if (nc != 3)
+        selfcheck_die("suppression — cold replay clear should recognize type-1 + type-3 + type-10 only");
       if ((g_wanted_zelda_features & kFeatures0_RestoreJpGlitches) ||
           (enhanced_features0 & kFeatures0_RestoreJpGlitches))
         selfcheck_die("suppression — no-type-2 replay inherited forced JP overlay");
@@ -1836,8 +1900,8 @@ void RandoSnapshotTail_SelfCheck(void) {
       int ncur = RandoSnapshotTail_Load(fcur);
       // 6 TLVs: activation installed the entrance context, so the save also
       // carries the type-9 EntranceLayout TLV (cold-replay layout identity).
-      if (ncur != 6)
-        selfcheck_die("type-2 active entrance should parse state + bitmap + pot registry + settings + entrance layout + souls");
+      if (ncur != 7)
+        selfcheck_die("type-2 active entrance should parse state + bitmap + discovery + pot registry + settings + entrance layout + souls");
       if (!Rando_HasActiveSettings())
         selfcheck_die("type-2 active entrance should restore settings");
       Rando_ClearEntranceRegionOverrides();
@@ -1930,8 +1994,8 @@ void RandoSnapshotTail_SelfCheck(void) {
       enhanced_features1 |= kFeatures1_RandomizerActive;
       fseek(fno, 0, SEEK_SET);
       int nno = RandoSnapshotTail_Load(fno);
-      if (nno != 2)
-        selfcheck_die("no-type-2 active-settings should parse type-1 + bitmap only");
+      if (nno != 3)
+        selfcheck_die("no-type-2 active-settings should parse type-1 + bitmap + discovery only");
       if (Rando_HasActiveSettings())
         selfcheck_die("no-type-2 active-settings should clear genuine active settings");
       if (Placement_GetActive() == NULL)
@@ -1994,8 +2058,8 @@ void RandoSnapshotTail_SelfCheck(void) {
 
       fseek(fd, 0, SEEK_SET);
       int nd = RandoSnapshotTail_Load(fd);
-      if (nd != 4)
-        selfcheck_die("type-2 enemy drift should parse state + bitmap + pot registry + settings");
+      if (nd != 5)
+        selfcheck_die("type-2 enemy drift should parse state + bitmap + discovery + pot registry + settings");
       if (g_rando_slot_active || Placement_GetActive() != NULL || Rando_HasSnapshotContext())
         selfcheck_die("type-2 enemy drift should deactivate rando state");
       if (g_rando_mushroom_held != 0 || g_rando_flute_shovel_owned != 0 ||
@@ -2169,8 +2233,8 @@ void RandoSnapshotTail_SelfCheck(void) {
 
     fseek(fd, 0, SEEK_SET);
     int nd = RandoSnapshotTail_Load(fd);
-    if (nd != 6)
-      selfcheck_die("type-5: expected RandoState + CheckedBitmap + PotRegistry + RandoSettings + DoorLayout + Souls");
+    if (nd != 7)
+      selfcheck_die("type-5: expected RandoState + CheckedBitmap + Discovery + PotRegistry + RandoSettings + DoorLayout + Souls");
     if (!DoorRt_Installed())
       selfcheck_die("type-5: door graph was not restored");
     if (!(enhanced_features1 & kFeatures1_DoorShuffleActive))
@@ -2186,7 +2250,7 @@ void RandoSnapshotTail_SelfCheck(void) {
     enhanced_features1 |= kFeatures1_DoorShuffleActive;  // restored g_ram claims door shuffle
     fseek(frd, 0, SEEK_SET);
     int nrd = RandoSnapshotTail_Load(frd);
-    if (nrd != 6)
+    if (nrd != 7)
       selfcheck_die("type-5: replayed snapshot re-save must perpetuate DoorLayout");
     if (!DoorRt_Installed())
       selfcheck_die("type-5: re-saved door graph was not restored");
@@ -2208,8 +2272,8 @@ void RandoSnapshotTail_SelfCheck(void) {
     enhanced_features1 |= kFeatures1_DoorShuffleActive;
     fseek(fmissing, 0, SEEK_SET);
     int nmissing = RandoSnapshotTail_Load(fmissing);
-    if (nmissing != 5)
-      selfcheck_die("type-5: missing DoorLayout should parse RandoState + CheckedBitmap + PotRegistry + RandoSettings + Souls");
+    if (nmissing != 6)
+      selfcheck_die("type-5: missing DoorLayout should parse RandoState + CheckedBitmap + Discovery + PotRegistry + RandoSettings + Souls");
     if (g_rando_slot_active || Placement_GetActive() != NULL || DoorRt_Installed())
       selfcheck_die("type-5: missing DoorLayout should deactivate rando state");
     fclose(fmissing);
@@ -2226,7 +2290,7 @@ void RandoSnapshotTail_SelfCheck(void) {
     if (!RandoSnapshotTail_Save(fbad)) selfcheck_die("type-5: bad-digest Save returned false");
     fseek(fbad, 0, SEEK_SET);
     int nbad = RandoSnapshotTail_Load(fbad);
-    if (nbad != 6)
+    if (nbad != 7)
       selfcheck_die("type-5: bad-digest snapshot should still parse all known TLVs");
     if (DoorRt_Installed())
       selfcheck_die("type-5: bad digest inherited or installed a door graph");
@@ -2437,8 +2501,8 @@ void RandoSnapshotTail_SelfCheck(void) {
 
     fseek(fc, 0, SEEK_SET);
     int nc = RandoSnapshotTail_Load(fc);
-    if (nc != 6)
-      selfcheck_die("type-7: expected RandoState + CheckedBitmap + PotRegistry + RandoSettings + ChainLayout + Souls");
+    if (nc != 7)
+      selfcheck_die("type-7: expected RandoState + CheckedBitmap + Discovery + PotRegistry + RandoSettings + ChainLayout + Souls");
     ChainsRuntimeSession restored_chain_session;
     if (!Chains_RuntimeGetSession(&restored_chain_session))
       selfcheck_die("type-7: chain runtime session was not restored");
@@ -2465,7 +2529,7 @@ void RandoSnapshotTail_SelfCheck(void) {
     enhanced_features1 |= kFeatures1_RandomizerActive;
     fseek(frc, 0, SEEK_SET);
     int nrc = RandoSnapshotTail_Load(frc);
-    if (nrc != 6)
+    if (nrc != 7)
       selfcheck_die("type-7: replayed snapshot re-save must perpetuate ChainLayout");
     if (!Chains_RuntimeRecordDoorEntry(chain_lx))
       selfcheck_die("type-7: re-saved chain runtime was not restored");
@@ -2486,8 +2550,8 @@ void RandoSnapshotTail_SelfCheck(void) {
     enhanced_features1 |= kFeatures1_RandomizerActive;
     fseek(fmissing, 0, SEEK_SET);
     int nmissing = RandoSnapshotTail_Load(fmissing);
-    if (nmissing != 5)
-      selfcheck_die("type-7: missing ChainLayout should parse RandoState + CheckedBitmap + PotRegistry + RandoSettings + Souls");
+    if (nmissing != 6)
+      selfcheck_die("type-7: missing ChainLayout should parse RandoState + CheckedBitmap + Discovery + PotRegistry + RandoSettings + Souls");
     if (g_rando_slot_active || Placement_GetActive() != NULL ||
         Chains_RuntimeRecordDoorEntry(chain_lx))
       selfcheck_die("type-7: missing ChainLayout should deactivate rando state");
@@ -2503,7 +2567,7 @@ void RandoSnapshotTail_SelfCheck(void) {
     if (!RandoSnapshotTail_Save(fbad)) selfcheck_die("type-7: bad-digest Save returned false");
     fseek(fbad, 0, SEEK_SET);
     int nbad = RandoSnapshotTail_Load(fbad);
-    if (nbad != 6)
+    if (nbad != 7)
       selfcheck_die("type-7: bad-digest snapshot should still parse all known TLVs");
     if (Chains_RuntimeRecordDoorEntry(chain_lx))
       selfcheck_die("type-7: bad digest inherited or installed a chain graph");
@@ -2575,7 +2639,7 @@ void RandoSnapshotTail_SelfCheck(void) {
 
     fseek(ff, 0, SEEK_SET);
     int nf = RandoSnapshotTail_Load(ff);
-    if (nf != 3) selfcheck_die("type-4: expected RandoState + CheckedBitmap + RecommendedFeatures");
+    if (nf != 4) selfcheck_die("type-4: expected RandoState + CheckedBitmap + Discovery + RecommendedFeatures");
     if (!(g_config.features0 & kFeatures0_RestoreJpGlitches) ||
         !(g_wanted_zelda_features & kFeatures0_RestoreJpGlitches) ||
         !(enhanced_features0 & kFeatures0_RestoreJpGlitches))
@@ -2597,7 +2661,7 @@ void RandoSnapshotTail_SelfCheck(void) {
     Rando_ClearSnapshotContext();
     fseek(ff, 0, SEEK_SET);
     int ninactive = RandoSnapshotTail_Load(ff);
-    if (ninactive != 3)
+    if (ninactive != 4)
       selfcheck_die("type-4: inactive replay should still parse RecommendedFeatures");
     if ((g_config.features0 & kFeatures0_RandoSeedQolMask) ||
         (g_wanted_zelda_features & kFeatures0_RandoSeedQolMask) ||
@@ -2616,15 +2680,15 @@ void RandoSnapshotTail_SelfCheck(void) {
     Rando_ClearSnapshotContext();
     fseek(frf, 0, SEEK_SET);
     int nfr = RandoSnapshotTail_Load(frf);
-    if (nfr != 3) selfcheck_die("type-4: re-save must perpetuate RecommendedFeatures");
+    if (nfr != 4) selfcheck_die("type-4: re-save must perpetuate RecommendedFeatures");
     if (!(g_config.features0 & kFeatures0_RestoreJpGlitches))
       selfcheck_die("type-4: re-saved features did not round-trip");
     fclose(frf);
 
     fseek(fold4, 0, SEEK_SET);
     int nof = RandoSnapshotTail_Load(fold4);
-    if (nof != 2)
-      selfcheck_die("type-4: no-feature snapshot should recognize type-1 + type-3 only");
+    if (nof != 3)
+      selfcheck_die("type-4: no-feature snapshot should recognize type-1 + type-3 + type-10 only");
     FILE *fleak = tmpfile();
     if (fleak == NULL) selfcheck_die("type-4: stale-context tmpfile() returned NULL");
     if (!RandoSnapshotTail_Save(fleak))
@@ -2636,7 +2700,7 @@ void RandoSnapshotTail_SelfCheck(void) {
     Rando_ClearSnapshotContext();
     fseek(fleak, 0, SEEK_SET);
     int nleak = RandoSnapshotTail_Load(fleak);
-    if (nleak != 2)
+    if (nleak != 3)
       selfcheck_die("type-4: no-feature snapshot re-save inherited stale TLV");
     if ((g_config.features0 & kFeatures0_RestoreJpGlitches) ||
         (g_wanted_zelda_features & kFeatures0_RestoreJpGlitches) ||

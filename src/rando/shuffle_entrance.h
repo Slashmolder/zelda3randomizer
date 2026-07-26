@@ -47,7 +47,7 @@ int Entrance_ComputePermutation(const RandoSettings *settings, uint64 seed,
                                 uint8 assign[kEntranceMaxInteriors]);
 
 // Install the per-seed cave region overrides into the logic graph from `assign`
-// (so Logic_ComputeReachability / Place_AssumedFill / Goal_IsCompletable see the
+// (so Logic_ComputeReachabilityFullKnowledge / Place_AssumedFill / Goal_IsCompletable see the
 // shuffled reachability). Clears any prior overrides first. `n` is the return of
 // Entrance_ComputePermutation.
 void Entrance_ApplyRegionOverrides(const uint8 *assign, int n);
@@ -99,6 +99,11 @@ uint16 Entrance_DungeonSourceExitRoom(uint8 vanilla_entrance_id);
 // active, caves + cross-eligible dungeons shuffle in ONE combined pool (the
 // separate cave/dungeon paths are NOT used).
 bool Entrance_IsCrossActive(const RandoSettings *settings);
+// tracker-player-knowledge — kRandoDungeon_* bitmask of dungeons whose
+// identity the active entrance topology hides (stage-2 pool or cross list);
+// 0 when no dungeon-entrance axis is active. Consumed by the live knowledge
+// mask; identity-mapped assignments stay included.
+uint16 Entrance_HiddenDungeonPoolMask(const RandoSettings *settings);
 // Combined-pool permutation (caves then cross-eligible dungeons). Returns the
 // pool size, or 0 when inactive.
 int Entrance_ComputeCrossPermutation(const RandoSettings *settings, uint64 seed,
@@ -148,6 +153,10 @@ uint8 Entrance_CaveRepresentativeId(int interior);
 // D.3 capture helpers: total cave-interior count (decoupled pool size) + name.
 int Entrance_CaveInteriorCount(void);
 const char *Entrance_CaveInteriorName(int interior);
+// tracker-player-knowledge — interior membership lookups for discovery
+// backfill and the knowledge mask's suppressed-location bitset.
+int Entrance_CaveInteriorOfLocation(uint16 loc);
+int Entrance_CaveInteriorLocationList(int interior, const uint16 **out_ids);
 
 // Dungeon decoupled (Insanity for dungeons): one-way dungeon EXITS, independent of
 // the cave decoupled path and composed on top of the dungeon ENTRY shuffle. No

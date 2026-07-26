@@ -176,12 +176,30 @@ void OwWarp_InstallLogicEdges(const OwWarpLayout *l) {
       if (p < i) continue;   // emit each pair once, both directions below
       // Unconditional ride edges: the zone->water ENTRY edges are
       // Flippers-gated, so being at a whirlpool component implies Flippers.
-      Rando_AddEntranceEdge(kRandoOwWhirlpools[i].region,
-                            kRandoOwWhirlpools[p].region, 0, 0);
-      Rando_AddEntranceEdge(kRandoOwWhirlpools[p].region,
-                            kRandoOwWhirlpools[i].region, 0, 0);
+      // tracker-player-knowledge — tagged with the FROM index so the masked
+      // live view hides the pair until ridden (one ride marks both indices —
+      // the matching is an involution). Inert for generation (no mask).
+      Rando_AddEntranceEdgeTagged(kRandoOwWhirlpools[i].region,
+                                  kRandoOwWhirlpools[p].region, 0, 0,
+                                  (uint8)(kKnowledgeTag_Whirlpool | i));
+      Rando_AddEntranceEdgeTagged(kRandoOwWhirlpools[p].region,
+                                  kRandoOwWhirlpools[i].region, 0, 0,
+                                  (uint8)(kKnowledgeTag_Whirlpool | p));
     }
   }
+}
+
+// tracker-player-knowledge — table-index bits of whirlpools participating in a
+// SHUFFLED (non-identity) pair on this layout. Identity-rolled and DW-identity
+// entries draw no pair edge at all (see the p==i skip above), so they need no
+// hiding. 0 when the whirlpool axis is off.
+uint8 OwWarp_ShuffledWhirlpoolMask(const OwWarpLayout *l) {
+  if (l == NULL || !(l->active & 2)) return 0;
+  uint8 mask = 0;
+  for (uint32 i = 0; i < kRandoOwWhirlpoolsCount && i < kOwWarpWhirlpoolMax; i++) {
+    if (l->wp_partner[i] != i) mask |= (uint8)(1u << i);
+  }
+  return mask;
 }
 
 uint8 OwWarp_WhirlpoolLandingIndex(const OwWarpLayout *l, uint8 entered_idx) {
@@ -255,6 +273,17 @@ uint8 Rando_OwWarp_WhirlpoolBirdRow(uint8 entered_row) {
   }
   if (tbl == 0xFF) return entered_row;  // unknown whirlpool: vanilla
   uint8 land_tbl = OwWarp_WhirlpoolLandingIndex(l, tbl);
+  // tracker-player-knowledge — the player is riding this pair now; the
+  // matching is an involution, so one ride reveals both directions. This
+  // hook's sole caller is the actual travel (no pre-travel display).
+  //
+  // Mark the PER-SEED PARTNER wp_partner[tbl] — NOT `land_tbl`. The edge tags
+  // installed above are keyed (tag k <=> edge region[k] -> region[wp_partner[k]]),
+  // whereas OwWarp_WhirlpoolLandingIndex deliberately returns the bird-ROW
+  // SOURCE vanilla_partner(mu), a different index. Marking land_tbl cleared
+  // the wrong bit: it un-hid an un-ridden pair's edge (a real leak) while
+  // leaving the just-ridden return trip hidden.
+  Rando_MarkWhirlpoolPairDiscovered(tbl, l->wp_partner[tbl]);
   uint16 land_screen = kRandoOwWhirlpools[land_tbl].screen;
   for (uint32 j = 0; j < rows; j++) {
     if (kWhirlpoolAreas[j] == land_screen) return (uint8)j;
@@ -327,6 +356,16 @@ void OwWarp_SelfCheck(void) {
         OWSC(kRandoOwWhirlpools[land].partner_screen ==
                  kRandoOwWhirlpools[l.wp_partner[i]].screen,
              "landing row does not arrive at the per-seed partner");
+        // tracker-player-knowledge — the ride hook must mark the PER-SEED
+        // PARTNER (matching the installed edge tags), never this landing
+        // row. Pin the two apart on at least one shuffled entry so a future
+        // "simplification" back to land_tbl fails here instead of silently
+        // un-hiding an un-ridden pair. (They coincide only when
+        // vanilla_partner(mu) == mu, which the table never has.)
+        OWSC(land != l.wp_partner[i] ||
+                 kRandoOwWhirlpools[l.wp_partner[i]].partner_screen ==
+                     kRandoOwWhirlpools[l.wp_partner[i]].screen,
+             "landing row must not be conflated with the per-seed partner");
       }
     }
   }

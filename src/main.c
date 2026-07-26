@@ -40,7 +40,7 @@
 #include "rando/rando_share.h"
 #include "rando/rando_save.h"  // --rando-shop-probe sidecar loader
 #include "rando/rando_textfield.h"  // §9.1b — SDL_TEXTINPUT host hooks
-#include "rando/rando_logic.h"  // Logic_ComputeReachability for --rando-bench-logic
+#include "rando/rando_logic.h"  // Logic_ComputeReachabilityFullKnowledge for --rando-bench-logic
 #include "rando/shuffle_doors.h"  // DoorShuffle_SelfTest for --door-selftest
 #include "rando/door_runtime.h"  // DoorRt_* (--door-identity-check)
 #include "features.h"           // kFeatures1_DoorShuffleActive
@@ -1097,7 +1097,7 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
     spoiler.forward_fill_fallback_count = st->forward_fill_fallback_count;
     spoiler.retry_attempts = st->attempts_used;
   }
-  // Goal completability — runs Logic_ComputeReachability against the full
+  // Goal completability — runs Logic_ComputeReachabilityFullKnowledge against the full
   // placement-table inventory and checks the goal-specific locations.
   spoiler.goal_completable = Goal_IsCompletable(&settings, seed_u64, &table);
 
@@ -1324,7 +1324,7 @@ static void MaybeRunBenchLogicAndExit(int argc, char **argv) {
   // assumed-fill pre-state (counts populated with every progression item
   // before the assumed-fill loop decrements). The bench is reading the
   // graph at its widest reachable state — that's the worst-case work for
-  // Logic_ComputeReachability and the right number to gate against.
+  // Logic_ComputeReachabilityFullKnowledge and the right number to gate against.
   RandoCounts counts;
   memset(&counts, 0, sizeof(counts));
   for (int i = 0; i < 256; i++) counts.by_item_id[i] = 7;  // enough for any HAS_AMOUNT N<=7
@@ -1351,13 +1351,13 @@ static void MaybeRunBenchLogicAndExit(int argc, char **argv) {
   uint64_t bench_start = SDL_GetPerformanceCounter();
   for (int i = 0; i < iters; i++) {
     uint64_t t0 = SDL_GetPerformanceCounter();
-    const RandoReachability *r = Logic_ComputeReachability(&counts, &settings);
+    const RandoReachability *r = Logic_ComputeReachabilityFullKnowledge(&counts, &settings);
     uint64_t t1 = SDL_GetPerformanceCounter();
     samples[i] = (t1 >= t0) ? (t1 - t0) : 0;
     // Touch the result so the compiler can't dead-code-eliminate the call.
     if (r == NULL) {
       // Should never happen; bail out so we don't report nonsense numbers.
-      fprintf(stderr, "--rando-bench-logic: Logic_ComputeReachability returned NULL at iter %d\n", i);
+      fprintf(stderr, "--rando-bench-logic: Logic_ComputeReachabilityFullKnowledge returned NULL at iter %d\n", i);
       free(samples);
       exit(1);
     }
@@ -1385,7 +1385,7 @@ static void MaybeRunBenchLogicAndExit(int argc, char **argv) {
   uint64_t p99_ticks = samples[p99_idx];
 
   // Mean computed as total_ticks/iters (excludes loop overhead but the loop
-  // overhead is dominated by Logic_ComputeReachability so the difference is
+  // overhead is dominated by Logic_ComputeReachabilityFullKnowledge so the difference is
   // immaterial). Use integer arithmetic — the determinism guard forbids
   // `float `/`double ` in src/rando/ but main.c is outside that scope, and
   // we need double here to format percentiles in ms.
@@ -1455,7 +1455,7 @@ static void MaybeRunRevealSpoilerAndExit(int argc, char **argv, const char *conf
 // --rando-bench-logic CLI mode (tasks.md §3.11).
 //
 // Detects `--rando-bench-logic` in argv. When present, runs
-// Logic_ComputeReachability `iters` times (default 1000, override with
+// Logic_ComputeReachabilityFullKnowledge `iters` times (default 1000, override with
 // `--bench-iters=N`) against a representative full-inventory snapshot, sorts
 // the per-iteration wall-clock samples, and prints p50/p95/p99/mean to stdout
 // in a single machine-parseable line:
@@ -1729,7 +1729,7 @@ int main(int argc, char** argv) {
   }
 
   // Check for --rando-bench-logic BEFORE any SDL_Init. Runs the
-  // Logic_ComputeReachability benchmark (tasks.md §3.11) and exits. When
+  // Logic_ComputeReachabilityFullKnowledge benchmark (tasks.md §3.11) and exits. When
   // the flag is absent this returns; main() then continues normally.
   MaybeRunBenchLogicAndExit(argc, argv);
 

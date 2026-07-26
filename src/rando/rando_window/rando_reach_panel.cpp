@@ -131,6 +131,10 @@ extern "C" void RandoReach_Render(void) {
   const ImVec4 col_reach   = ImVec4(0.95f, 0.85f, 0.35f, 1.0f);  // yellow
   const ImVec4 col_locked  = ImVec4(0.55f, 0.55f, 0.58f, 1.0f);  // dim grey
 
+  // tracker-player-knowledge — hoisted out of the region loop (the helper
+  // rebuilds the pool mask from the active layout each call).
+  uint16 unexplored_mask = Rando_HiddenUndiscoveredDungeonMask();
+
   // Iterate regions in table order; a trailing pass (region 0xFFFF) catches
   // location entries with no region binding.
   for (uint32 ri = 0; ri <= kRandoRegionsCount; ri++) {
@@ -152,9 +156,15 @@ extern "C" void RandoReach_Render(void) {
     if (r_total == 0) continue;
 
     const char *rname = (region_id == 0xFFFF) ? "(unbound)" : Rando_GetRegionName(region_id);
+    // tracker-player-knowledge — mirror the Check Tracker's "? " prefix marker
+    // (the shared knowledge-limited flood keeps these regions dark).
+    const char *unx =
+        (ri < kRandoRegionsCount && kRandoRegions[ri].dungeon_id < 16 &&
+         ((unexplored_mask >> kRandoRegions[ri].dungeon_id) & 1u) != 0)
+            ? "? " : "";
     char header[128];
-    snprintf(header, sizeof header, "%s - %d/%d reachable###reg%u",
-             rname ? rname : "(region)", r_reach, r_total, region_id);
+    snprintf(header, sizeof header, "%s%s - %d/%d reachable###reg%u",
+             unx, rname ? rname : "(region)", r_reach, r_total, region_id);
     if (!ImGui::CollapsingHeader(header, ImGuiTreeNodeFlags_DefaultOpen)) continue;
 
     // Three columns when item names are shown (non-race); two otherwise.

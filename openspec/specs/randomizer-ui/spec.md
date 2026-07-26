@@ -465,6 +465,8 @@ When the user enables Race mode in the settings UI, the settings-screen preview 
 
 The randomizer SHALL optionally expose a local-only TCP server that emits per-state-change JSON messages describing the player's current inventory, reachability state, and checked-location bitmap. External tracker clients (EmoTracker, PopTracker, custom OBS overlays) subscribe to the stream and render state without needing to peek at `g_ram` via emulator memory APIs.
 
+The emitted reachability state SHALL be the knowledge-limited live view (see `randomizer-player-knowledge / Player-knowledge invariant for tracker surfaces`): the `reachable` array never includes locations whose availability would reveal an undiscovered shuffled assignment. This makes the export's spoiler-safety contract hold by construction for every seed — race or casual — because it emits only the player's own inventory, their checked locations, discovered connections, and knowledge-limited availability.
+
 **Lifecycle**:
 - Disabled by default. Enabled via `[AutoTracker] enabled = true` in `zelda3.ini` or via CLI flag `--auto-tracker`.
 - TCP listener binds to `127.0.0.1:<port>` (default 17400, configurable via INI). A malformed or out-of-range `Port` value (valid range 1..65535) SHALL be rejected with the standard config-parse warning, keeping the default.
@@ -491,6 +493,10 @@ The randomizer SHALL optionally expose a local-only TCP server that emits per-st
 #### Scenario: Subscriber receives state on counter advance
 - **WHEN** an external client is connected and the player picks up an item that advances `reachability_state_counter`
 - **THEN** the server emits a JSON message describing the new state within one frame of the counter advance
+
+#### Scenario: Reachable export is knowledge-limited
+- **WHEN** a dungeon-topology slot is active, no hidden-identity dungeon has been entered, and a client receives a state message
+- **THEN** the `reachable` array contains no location inside an undiscovered hidden-identity dungeon and no overworld location whose only route passes through one
 
 #### Scenario: Determinism unaffected by auto-tracker
 - **WHEN** the same seed is generated with auto-tracker on vs. off

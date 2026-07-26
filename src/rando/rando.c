@@ -204,7 +204,7 @@ extern const uint8 kWishPond2_OamFlags[76];
 // ---------------------------------------------------------------------------
 // Reachability state counter — bumped by Rando_BumpReachabilityCounter()
 // when a story-progress event flag changes. The tracker overlay queries this
-// to know when to invalidate its memoized Logic_ComputeReachability cache.
+// to know when to invalidate its memoized Logic_ComputeReachabilityFullKnowledge cache.
 // (Heap-resident per design — NOT in g_ram. See proposal.md "Impact".)
 // ---------------------------------------------------------------------------
 static uint32 g_reachability_state_counter;
@@ -2094,6 +2094,166 @@ uint8 g_rando_flute_shovel_owned = 0;
 uint8 g_rando_boomerang_owned = 0;
 uint8 g_rando_bow_owned = 0;
 
+// ---------------------------------------------------------------------------
+// tracker-player-knowledge — persisted per-slot topology-discovery state.
+// The knowledge-limited live view (Rando_GetLiveReachability) may only present
+// content the player has observed; these bits record the observations:
+//   dungeons  — been inside (per-frame observation, Rando_TickDiscovery)
+//   caves     — entered the door leading to this vanilla interior
+//   whirlpools— ridden this pair (involution: one ride marks both directions)
+//   exits     — traversed this decoupled cave-exit net edge
+// Persisted in the sidecar slot-extension v13 block and the type-10 snapshot
+// TLV (kRandoSnapshotTail_Type_Discovery, payload format_version 1).
+// Rando_BackfillDiscoveryFromChecked() derives the
+// dungeon/cave bits for older saves/snapshots from checked-location state
+// (checked implies having been there, so backfill can under-reveal but never
+// over-reveal); it runs unconditionally after every load — an idempotent OR —
+// so checks recorded by an older binary self-heal too.
+// ---------------------------------------------------------------------------
+static uint16 g_rando_discovered_dungeons;    // bit d = kRandoDungeon_* d entered
+static uint8 g_rando_discovered_whirlpools;   // bit = kRandoOwWhirlpools index ridden
+static uint8 g_rando_discovered_caves[(kEntranceMaxInteriors + 7) / 8];
+static uint8 g_rando_discovered_exits[(kEntranceMaxInteriors + 7) / 8];
+
+static void rando_discovery_mark_common(void) {
+  // A discovery is a reachability-relevant state change: invalidate the memo
+  // (the counter is the memo key) — the tracker lights up the same session.
+  Rando_BumpReachabilityCounter();
+}
+
+bool Rando_DungeonDiscovered(uint8 rando_dungeon) {
+  return rando_dungeon < kRandoDungeon_Count &&
+         (g_rando_discovered_dungeons & (uint16)(1u << rando_dungeon)) != 0;
+}
+
+void Rando_MarkDungeonDiscovered(uint8 rando_dungeon) {
+  if (!g_rando_slot_active || rando_dungeon >= kRandoDungeon_Count) return;
+  uint16 bit = (uint16)(1u << rando_dungeon);
+  if (g_rando_discovered_dungeons & bit) return;
+  g_rando_discovered_dungeons |= bit;
+  rando_discovery_mark_common();
+}
+
+bool Rando_CaveInteriorDiscovered(int interior) {
+  return interior >= 0 && interior < kEntranceMaxInteriors &&
+         (g_rando_discovered_caves[interior >> 3] & (uint8)(1u << (interior & 7))) != 0;
+}
+
+void Rando_MarkCaveInteriorDiscovered(int interior) {
+  if (!g_rando_slot_active || interior < 0 || interior >= kEntranceMaxInteriors) return;
+  // Only record cave discovery on slots where a cave identity can actually be
+  // hidden. Besides keeping the persisted bits meaningful, this is load-bearing
+  // for Retro: the take-any redirect overwrites which_entrance AFTER the entry
+  // hook that marks (see Overworld_UseEntrance), so the door's table interior is
+  // NOT what the player entered. Retro refuses cave shuffle, so gating here
+  // makes that stale mark impossible instead of merely unread.
+  // (accessor, not the file-statics — those are declared further down.)
+  const RandoSettings *rs = Rando_GetActiveSettings();
+  if (rs == NULL || !Settings_EffectiveShuffleCaveEntrances(rs)) return;
+  uint8 bit = (uint8)(1u << (interior & 7));
+  if (g_rando_discovered_caves[interior >> 3] & bit) return;
+  g_rando_discovered_caves[interior >> 3] |= bit;
+  rando_discovery_mark_common();
+}
+
+bool Rando_DecoupledExitDiscovered(int interior) {
+  return interior >= 0 && interior < kEntranceMaxInteriors &&
+         (g_rando_discovered_exits[interior >> 3] & (uint8)(1u << (interior & 7))) != 0;
+}
+
+void Rando_MarkDecoupledExitDiscovered(int interior) {
+  if (!g_rando_slot_active || interior < 0 || interior >= kEntranceMaxInteriors) return;
+  uint8 bit = (uint8)(1u << (interior & 7));
+  if (g_rando_discovered_exits[interior >> 3] & bit) return;
+  g_rando_discovered_exits[interior >> 3] |= bit;
+  rando_discovery_mark_common();
+}
+
+uint8 Rando_DiscoveredWhirlpoolMask(void) { return g_rando_discovered_whirlpools; }
+
+void Rando_MarkWhirlpoolPairDiscovered(uint8 entered_idx, uint8 partner_idx) {
+  if (!g_rando_slot_active) return;
+  uint8 add = 0;
+  if (entered_idx < 8) add |= (uint8)(1u << entered_idx);
+  if (partner_idx < 8) add |= (uint8)(1u << partner_idx);
+  if ((g_rando_discovered_whirlpools | add) == g_rando_discovered_whirlpools) return;
+  g_rando_discovered_whirlpools |= add;
+  rando_discovery_mark_common();
+}
+
+// Per-frame dungeon observation — the single choke point for "the player is
+// inside dungeon X" (covers walk-ins, drop-ins, chain seams, spiral entries,
+// and spawn points without per-entry-path hooks). Module 7 is the settled
+// dungeon gameplay module; HC-proper folds into the HCE bucket the same way
+// the map display does.
+void Rando_TickDiscovery(void) {
+  if (!g_rando_slot_active) return;
+  if (main_module_index != 7) return;
+  uint8 game_d = Rando_GameDungeonFromRawPalace((uint8)cur_palace_index_x2);
+  uint8 rd = Rando_MapDisplayDungeonFromGameDungeon(game_d);
+  if (rd != kRandoDungeon_None) Rando_MarkDungeonDiscovered(rd);
+}
+
+// Copy-out / copy-in for the sidecar writer, the snapshot TLV, and selfchecks.
+void Rando_GetDiscoveryState(uint16 *dungeons, uint8 *whirlpools,
+                             uint8 caves[8], uint8 exits[8]) {
+  if (dungeons) *dungeons = g_rando_discovered_dungeons;
+  if (whirlpools) *whirlpools = g_rando_discovered_whirlpools;
+  if (caves) memcpy(caves, g_rando_discovered_caves, sizeof(g_rando_discovered_caves));
+  if (exits) memcpy(exits, g_rando_discovered_exits, sizeof(g_rando_discovered_exits));
+}
+
+void Rando_SetDiscoveryState(uint16 dungeons, uint8 whirlpools,
+                             const uint8 caves[8], const uint8 exits[8]) {
+  g_rando_discovered_dungeons = dungeons;
+  g_rando_discovered_whirlpools = whirlpools;
+  if (caves) memcpy(g_rando_discovered_caves, caves, sizeof(g_rando_discovered_caves));
+  else memset(g_rando_discovered_caves, 0, sizeof(g_rando_discovered_caves));
+  if (exits) memcpy(g_rando_discovered_exits, exits, sizeof(g_rando_discovered_exits));
+  else memset(g_rando_discovered_exits, 0, sizeof(g_rando_discovered_exits));
+  Rando_BumpReachabilityCounter();
+}
+
+void Rando_ResetDiscoveryState(void) {
+  g_rando_discovered_dungeons = 0;
+  g_rando_discovered_whirlpools = 0;
+  memset(g_rando_discovered_caves, 0, sizeof(g_rando_discovered_caves));
+  memset(g_rando_discovered_exits, 0, sizeof(g_rando_discovered_exits));
+  Rando_BumpReachabilityCounter();
+}
+
+// Backfill — derive dungeon/cave discovery from checked-location state ONLY
+// (never from placement/settings/layout data): a checked location implies the
+// player was there. Whirlpool/exit knowledge has no checked-state proxy and
+// simply re-hides on legacy loads (mild, fail-safe). Idempotent OR; called
+// after slot activation and after snapshot-tail load.
+void Rando_BackfillDiscoveryFromChecked(void) {
+  if (!g_rando_slot_active) return;
+  bool changed = false;
+  for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+    uint16 loc = kRandoLocations[i].id;
+    if (!Rando_IsLocationChecked(loc)) continue;
+    // Region → dungeon (generated binding; kRandoDungeon_* convention).
+    uint16 region = kRandoLocations[i].region_id;
+    for (uint32 r = 0; r < kRandoRegionsCount; r++) {
+      if (kRandoRegions[r].id != region) continue;
+      uint8 d = kRandoRegions[r].dungeon_id;
+      if (d < kRandoDungeon_Count && !Rando_DungeonDiscovered(d)) {
+        g_rando_discovered_dungeons |= (uint16)(1u << d);
+        changed = true;
+      }
+      break;
+    }
+    // Cave interior membership (static interior→location lists).
+    int interior = Entrance_CaveInteriorOfLocation(loc);
+    if (interior >= 0 && !Rando_CaveInteriorDiscovered(interior)) {
+      g_rando_discovered_caves[interior >> 3] |= (uint8)(1u << (interior & 7));
+      changed = true;
+    }
+  }
+  if (changed) Rando_BumpReachabilityCounter();
+}
+
 // Phase B Inverted runtime — the active slot's world_state, captured at
 // Rando_ActivateSidecarSlot from the slot header's additive @68 byte (only
 // meaningful when settings_ext_present). Lets the starting-inventory grant in
@@ -2408,6 +2568,11 @@ void Rando_PopulateSlotBitmap(struct RandoSidecarSlot *out_slot) {
   // valid "own nothing" state, so always mark present on a rando save.
   out_slot->header.souls_present = 1;
   memcpy(out_slot->header.soul_flags, Souls_Flags(), sizeof(out_slot->header.soul_flags));
+  // tracker-player-knowledge — persist topology-discovery state (v13 ext).
+  Rando_GetDiscoveryState(&out_slot->header.discovered_dungeons,
+                          &out_slot->header.discovered_whirlpools,
+                          out_slot->header.discovered_caves,
+                          out_slot->header.discovered_exits);
 }
 
 void Rando_OnGameSave(int slot_index, const uint8 *paired_sram_slot, uint32 paired_sram_slot_size) {
@@ -3373,7 +3538,7 @@ RandoGrantResult Rando_GrantBossPrizeReceipt(
 }
 
 // ---------------------------------------------------------------------------
-// Per-seed shuffle-assignment globals consumed by Logic_ComputeReachability.
+// Per-seed shuffle-assignment globals consumed by Logic_ComputeReachabilityFullKnowledge.
 // ---------------------------------------------------------------------------
 static uint8 g_dungeon_prize_assignment_store[kRandoDungeonCount];
 static uint8 g_medallion_assignment_store[kRandoMedallionEntranceCount];
@@ -3547,6 +3712,13 @@ void Rando_RecordEnteredDoorForCapture(uint16 lx) {
                                                 : ((const uint8 *)kOverworld_Entrance_Id)[lx];
   if (g_entrance_overlay_orig != NULL && ((const uint8 *)kOverworld_Entrance_Id)[lx] != vid)
     Rando_EntranceMarkDiscovered(lx);
+  // tracker-player-knowledge — the player just SAW the interior the door
+  // actually loads (the CURRENT, possibly shuffled table id): persistently
+  // mark that vanilla interior discovered so its contents join the
+  // knowledge-limited view. A dungeon behind this door resolves to interior
+  // -1 here; the per-frame dungeon observation covers it instead.
+  Rando_MarkCaveInteriorDiscovered(
+      Entrance_InteriorOfEntranceId(((const uint8 *)kOverworld_Entrance_Id)[lx]));
   int interior = Entrance_InteriorOfEntranceId(vid);
   if (interior >= 0 && interior < kEntranceMaxInteriors)
     g_rando_entered_door_interior = (uint16)interior;
@@ -3582,6 +3754,10 @@ void Rando_RecordEnteredFallhole(void) {
   g_rando_entered_door_interior = 0xFFFF;
   int interior = Entrance_InteriorOfEntranceId(which_entrance);
   if (interior < 0 || interior >= kEntranceMaxInteriors) return;
+  // tracker-player-knowledge — the fall loaded this interior; the player has
+  // now seen it (fall-hole targets aren't shuffled, so this is vanilla
+  // knowledge — marking is harmless and keeps the state uniform).
+  Rando_MarkCaveInteriorDiscovered(interior);
   g_rando_entered_door_interior = (uint16)interior;
   if (g_decoupled_active && interior < g_decoupled_n)
     g_decoupled_entered = (uint16)interior;
@@ -3710,7 +3886,12 @@ bool Rando_DecoupledReplaceArrival(uint16 entered) {
   if (!g_decoupled_active || entered >= (uint16)g_decoupled_n) return false;
   int target = g_decoupled_net[entered];
   if (target < 0 || target >= g_decoupled_n || target == (int)entered) return false;
-  return Rando_ReplayCaveArrival(target);
+  if (!Rando_ReplayCaveArrival(target)) return false;
+  // tracker-player-knowledge — the player just traversed net[entered]: the
+  // matching decoupled exit logic edge is now known (the coupled fallback
+  // above never traverses the net, so it never marks).
+  Rando_MarkDecoupledExitDiscovered((int)entered);
+  return true;
 }
 
 // Cross-decoupled exit: replay the target CAVE's arrival (target resolved at the
@@ -5262,6 +5443,15 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   Souls_ResetFlags();
   if (src->header.souls_present)
     memcpy(Souls_Flags(), src->header.soul_flags, sizeof(src->header.soul_flags));
+  // tracker-player-knowledge — restore topology-discovery state (pre-v13
+  // slots load zeros), then backfill dungeon/cave bits from the checked
+  // bitmap copied above. The backfill is an idempotent OR, so running it on
+  // v13 slots too self-heals checks recorded by an older binary.
+  Rando_SetDiscoveryState(src->header.discovered_dungeons,
+                          src->header.discovered_whirlpools,
+                          src->header.discovered_caves,
+                          src->header.discovered_exits);
+  Rando_BackfillDiscoveryFromChecked();
   // Phase B Inverted runtime — capture the slot's world_state from the
   // additive @68 ext byte. Only trust it when settings_ext_present is set
   // (older slots wrote 0 there, which already maps to kWorldState_Open).
@@ -5346,7 +5536,7 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
   g_rando_active_seed_u64 = SlotSeedFromShareString(src->header.share_string);
 
   // === Reachability settings + shuffle assignments (tracker engine) ===
-  // The runtime reachability engine (Logic_ComputeReachability, consumed by the
+  // The runtime reachability engine (Logic_ComputeReachabilityFullKnowledge, consumed by the
   // Check/Map tracker windows) needs the seed's FULL settings plus the prize /
   // medallion shuffle assignments. Nothing else installs the assignments at
   // reload — the placer set them at generation time (rando_placement.c) and that
@@ -5696,6 +5886,9 @@ void Rando_DeactivateSlot(void) {
   g_rando_flute_shovel_owned = 0;
   g_rando_boomerang_owned = 0;
   g_rando_bow_owned = 0;
+  // tracker-player-knowledge — per-slot state; the next slot re-loads its own
+  // discovery from the sidecar/TLV (+ backfill).
+  Rando_ResetDiscoveryState();
   g_rando_key_ring_selected_mask = 0;
   g_rando_key_ring_owned_mask = 0;
   g_rando_skeleton_key_present = false;
@@ -6106,12 +6299,79 @@ void Rando_BuildRuntimeCounts(RandoCounts *out) {
 // counter advances (bumped on item pickups, location checks, and progress
 // events). Returns NULL when settings are unavailable (older slot / snapshot
 // restore) — callers then suppress the reachability display. The result is
-// snapshotted out of the shared Logic_ComputeReachability buffer so it stays
+// snapshotted out of the shared Logic_ComputeReachabilityFullKnowledge buffer so it stays
 // valid across frames and across both tracker windows.
 static uint32 g_live_reach_counter = 0xFFFFFFFFu;
 static uint8 g_live_reach_progress = 0xFFu;
 static uint8 g_live_reach_has_live_bombs = 0xFFu;
 static bool g_live_reach_valid = false;
+
+// tracker-player-knowledge — build the live knowledge mask from the ACTIVE
+// layout tables (never hardcoded pools) minus the persisted discovery state.
+// Rebuilt on every memo recompute; discovery marks bump the reachability
+// counter, so the memo can never serve a stale mask. An all-zero mask is the
+// no-topology case and the masked flood is then byte-identical to full
+// knowledge (Logic_KnowledgeMaskSelfCheck pins that identity).
+static uint8 g_live_suppressed_locations[(kRandoLocationCapacity + 7) >> 3];
+
+// Hidden-identity dungeons: the entrance stage-2/cross pool plus the chains
+// pool (chains and entrance axes are mutually normalized, but OR is
+// harmless), minus dungeons the player has been inside.
+static uint16 rando_live_hidden_dungeon_mask(void) {
+  const RandoSettings *s = &g_rando_active_settings;
+  uint16 pool = Entrance_HiddenDungeonPoolMask(s);
+  if (Settings_EffectiveDungeonChains(s)) {
+    for (int i = 0; i < kChainsPoolCount; i++)
+      pool |= (uint16)(1u << kChainsPoolDungeons[i]);
+  }
+  uint16 hidden = 0;
+  for (uint8 d = 0; d < kRandoDungeon_Count; d++) {
+    if (((pool >> d) & 1u) != 0 && !Rando_DungeonDiscovered(d))
+      hidden |= (uint16)(1u << d);
+  }
+  return hidden;
+}
+
+// Public form for the tracker windows' "(unexplored)" affordance — same
+// derivation the live mask uses, so display and flood can never disagree.
+uint16 Rando_HiddenUndiscoveredDungeonMask(void) {
+  if (!g_rando_slot_active || !g_rando_active_settings_valid) return 0;
+  return rando_live_hidden_dungeon_mask();
+}
+
+static void rando_build_live_knowledge_mask(RandoKnowledgeMask *m) {
+  memset(m, 0, sizeof *m);
+  const RandoSettings *s = &g_rando_active_settings;
+  m->hidden_dungeon_mask = rando_live_hidden_dungeon_mask();
+  // Whirlpools: shuffled (non-identity) pairs minus ridden.
+  m->hidden_whirlpool_mask =
+      (uint8)(OwWarp_ShuffledWhirlpoolMask(Rando_ActiveOwWarpLayout()) &
+              (uint8)~Rando_DiscoveredWhirlpoolMask());
+  // Caves: any cave-shuffle variant hides an undiscovered interior's
+  // contents; cave-decoupled additionally hides untraversed exit nets
+  // (cross-decoupled adds no logic edges, so nothing to gate there).
+  if (Entrance_IsActive(s)) {
+    bool any = false;
+    memset(g_live_suppressed_locations, 0, sizeof(g_live_suppressed_locations));
+    int n = Entrance_CaveInteriorCount();
+    for (int j = 0; j < n; j++) {
+      if (!Rando_CaveInteriorDiscovered(j)) {
+        const uint16 *ids = NULL;
+        int cnt = Entrance_CaveInteriorLocationList(j, &ids);
+        for (int k = 0; k < cnt; k++) {
+          uint16 loc = ids[k];
+          if (loc < kRandoLocationCapacity) {
+            g_live_suppressed_locations[loc >> 3] |= (uint8)(1u << (loc & 7));
+            any = true;
+          }
+        }
+      }
+      if (Entrance_IsDecoupledActive(s) && !Rando_DecoupledExitDiscovered(j))
+        m->hidden_exit_mask |= (uint64)1u << j;
+    }
+    if (any) m->suppressed_locations = g_live_suppressed_locations;
+  }
+}
 
 const RandoReachability *Rando_GetLiveReachability(void) {
   if (!g_rando_active_settings_valid) {
@@ -6138,7 +6398,14 @@ const RandoReachability *Rando_GetLiveReachability(void) {
   // the ACTIVE slot's cached effective value.
   Logic_SetResolvedTowerCrystals(
       (uint8)(g_rando_effective_crystals_tower + 1));
-  const RandoReachability *r = Logic_ComputeReachability(&counts, &g_rando_active_settings);
+  // tracker-player-knowledge — the live view is ALWAYS the knowledge-limited
+  // flood (unconditional, owner decision: no reveal toggle). The mask is
+  // rebuilt here from active layouts minus discovery; an empty mask is
+  // byte-identical to full knowledge.
+  RandoKnowledgeMask kmask;
+  rando_build_live_knowledge_mask(&kmask);
+  const RandoReachability *r =
+      Logic_ComputeReachabilityMasked(&counts, &g_rando_active_settings, &kmask);
   if (r == NULL) {
     g_live_reach_valid = false;
     return NULL;
@@ -8408,7 +8675,7 @@ void Rando_TrackerSelfCheck(void) {
   Rando_BuildRuntimeCounts(&counts);
   if (counts.by_item_id[ITEM_BigKey_EasternPalace] != 0)
     tsc_die("runtime counts pre-granted vanilla Eastern big key");
-  const RandoReachability *r0 = Logic_ComputeReachability(&counts, rec);
+  const RandoReachability *r0 = Logic_ComputeReachabilityFullKnowledge(&counts, rec);
   if (Reachability_HasLocation(r0, LOC_Eastern_Palace_Big_Chest))
     tsc_die("Eastern big chest reachable without live Eastern big key");
   int n0 = 0;
@@ -8421,7 +8688,7 @@ void Rando_TrackerSelfCheck(void) {
   Rando_BuildRuntimeCounts(&bigkey_counts);
   if (bigkey_counts.by_item_id[ITEM_BigKey_EasternPalace] != 1)
     tsc_die("runtime counts missed live Eastern big key");
-  const RandoReachability *rbk = Logic_ComputeReachability(&bigkey_counts, rec);
+  const RandoReachability *rbk = Logic_ComputeReachabilityFullKnowledge(&bigkey_counts, rec);
   if (!Reachability_HasLocation(rbk, LOC_Eastern_Palace_Big_Chest))
     tsc_die("Eastern big chest not reachable with live Eastern big key");
   link_bigkey = 0;
@@ -8439,7 +8706,7 @@ void Rando_TrackerSelfCheck(void) {
   counts.by_item_id[ITEM_CaneOfSomaria] = 1;
   counts.by_item_id[ITEM_MagicMirror] = 1;
   counts.by_item_id[ITEM_Bombos] = counts.by_item_id[ITEM_Ether] = counts.by_item_id[ITEM_Quake] = 1;
-  const RandoReachability *r1 = Logic_ComputeReachability(&counts, rec);
+  const RandoReachability *r1 = Logic_ComputeReachabilityFullKnowledge(&counts, rec);
   int n1 = 0;
   for (uint32 i = 0; i < kRandoLocationsCount; i++)
     if (Reachability_HasLocation(r1, kRandoLocations[i].id)) n1++;
@@ -10185,6 +10452,7 @@ static const RandoSelfCheckEntry kRandoSelfChecks[] = {
   { kRandoSelfCheckGroup_Config,      Share_SelfCheck },
   { kRandoSelfCheckGroup_Config,      Settings_SelfCheck },
   { kRandoSelfCheckGroup_Logic,       Logic_SelfCheck },
+  { kRandoSelfCheckGroup_Logic,       Logic_KnowledgeMaskSelfCheck },  // tracker-player-knowledge
   { kRandoSelfCheckGroup_Generation,  Placement_SelfCheck },
   { kRandoSelfCheckGroup_Generation,  SeedShape_SelfCheck },
   { kRandoSelfCheckGroup_Generation,  Shuffles_SelfCheck },

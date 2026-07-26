@@ -195,7 +195,7 @@ static bool eval_region_reachable(Cursor *c, const PredicateContext *ctx) {
   // indirection was retired in Phase C — it was identity dead code that would
   // have corrupted this hot predicate if ever populated; see design.md §1).
   // Phase A0: if no reachability bitset has been supplied (e.g., a standalone
-  // Predicate_Evaluate call outside of Logic_ComputeReachability), conservatively
+  // Predicate_Evaluate call outside of Logic_ComputeReachabilityFullKnowledge), conservatively
   // return false. The placer / tracker pass a populated bitset.
   if (ctx->reachable_regions_bitset == NULL) return false;
   if (region_id >= ctx->reachable_regions_count) return false;
@@ -898,6 +898,9 @@ static struct {
   uint16 from_region, to_region;
   uint32 pred_off;
   uint16 pred_len;
+  // tracker-player-knowledge — kKnowledgeTag_* | index; consulted only by the
+  // masked live flood (generation passes no mask, so tags are inert there).
+  uint8 knowledge_tag;
 } g_entrance_added_edges[kEntranceAddedEdgeMax];
 static int g_entrance_added_edge_count = 0;
 static int g_entrance_added_edge_dropped = 0;
@@ -972,8 +975,9 @@ int Rando_EntranceAddedEdgeCapacity(void) {
   return kEntranceAddedEdgeMax;
 }
 
-void Rando_AddEntranceEdge(uint16 from_region, uint16 to_region,
-                           uint32 pred_off, uint16 pred_len) {
+void Rando_AddEntranceEdgeTagged(uint16 from_region, uint16 to_region,
+                                 uint32 pred_off, uint16 pred_len,
+                                 uint8 knowledge_tag) {
   if (g_entrance_added_edge_count >= kEntranceAddedEdgeMax) {
     if (g_entrance_added_edge_dropped++ == 0)
       fprintf(stderr,
@@ -987,6 +991,13 @@ void Rando_AddEntranceEdge(uint16 from_region, uint16 to_region,
   g_entrance_added_edges[i].to_region = to_region;
   g_entrance_added_edges[i].pred_off = pred_off;
   g_entrance_added_edges[i].pred_len = pred_len;
+  g_entrance_added_edges[i].knowledge_tag = knowledge_tag;
+}
+
+void Rando_AddEntranceEdge(uint16 from_region, uint16 to_region,
+                           uint32 pred_off, uint16 pred_len) {
+  Rando_AddEntranceEdgeTagged(from_region, to_region, pred_off, pred_len,
+                              kKnowledgeTag_None);
 }
 
 // ---------------------------------------------------------------------------
@@ -1010,7 +1021,7 @@ static uint32 g_door_oracle_cache_gen[kDoorTbl_DungeonCount];
 static DoorExploreResult g_door_oracle_cache[kDoorTbl_DungeonCount];
 // Input fingerprint per cached flood: the flood's outcome is a pure function
 // of (inventory counts, portal set, held keys, big key) for a fixed layout.
-// Assumed fill calls Logic_ComputeReachability hundreds of times with mostly
+// Assumed fill calls Logic_ComputeReachabilityFullKnowledge hundreds of times with mostly
 // IDENTICAL inventory; re-flooding per fixed-point pass made a basic seed
 // take minutes. When the fingerprint matches, the pass-stale cache entry is
 // still exact — reuse it across generations.
@@ -1477,7 +1488,7 @@ uint8 Rando_DoorKeySourceDungeon(uint16 loc_id, uint16 item_id) {
 }
 
 // ---------------------------------------------------------------------------
-// Logic_ComputeReachability (task 3.8) — fixed-point expansion.
+// Logic_ComputeReachabilityFullKnowledge (task 3.8) — fixed-point expansion.
 //
 // Algorithm:
 //   1. Initialize reachable_regions = {start_region}, reachable_locations = {}.
@@ -1742,11 +1753,50 @@ static inline bool base_edge_inverted_shadowed(uint16 from, uint16 to) {
   return (g_inverted_pair_set[from][to >> 3] >> (to & 7)) & 1;
 }
 
+// tracker-player-knowledge — region id → RandoRegionDef.dungeon_id lookup for
+// the masked flood's region-admission gate. Lazily built from the generated
+// region table (kRandoDungeon_* convention; 0xFF = not a dungeon).
+static uint8 g_region_dungeon_id[kReachabilityMaxRegions];
+static bool g_region_dungeon_ready = false;
+static void build_region_dungeon_index(void) {
+  if (g_region_dungeon_ready) return;
+  memset(g_region_dungeon_id, 0xFF, sizeof(g_region_dungeon_id));
+  for (uint32 i = 0; i < kRandoRegionsCount; i++) {
+    if (kRandoRegions[i].id < kReachabilityMaxRegions)
+      g_region_dungeon_id[kRandoRegions[i].id] = kRandoRegions[i].dungeon_id;
+  }
+  g_region_dungeon_ready = true;
+}
+
+// True when the mask excludes `region` from the fixpoint (its dungeon's
+// identity is hidden). NULL mask / zero mask short-circuits to false.
+static inline bool knowledge_mask_blocks_region(const RandoKnowledgeMask *mask,
+                                                uint16 region) {
+  if (mask == NULL || mask->hidden_dungeon_mask == 0) return false;
+  if (region >= kReachabilityMaxRegions) return false;
+  uint8 d = g_region_dungeon_id[region];
+  return d < 16 && ((mask->hidden_dungeon_mask >> d) & 1u) != 0;
+}
+
+// True when the mask suppresses a knowledge-tagged added edge.
+static inline bool knowledge_mask_blocks_edge(const RandoKnowledgeMask *mask,
+                                              uint8 tag) {
+  if (mask == NULL || tag == kKnowledgeTag_None) return false;
+  uint8 kind = tag & (uint8)kKnowledgeTag_KindMask;
+  if (kind == kKnowledgeTag_Whirlpool)
+    return ((mask->hidden_whirlpool_mask >> (tag & 7u)) & 1u) != 0;
+  if (kind == kKnowledgeTag_DecoupledExit)
+    return ((mask->hidden_exit_mask >> (tag & 0x3Fu)) & 1u) != 0;
+  return false;
+}
+
 static const RandoReachability *logic_compute_reachability_internal(
-    const RandoCounts *counts, const RandoSettings *settings, bool preserve_existing) {
+    const RandoCounts *counts, const RandoSettings *settings, bool preserve_existing,
+    const RandoKnowledgeMask *mask) {
   logic_profile_maybe_init();
   if (g_logic_profile_active) g_logic_profile.reach_calls++;
   if (counts == NULL || settings == NULL) return NULL;
+  if (mask != NULL) build_region_dungeon_index();
   if (!preserve_existing)
     memset(&g_reachability, 0, sizeof(g_reachability));
   g_reachability.reachable_regions_count = kReachabilityMaxRegions;
@@ -1755,7 +1805,7 @@ static const RandoReachability *logic_compute_reachability_internal(
   // codegen-emitted `kRandoStartRegionByWorldState[]` maps WorldState → region
   // id; 0xFFFF means "no start region for this world-state" (e.g., Inverted
   // before LinksHouse_Inverted is declared). In that case the graph has no
-  // reachable region and Logic_ComputeReachability returns an all-zero bitset
+  // reachable region and Logic_ComputeReachabilityFullKnowledge returns an all-zero bitset
   // — the placer falls back to "every location stays at vanilla" for that
   // world-state.
   uint16 start_region = 0xFFFF;
@@ -1831,6 +1881,9 @@ static const RandoReachability *logic_compute_reachability_internal(
       uint16 to_region = Rando_GetEntranceEdgeOverride(edge->to_region);
       if (!bitset_has(g_reachability.region_bitset, edge->from_region)) continue;
       if (bitset_has(g_reachability.region_bitset, to_region)) continue;
+      // tracker-player-knowledge — a hidden-identity dungeon's regions never
+      // enter the fixpoint (mask NULL for every generation path).
+      if (knowledge_mask_blocks_region(mask, to_region)) continue;
       const uint8 *bc = kRandoPredicateStream + edge->predicate_offset;
       if (eval_reachability_predicate_fast(bc, edge->predicate_length, &ctx, false)) {
         bitset_set(g_reachability.region_bitset, to_region);
@@ -1844,6 +1897,7 @@ static const RandoReachability *logic_compute_reachability_internal(
         uint16 to_region = Rando_GetEntranceEdgeOverride(edge->to_region);
         if (!bitset_has(g_reachability.region_bitset, edge->from_region)) continue;
         if (bitset_has(g_reachability.region_bitset, to_region)) continue;
+        if (knowledge_mask_blocks_region(mask, to_region)) continue;
         const uint8 *bc = kRandoPredicateStream + edge->predicate_offset;
         if (eval_reachability_predicate_fast(bc, edge->predicate_length, &ctx, false)) {
           bitset_set(g_reachability.region_bitset, to_region);
@@ -1861,6 +1915,11 @@ static const RandoReachability *logic_compute_reachability_internal(
         if (fr == 0xFFFF || tr == 0xFFFF) continue;
         if (!bitset_has(g_reachability.region_bitset, fr)) continue;
         if (bitset_has(g_reachability.region_bitset, tr)) continue;
+        // tracker-player-knowledge — hidden-dungeon targets and undiscovered
+        // tagged edges (whirlpool pairs / decoupled exits) are skipped.
+        if (knowledge_mask_blocks_region(mask, tr)) continue;
+        if (knowledge_mask_blocks_edge(mask, g_entrance_added_edges[e].knowledge_tag))
+          continue;
         uint16 pl = g_entrance_added_edges[e].pred_len;
         if (pl == 0 ||
             eval_reachability_predicate_fast(
@@ -1902,6 +1961,10 @@ static const RandoReachability *logic_compute_reachability_internal(
       // mirroring the bounded cleared-dungeons boss loop instead of corrupting
       // adjacent memory.
       if (loc->id >= kReachabilityMaxLocations) continue;
+      // tracker-player-knowledge — a suppressed location (undiscovered
+      // shuffled cave contents) is never reported reachable in the live view.
+      if (mask != NULL && mask->suppressed_locations != NULL &&
+          bitset_has(mask->suppressed_locations, loc->id)) continue;
       // With a terrain axis active, still skip the OTHER axis's inactive rows.
       if (loc->type == LOCTYPE_Grass &&
           settings->grass_shuffle == kTerrainShuffle_Off) continue;
@@ -2002,14 +2065,20 @@ static const RandoReachability *logic_compute_reachability_internal(
   return &g_reachability;
 }
 
-const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
+const RandoReachability *Logic_ComputeReachabilityFullKnowledge(const RandoCounts *counts,
                                                    const RandoSettings *settings) {
-  return logic_compute_reachability_internal(counts, settings, false);
+  return logic_compute_reachability_internal(counts, settings, false, NULL);
+}
+
+const RandoReachability *Logic_ComputeReachabilityMasked(const RandoCounts *counts,
+                                                         const RandoSettings *settings,
+                                                         const RandoKnowledgeMask *mask) {
+  return logic_compute_reachability_internal(counts, settings, false, mask);
 }
 
 const RandoReachability *Logic_ExpandReachability(const RandoCounts *counts,
                                                   const RandoSettings *settings) {
-  return logic_compute_reachability_internal(counts, settings, true);
+  return logic_compute_reachability_internal(counts, settings, true, NULL);
 }
 
 bool Reachability_HasLocation(const RandoReachability *r, uint16 location_id) {
@@ -2024,7 +2093,7 @@ bool Reachability_HasRegion(const RandoReachability *r, uint16 region_id) {
   return bitset_has(r->region_bitset, region_id);
 }
 
-// Private snapshot buffer. Logic_ComputeReachability returns a pointer into the
+// Private snapshot buffer. Logic_ComputeReachabilityFullKnowledge returns a pointer into the
 // single shared g_reachability, which any later call overwrites. A caller that
 // must hold a result across other reachability computations (the runtime
 // tracker bridge) copies it here once and reads the stable snapshot.
@@ -2297,11 +2366,11 @@ void Logic_SelfCheck(void) {
     RandoCounts without_skeleton;
     memset(&without_skeleton, 0, sizeof without_skeleton);
     struct RandoReachability before =
-        *Logic_ComputeReachability(&without_skeleton, &settings);
+        *Logic_ComputeReachabilityFullKnowledge(&without_skeleton, &settings);
     RandoCounts with_skeleton = without_skeleton;
     with_skeleton.by_item_id[ITEM_SkeletonKey] = 1;
     struct RandoReachability after =
-        *Logic_ComputeReachability(&with_skeleton, &settings);
+        *Logic_ComputeReachabilityFullKnowledge(&with_skeleton, &settings);
     LSC_ASSERT(memcmp(&before, &after, sizeof before) == 0,
                "Skeleton Key changed logical reachability");
   }
@@ -2716,7 +2785,7 @@ void Logic_SelfCheck(void) {
   // and asserting that `LinksHouse_Inverted` (the Inverted start region)
   // is reachable while `LinksHouse` (the Standard start) is NOT.
   // Exercises:
-  //   - `Logic_ComputeReachability` running under `world_state = 2`.
+  //   - `Logic_ComputeReachabilityFullKnowledge` running under `world_state = 2`.
   //   - `kRandoStartRegionByWorldState[Inverted]` resolving to the right id.
   //   - `kRandoEdges_Inverted` being walked (the trivial
   //     LinksHouse_Inverted → DarkWorld_South edge means DW_South should
@@ -2731,9 +2800,9 @@ void Logic_SelfCheck(void) {
     // checking GRAPH reachability, not item gating.
     for (int i = 0; i < 256; i++) inv_counts.by_item_id[i] = 99;
     const RandoReachability *inv_reach =
-        Logic_ComputeReachability(&inv_counts, &inv_settings);
+        Logic_ComputeReachabilityFullKnowledge(&inv_counts, &inv_settings);
     LSC_ASSERT(inv_reach != NULL,
-               "Logic_ComputeReachability returned NULL under Inverted");
+               "Logic_ComputeReachabilityFullKnowledge returned NULL under Inverted");
 
     uint16 lhi = Rando_FindRegionByName("LinksHouse_Inverted");
     uint16 lhs = Rando_FindRegionByName("LinksHouse");
@@ -2821,7 +2890,7 @@ void Logic_SelfCheck(void) {
     // static chests. Ordinary renewable bombs are enough to collect the guard
     // keys and defeat Ball-and-chain in Open, which then derives HCE's virtual
     // big key for Zelda's Cell.
-    const RandoReachability *hr = Logic_ComputeReachability(&hc, &hce);
+    const RandoReachability *hr = Logic_ComputeReachabilityFullKnowledge(&hc, &hce);
     LSC_ASSERT(hr != NULL, "HCE enemy-drop chain reachability returned NULL");
 #ifdef LOC_Hyrule_Castle_Map_Guard_Key_Drop
     LSC_ASSERT(Reachability_HasLocation(hr, LOC_Hyrule_Castle_Map_Guard_Key_Drop),
@@ -2835,7 +2904,7 @@ void Logic_SelfCheck(void) {
     // Standard deliberately remains stricter: general renewable-bomb access
     // does not satisfy the opening escape's concrete weapon/refill contract.
     hce.world_state = kWorldState_Standard;
-    hr = Logic_ComputeReachability(&hc, &hce);
+    hr = Logic_ComputeReachabilityFullKnowledge(&hc, &hce);
 #ifdef LOC_Hyrule_Castle_Map_Guard_Key_Drop
     LSC_ASSERT(!Reachability_HasLocation(hr, LOC_Hyrule_Castle_Map_Guard_Key_Drop),
                "Standard HCE enemy-drop: Map Guard must require an escape weapon");
@@ -2849,7 +2918,7 @@ void Logic_SelfCheck(void) {
     hc.by_item_id[ITEM_ProgressiveSword] = 1;
     hc.by_item_id[ITEM_Lamp] = 1;
 
-    hr = Logic_ComputeReachability(&hc, &hce);
+    hr = Logic_ComputeReachabilityFullKnowledge(&hc, &hce);
     LSC_ASSERT(!Reachability_HasLocation(hr, LOC_Hyrule_Castle_Boomerang_Chest),
                "HCE enemy-drop: Boomerang Chest must require the first HCE key");
     LSC_ASSERT(!Reachability_HasLocation(hr, kRandoEnemyDropHceBigKeyLocId),
@@ -2860,7 +2929,7 @@ void Logic_SelfCheck(void) {
                "HCE enemy-drop: Zelda rescue must not be reachable with zero HCE keys");
 
     hc.by_item_id[ITEM_SmallKey_HyruleCastleEscape] = 1;
-    hr = Logic_ComputeReachability(&hc, &hce);
+    hr = Logic_ComputeReachabilityFullKnowledge(&hc, &hce);
     LSC_ASSERT(Reachability_HasLocation(hr, LOC_Hyrule_Castle_Boomerang_Chest),
                "HCE enemy-drop: first HCE key should open Boomerang Chest");
     LSC_ASSERT(!Reachability_HasLocation(hr, kRandoEnemyDropHceBigKeyLocId),
@@ -2869,7 +2938,7 @@ void Logic_SelfCheck(void) {
                "HCE enemy-drop: one HCE key must not reach Zelda's Cell");
 
     hc.by_item_id[ITEM_SmallKey_HyruleCastleEscape] = 2;
-    hr = Logic_ComputeReachability(&hc, &hce);
+    hr = Logic_ComputeReachabilityFullKnowledge(&hc, &hce);
     LSC_ASSERT(Reachability_HasLocation(hr, kRandoEnemyDropHceBigKeyLocId),
                "HCE enemy-drop: two HCE keys should reach Ball-n-chain");
     LSC_ASSERT(Reachability_HasLocation(hr, LOC_Hyrule_Castle_Zelda_s_Cell),
@@ -2878,7 +2947,7 @@ void Logic_SelfCheck(void) {
                "HCE enemy-drop: Zelda rescue must require the sewer key");
 
     hc.by_item_id[ITEM_SmallKey_HyruleCastleEscape] = 3;
-    hr = Logic_ComputeReachability(&hc, &hce);
+    hr = Logic_ComputeReachabilityFullKnowledge(&hc, &hce);
     LSC_ASSERT(Reachability_HasLocation(hr, LOC_Zelda),
                "HCE enemy-drop: third HCE key should allow Zelda rescue");
   }
@@ -2893,11 +2962,11 @@ void Logic_SelfCheck(void) {
     RandoCounts ec;
     memset(&ec, 0, sizeof(ec));
     ec.by_item_id[ITEM_StartingHeart] = 3;
-    const RandoReachability *er = Logic_ComputeReachability(&ec, &sescape);
+    const RandoReachability *er = Logic_ComputeReachabilityFullKnowledge(&ec, &sescape);
     LSC_ASSERT(!Reachability_HasLocation(er, LOC_Hyrule_Castle_Boomerang_Chest),
                "Standard escape: renewable bomb access must not waive the weapon gate");
     ec.by_item_id[ITEM_Bombs10] = 1;
-    er = Logic_ComputeReachability(&ec, &sescape);
+    er = Logic_ComputeReachabilityFullKnowledge(&ec, &sescape);
     LSC_ASSERT(Reachability_HasLocation(er, LOC_Hyrule_Castle_Boomerang_Chest),
                "Standard escape: a bomb refill should satisfy the weapon gate");
   }
@@ -2915,7 +2984,7 @@ void Logic_SelfCheck(void) {
     hce_counts.by_item_id[ITEM_StartingHeart] = 3;
 
     const RandoReachability *hce_reach =
-        Logic_ComputeReachability(&hce_counts, &hce_parent);
+        Logic_ComputeReachabilityFullKnowledge(&hce_counts, &hce_parent);
     LSC_ASSERT(!Reachability_HasLocation(hce_reach, LOC_Sewers_Dark_Cross),
                "Open HCE: Dark Cross must still require the Lamp");
     LSC_ASSERT(Reachability_HasLocation(hce_reach, LOC_Hyrule_Castle_Boomerang_Chest),
@@ -2924,13 +2993,13 @@ void Logic_SelfCheck(void) {
                "Open HCE: renewable bombs should satisfy Zelda's Cell combat");
 
     hce_counts.by_item_id[ITEM_Lamp] = 1;
-    hce_reach = Logic_ComputeReachability(&hce_counts, &hce_parent);
+    hce_reach = Logic_ComputeReachabilityFullKnowledge(&hce_counts, &hce_parent);
     LSC_ASSERT(Reachability_HasLocation(hce_reach, LOC_Sewers_Dark_Cross),
                "Open HCE: Lamp alone should open Dark Cross");
 
     hce_parent.world_state = kWorldState_Retro;
     hce_counts.by_item_id[ITEM_Lamp] = 0;
-    hce_reach = Logic_ComputeReachability(&hce_counts, &hce_parent);
+    hce_reach = Logic_ComputeReachabilityFullKnowledge(&hce_counts, &hce_parent);
     LSC_ASSERT(!Reachability_HasLocation(hce_reach, LOC_Sewers_Dark_Cross),
                "Retro HCE: Dark Cross must still require the Lamp");
     LSC_ASSERT(Reachability_HasLocation(hce_reach, LOC_Hyrule_Castle_Boomerang_Chest),
@@ -2938,12 +3007,12 @@ void Logic_SelfCheck(void) {
     LSC_ASSERT(Reachability_HasLocation(hce_reach, LOC_Hyrule_Castle_Zelda_s_Cell),
                "Retro HCE: renewable bombs should satisfy Zelda's Cell combat");
     hce_counts.by_item_id[ITEM_Lamp] = 1;
-    hce_reach = Logic_ComputeReachability(&hce_counts, &hce_parent);
+    hce_reach = Logic_ComputeReachabilityFullKnowledge(&hce_counts, &hce_parent);
     LSC_ASSERT(Reachability_HasLocation(hce_reach, LOC_Sewers_Dark_Cross),
                "Retro HCE: Lamp alone should open Dark Cross");
 
     hce_parent.world_state = kWorldState_Standard;
-    hce_reach = Logic_ComputeReachability(&hce_counts, &hce_parent);
+    hce_reach = Logic_ComputeReachabilityFullKnowledge(&hce_counts, &hce_parent);
     LSC_ASSERT(!Reachability_HasLocation(hce_reach, LOC_Sewers_Dark_Cross),
                "Standard HCE: Lamp must not waive the escape-weapon gate");
     LSC_ASSERT(!Reachability_HasLocation(hce_reach, LOC_Hyrule_Castle_Boomerang_Chest),
@@ -2953,7 +3022,7 @@ void Logic_SelfCheck(void) {
 
     hce_counts.by_item_id[ITEM_Bombs1] = 1;
     hce_counts.by_item_id[ITEM_Lamp] = 0;
-    hce_reach = Logic_ComputeReachability(&hce_counts, &hce_parent);
+    hce_reach = Logic_ComputeReachabilityFullKnowledge(&hce_counts, &hce_parent);
     LSC_ASSERT(!Reachability_HasLocation(hce_reach, LOC_Sewers_Dark_Cross),
                "Standard HCE: a bomb refill must not waive Dark Cross's Lamp");
     LSC_ASSERT(Reachability_HasLocation(hce_reach, LOC_Hyrule_Castle_Boomerang_Chest),
@@ -2961,7 +3030,7 @@ void Logic_SelfCheck(void) {
     LSC_ASSERT(Reachability_HasLocation(hce_reach, LOC_Hyrule_Castle_Zelda_s_Cell),
                "Standard HCE: a bomb refill should satisfy Zelda's Cell combat");
     hce_counts.by_item_id[ITEM_Lamp] = 1;
-    hce_reach = Logic_ComputeReachability(&hce_counts, &hce_parent);
+    hce_reach = Logic_ComputeReachabilityFullKnowledge(&hce_counts, &hce_parent);
     LSC_ASSERT(Reachability_HasLocation(hce_reach, LOC_Sewers_Dark_Cross),
                "Standard HCE: Lamp plus a bomb refill should open Dark Cross");
 
@@ -2970,7 +3039,7 @@ void Logic_SelfCheck(void) {
     hce_counts.by_item_id[ITEM_MoonPearl] = 1;
     hce_counts.by_item_id[ITEM_Flippers] = 1;
     hce_counts.by_item_id[ITEM_DefeatAgahnim] = 1;
-    hce_reach = Logic_ComputeReachability(&hce_counts, &hce_parent);
+    hce_reach = Logic_ComputeReachabilityFullKnowledge(&hce_counts, &hce_parent);
     LSC_ASSERT(Reachability_HasLocation(hce_reach, LOC_Sewers_Dark_Cross),
                "Inverted HCE: inherited Open Dark Cross should need only Lamp");
     LSC_ASSERT(!Reachability_HasLocation(hce_reach, LOC_Hyrule_Castle_Boomerang_Chest),
@@ -2978,7 +3047,7 @@ void Logic_SelfCheck(void) {
     LSC_ASSERT(!Reachability_HasLocation(hce_reach, LOC_Hyrule_Castle_Zelda_s_Cell),
                "Inverted HCE: Zelda's Cell must retain its key override");
     hce_counts.by_item_id[ITEM_SmallKey_HyruleCastleEscape] = 1;
-    hce_reach = Logic_ComputeReachability(&hce_counts, &hce_parent);
+    hce_reach = Logic_ComputeReachabilityFullKnowledge(&hce_counts, &hce_parent);
     LSC_ASSERT(Reachability_HasLocation(hce_reach, LOC_Hyrule_Castle_Boomerang_Chest),
                "Inverted HCE: one HCE key should open Boomerang Chest");
     LSC_ASSERT(Reachability_HasLocation(hce_reach, LOC_Hyrule_Castle_Zelda_s_Cell),
@@ -3008,7 +3077,7 @@ void Logic_SelfCheck(void) {
     hce_generated_counts.by_item_id[ITEM_GenericKey] = 4;
 
     const RandoReachability *hce_generated_reach =
-        Logic_ComputeReachability(&hce_generated_counts, &hce_generated);
+        Logic_ComputeReachabilityFullKnowledge(&hce_generated_counts, &hce_generated);
     LSC_ASSERT(Reachability_HasLocation(
                    hce_generated_reach,
                    LOC_Enemy_Check_Room_0x071_Slot_00_Green_sword_soldier),
@@ -3019,7 +3088,7 @@ void Logic_SelfCheck(void) {
 
     hce_generated.world_state = kWorldState_Retro;
     hce_generated_reach =
-        Logic_ComputeReachability(&hce_generated_counts, &hce_generated);
+        Logic_ComputeReachabilityFullKnowledge(&hce_generated_counts, &hce_generated);
     LSC_ASSERT(Reachability_HasLocation(
                    hce_generated_reach,
                    LOC_Enemy_Check_Room_0x071_Slot_00_Green_sword_soldier),
@@ -3033,7 +3102,7 @@ void Logic_SelfCheck(void) {
     hce_generated_counts.by_item_id[ITEM_Flippers] = 1;
     hce_generated_counts.by_item_id[ITEM_DefeatAgahnim] = 1;
     hce_generated_reach =
-        Logic_ComputeReachability(&hce_generated_counts, &hce_generated);
+        Logic_ComputeReachabilityFullKnowledge(&hce_generated_counts, &hce_generated);
     LSC_ASSERT(Reachability_HasLocation(
                    hce_generated_reach,
                    LOC_Enemy_Check_Room_0x071_Slot_00_Green_sword_soldier),
@@ -3052,7 +3121,7 @@ void Logic_SelfCheck(void) {
     hce_generated_counts.by_item_id[ITEM_SmallKey_HyruleCastleEscape] = 0;
     hce_generated_counts.by_item_id[ITEM_PowerGlove] = 1;
     hce_generated_reach =
-        Logic_ComputeReachability(&hce_generated_counts, &hce_generated);
+        Logic_ComputeReachabilityFullKnowledge(&hce_generated_counts, &hce_generated);
     LSC_ASSERT(Reachability_HasLocation(
                    hce_generated_reach, LOC_HyruleCastleEscape_Pot_R011_P0F90),
                "Inverted HCE Secret Room pot: lifting strength should open back route");
@@ -3065,7 +3134,7 @@ void Logic_SelfCheck(void) {
     hce_generated_counts.by_item_id[ITEM_Lamp] = 1;
     hce_generated_counts.by_item_id[ITEM_SmallKey_HyruleCastleEscape] = 4;
     hce_generated_reach =
-        Logic_ComputeReachability(&hce_generated_counts, &hce_generated);
+        Logic_ComputeReachabilityFullKnowledge(&hce_generated_counts, &hce_generated);
     LSC_ASSERT(!Reachability_HasLocation(
                    hce_generated_reach,
                    LOC_Enemy_Check_Room_0x071_Slot_00_Green_sword_soldier),
@@ -3093,7 +3162,7 @@ void Logic_SelfCheck(void) {
     sewer_counts.by_item_id[ITEM_StartingHeart] = 3;
 
     const RandoReachability *sewer_reach =
-        Logic_ComputeReachability(&sewer_counts, &sewer);
+        Logic_ComputeReachabilityFullKnowledge(&sewer_counts, &sewer);
     for (uint32 i = 0; i < sizeof(kSewerSecretRoomLocations) /
                                 sizeof(kSewerSecretRoomLocations[0]); i++) {
       LSC_ASSERT(!Reachability_HasLocation(sewer_reach, kSewerSecretRoomLocations[i]),
@@ -3101,7 +3170,7 @@ void Logic_SelfCheck(void) {
     }
 
     sewer_counts.by_item_id[ITEM_ProgressiveGlove] = 1;
-    sewer_reach = Logic_ComputeReachability(&sewer_counts, &sewer);
+    sewer_reach = Logic_ComputeReachabilityFullKnowledge(&sewer_counts, &sewer);
     for (uint32 i = 0; i < sizeof(kSewerSecretRoomLocations) /
                                 sizeof(kSewerSecretRoomLocations[0]); i++) {
       LSC_ASSERT(Reachability_HasLocation(sewer_reach, kSewerSecretRoomLocations[i]),
@@ -3109,7 +3178,7 @@ void Logic_SelfCheck(void) {
     }
 
     sewer.world_state = kWorldState_Retro;
-    sewer_reach = Logic_ComputeReachability(&sewer_counts, &sewer);
+    sewer_reach = Logic_ComputeReachabilityFullKnowledge(&sewer_counts, &sewer);
     for (uint32 i = 0; i < sizeof(kSewerSecretRoomLocations) /
                                 sizeof(kSewerSecretRoomLocations[0]); i++) {
       LSC_ASSERT(Reachability_HasLocation(sewer_reach, kSewerSecretRoomLocations[i]),
@@ -3117,7 +3186,7 @@ void Logic_SelfCheck(void) {
     }
 
     sewer.world_state = kWorldState_Standard;
-    sewer_reach = Logic_ComputeReachability(&sewer_counts, &sewer);
+    sewer_reach = Logic_ComputeReachabilityFullKnowledge(&sewer_counts, &sewer);
     for (uint32 i = 0; i < sizeof(kSewerSecretRoomLocations) /
                                 sizeof(kSewerSecretRoomLocations[0]); i++) {
       LSC_ASSERT(!Reachability_HasLocation(sewer_reach, kSewerSecretRoomLocations[i]),
@@ -3140,13 +3209,13 @@ void Logic_SelfCheck(void) {
     sc.by_item_id[ITEM_StartingHeart] = 3;
     sc.by_item_id[ITEM_RescuedZelda] = 1;  // Open pre-grant (mirrors the sphere walker)
 
-    const RandoReachability *sr = Logic_ComputeReachability(&sc, &ssoul);
+    const RandoReachability *sr = Logic_ComputeReachabilityFullKnowledge(&sc, &ssoul);
     LSC_ASSERT(sr != NULL, "souls kill-room reachability returned NULL");
     LSC_ASSERT(!Reachability_HasLocation(sr, LOC_Mini_Moldorm_Cave_Far_Left),
                "souls=all: Mini Moldorm Cave chest must require the Mini Moldorm soul");
 
     sc.by_item_id[ITEM_Soul_MiniMoldorm] = 1;
-    sr = Logic_ComputeReachability(&sc, &ssoul);
+    sr = Logic_ComputeReachabilityFullKnowledge(&sc, &ssoul);
     LSC_ASSERT(Reachability_HasLocation(sr, LOC_Mini_Moldorm_Cave_Far_Left),
                "souls=all: the Mini Moldorm soul should open the cave's chests");
 
@@ -3156,7 +3225,7 @@ void Logic_SelfCheck(void) {
     memset(&sc0, 0, sizeof(sc0));
     sc0.by_item_id[ITEM_StartingHeart] = 3;
     sc0.by_item_id[ITEM_RescuedZelda] = 1;
-    sr = Logic_ComputeReachability(&sc0, &soff);
+    sr = Logic_ComputeReachabilityFullKnowledge(&sc0, &soff);
     LSC_ASSERT(Reachability_HasLocation(sr, LOC_Mini_Moldorm_Cave_Far_Left),
                "souls=off: the soul term must be inert (pre-souls reachability)");
   }
@@ -3180,7 +3249,7 @@ void Logic_SelfCheck(void) {
     hc.by_item_id[ITEM_KeyRing_HyruleCastleEscape] = 1;
     hc.by_item_id[ITEM_Soul_Soldier] = 0;
 
-    const RandoReachability *hr = Logic_ComputeReachability(&hc, &shce);
+    const RandoReachability *hr = Logic_ComputeReachabilityFullKnowledge(&hc, &shce);
     LSC_ASSERT(hr != NULL, "HCE soul/key-ring reachability returned NULL");
     LSC_ASSERT(!Reachability_HasLocation(hr, LOC_Hyrule_Castle_Zelda_s_Cell),
                "HCE key ring must not waive Zelda's Cell Soldier soul gate");
@@ -3188,7 +3257,7 @@ void Logic_SelfCheck(void) {
                "HCE key ring must not waive Zelda rescue's Soldier soul gate");
 
     hc.by_item_id[ITEM_Soul_Soldier] = 1;
-    hr = Logic_ComputeReachability(&hc, &shce);
+    hr = Logic_ComputeReachabilityFullKnowledge(&hc, &shce);
     LSC_ASSERT(Reachability_HasLocation(hr, LOC_Hyrule_Castle_Zelda_s_Cell),
                "Soldier soul should open Zelda's Cell with the HCE key ring");
     LSC_ASSERT(Reachability_HasLocation(hr, LOC_Zelda),
@@ -3196,13 +3265,13 @@ void Logic_SelfCheck(void) {
 
     shce.enemy_drop_checks = kEnemyDropChecks_Keys;
     hc.by_item_id[ITEM_Soul_Soldier] = 0;
-    hr = Logic_ComputeReachability(&hc, &shce);
+    hr = Logic_ComputeReachabilityFullKnowledge(&hc, &shce);
     LSC_ASSERT(!Reachability_HasLocation(hr, LOC_Hyrule_Castle_Zelda_s_Cell),
                "enemy keys: HCE ring must not waive Zelda's Cell Soldier soul gate");
     LSC_ASSERT(!Reachability_HasLocation(hr, LOC_Zelda),
                "enemy keys: HCE ring must not waive Zelda rescue's Soldier soul gate");
     hc.by_item_id[ITEM_Soul_Soldier] = 1;
-    hr = Logic_ComputeReachability(&hc, &shce);
+    hr = Logic_ComputeReachabilityFullKnowledge(&hc, &shce);
     LSC_ASSERT(Reachability_HasLocation(hr, LOC_Hyrule_Castle_Zelda_s_Cell),
                "enemy keys: Soldier soul should open Zelda's Cell");
     LSC_ASSERT(Reachability_HasLocation(hr, LOC_Zelda),
@@ -3211,13 +3280,13 @@ void Logic_SelfCheck(void) {
     shce.enemy_drop_checks = kEnemyDropChecks_Off;
     hc.by_item_id[ITEM_Soul_Soldier] = 0;
     shce.world_state = kWorldState_Inverted;
-    hr = Logic_ComputeReachability(&hc, &shce);
+    hr = Logic_ComputeReachabilityFullKnowledge(&hc, &shce);
     LSC_ASSERT(!Reachability_HasLocation(hr, LOC_Hyrule_Castle_Zelda_s_Cell),
                "Inverted HCE override must retain Zelda's Cell Soldier soul gate");
     LSC_ASSERT(!Reachability_HasLocation(hr, LOC_Zelda),
                "Inverted HCE override must retain Zelda rescue's Soldier soul gate");
     hc.by_item_id[ITEM_Soul_Soldier] = 1;
-    hr = Logic_ComputeReachability(&hc, &shce);
+    hr = Logic_ComputeReachabilityFullKnowledge(&hc, &shce);
     LSC_ASSERT(Reachability_HasLocation(hr, LOC_Hyrule_Castle_Zelda_s_Cell),
                "Inverted: Soldier soul should open Zelda's Cell");
     LSC_ASSERT(Reachability_HasLocation(hr, LOC_Zelda),
@@ -3226,7 +3295,7 @@ void Logic_SelfCheck(void) {
     RandoSettings shce_off;
     Settings_SetDefaults(&shce_off);
     hc.by_item_id[ITEM_Soul_Soldier] = 0;
-    hr = Logic_ComputeReachability(&hc, &shce_off);
+    hr = Logic_ComputeReachabilityFullKnowledge(&hc, &shce_off);
     LSC_ASSERT(Reachability_HasLocation(hr, LOC_Hyrule_Castle_Zelda_s_Cell),
                "souls=off: Zelda's Cell soul term must be inert");
     LSC_ASSERT(Reachability_HasLocation(hr, LOC_Zelda),
@@ -3245,7 +3314,7 @@ void Logic_SelfCheck(void) {
     RandoCounts nc;
     memset(&nc, 0, sizeof(nc));
     for (int i = 0; i < ITEM_Soul_Npc_Sahasrahla; i++) nc.by_item_id[i] = 4;  // full non-NPC pool
-    const RandoReachability *nr = Logic_ComputeReachability(&nc, &snpc);
+    const RandoReachability *nr = Logic_ComputeReachabilityFullKnowledge(&nc, &snpc);
     LSC_ASSERT(!Reachability_HasLocation(nr, LOC_Stumpy),
                "npc on: Stumpy must be gated without his soul");
     LSC_ASSERT(!Reachability_HasLocation(nr, LOC_Palace_of_Darkness_Shooter_Room),
@@ -3255,7 +3324,7 @@ void Logic_SelfCheck(void) {
     nc.by_item_id[ITEM_Soul_Npc_Stumpy] = 1;
     nc.by_item_id[ITEM_Soul_Npc_Kiki] = 1;
     nc.by_item_id[ITEM_Soul_Npc_MazeGameLady] = 1;
-    nr = Logic_ComputeReachability(&nc, &snpc);
+    nr = Logic_ComputeReachabilityFullKnowledge(&nc, &snpc);
     LSC_ASSERT(Reachability_HasLocation(nr, LOC_Stumpy),
                "npc on: the Stumpy soul should open his check");
     LSC_ASSERT(Reachability_HasLocation(nr, LOC_Palace_of_Darkness_Shooter_Room),
@@ -3263,7 +3332,7 @@ void Logic_SelfCheck(void) {
     LSC_ASSERT(!Reachability_HasLocation(nr, LOC_Maze_Race),
                "npc on: ONE race soul must not open the Maze Race (needs both)");
     nc.by_item_id[ITEM_Soul_Npc_MazeGameGuy] = 1;
-    nr = Logic_ComputeReachability(&nc, &snpc);
+    nr = Logic_ComputeReachabilityFullKnowledge(&nc, &snpc);
     LSC_ASSERT(Reachability_HasLocation(nr, LOC_Maze_Race),
                "npc on: both race souls should open the Maze Race");
     RandoSettings snoff;
@@ -3271,7 +3340,7 @@ void Logic_SelfCheck(void) {
     RandoCounts nc0;
     memset(&nc0, 0, sizeof(nc0));
     for (int i = 0; i < ITEM_Soul_Npc_Sahasrahla; i++) nc0.by_item_id[i] = 4;
-    nr = Logic_ComputeReachability(&nc0, &snoff);
+    nr = Logic_ComputeReachabilityFullKnowledge(&nc0, &snoff);
     LSC_ASSERT(Reachability_HasLocation(nr, LOC_Stumpy) &&
                Reachability_HasLocation(nr, LOC_Palace_of_Darkness_Shooter_Room) &&
                Reachability_HasLocation(nr, LOC_Maze_Race),
@@ -3381,6 +3450,114 @@ void Logic_SelfCheck(void) {
   }
 
   fprintf(stderr, "[Logic_SelfCheck] OK\n");
+}
+
+// ---------------------------------------------------------------------------
+// tracker-player-knowledge — structural probes for the knowledge-limited
+// flood (openspec randomizer-player-knowledge / "Reachability compute accepts
+// a knowledge-exclusion input"). Runs on the base graph (no shuffle installs
+// needed): masked ⊆ full, hidden-dungeon exclusion, suppressed-location
+// exclusion, empty-mask byte-identity, and full-flood purity after a masked
+// flood (the placer-contamination guard).
+// ---------------------------------------------------------------------------
+void Logic_KnowledgeMaskSelfCheck(void) {
+#define LKM_ASSERT(cond, msg)                                    \
+  do {                                                           \
+    if (!(cond)) {                                               \
+      fprintf(stderr, "Logic_KnowledgeMaskSelfCheck: %s\n", msg);\
+      exit(2);                                                   \
+    }                                                            \
+  } while (0)
+  RandoSettings s;
+  Settings_SetDefaults(&s);
+  RandoCounts c;
+  memset(&c, 0, sizeof c);
+  // A kit broad enough to reach into Eastern Palace (and well beyond) on the
+  // Open base graph, so the hidden-dungeon assertions are not vacuous.
+  c.by_item_id[ITEM_ProgressiveSword] = 2;
+  c.by_item_id[ITEM_Lamp] = 1;
+  c.by_item_id[ITEM_Bow] = 1;
+  c.by_item_id[ITEM_PowerGlove] = 2;
+  c.by_item_id[ITEM_Hammer] = 1;
+  c.by_item_id[ITEM_Hookshot] = 1;
+  c.by_item_id[ITEM_Flippers] = 1;
+  c.by_item_id[ITEM_MoonPearl] = 1;
+
+  struct RandoReachability full1 = *Logic_ComputeReachabilityFullKnowledge(&c, &s);
+
+  // Hidden-dungeon mask: Eastern Palace excluded from the fixpoint.
+  RandoKnowledgeMask m;
+  memset(&m, 0, sizeof m);
+  m.hidden_dungeon_mask = (uint16)(1u << kRandoDungeon_EasternPalace);
+  struct RandoReachability masked = *Logic_ComputeReachabilityMasked(&c, &s, &m);
+
+  // (1) masked ⊆ full, both bitsets.
+  for (size_t i = 0; i < sizeof(masked.region_bitset); i++)
+    LKM_ASSERT((masked.region_bitset[i] & ~full1.region_bitset[i]) == 0,
+               "masked region set must be a subset of the full set");
+  for (size_t i = 0; i < sizeof(masked.location_bitset); i++)
+    LKM_ASSERT((masked.location_bitset[i] & ~full1.location_bitset[i]) == 0,
+               "masked location set must be a subset of the full set");
+
+  // (2) every EP location is absent from the masked view — and at least one
+  // was reachable in the full view (non-vacuous fixture).
+  {
+    int ep_full = 0;
+    for (uint32 i = 0; i < kRandoLocationsCount; i++) {
+      uint16 region = kRandoLocations[i].region_id;
+      uint8 d = 0xFF;
+      for (uint32 r = 0; r < kRandoRegionsCount; r++) {
+        if (kRandoRegions[r].id == region) { d = kRandoRegions[r].dungeon_id; break; }
+      }
+      if (d != kRandoDungeon_EasternPalace) continue;
+      if (Reachability_HasLocation(&full1, kRandoLocations[i].id)) ep_full++;
+      LKM_ASSERT(!Reachability_HasLocation(&masked, kRandoLocations[i].id),
+                 "hidden-dungeon location leaked into the masked view");
+    }
+    LKM_ASSERT(ep_full > 0, "fixture must reach Eastern Palace in the full view");
+  }
+
+  // (3) suppressed-location mask: a location reachable in full is absent when
+  // its bit is set, with no other location gained.
+  {
+    uint16 probe = 0xFFFF;
+    for (uint32 i = 0; i < kRandoLocationsCount && probe == 0xFFFF; i++) {
+      if (Reachability_HasLocation(&full1, kRandoLocations[i].id))
+        probe = kRandoLocations[i].id;
+    }
+    LKM_ASSERT(probe != 0xFFFF, "fixture reached no location at all");
+    static uint8 supp[(kRandoLocationCapacity + 7) >> 3];
+    memset(supp, 0, sizeof supp);
+    supp[probe >> 3] |= (uint8)(1u << (probe & 7));
+    RandoKnowledgeMask ms;
+    memset(&ms, 0, sizeof ms);
+    ms.suppressed_locations = supp;
+    struct RandoReachability msup = *Logic_ComputeReachabilityMasked(&c, &s, &ms);
+    LKM_ASSERT(!Reachability_HasLocation(&msup, probe),
+               "suppressed location leaked into the masked view");
+    for (size_t i = 0; i < sizeof(msup.location_bitset); i++)
+      LKM_ASSERT((msup.location_bitset[i] & ~full1.location_bitset[i]) == 0,
+                 "suppression must not add reachability");
+  }
+
+  // (4) empty mask (all-zero struct) is byte-identical to the full flood.
+  {
+    RandoKnowledgeMask m0;
+    memset(&m0, 0, sizeof m0);
+    struct RandoReachability same = *Logic_ComputeReachabilityMasked(&c, &s, &m0);
+    LKM_ASSERT(memcmp(&same, &full1, sizeof full1) == 0,
+               "empty mask must be byte-identical to the full flood");
+  }
+
+  // (5) purity: a full flood AFTER masked floods is byte-identical to the
+  // first — the mask leaves no residue a generation call could observe.
+  {
+    struct RandoReachability full2 = *Logic_ComputeReachabilityFullKnowledge(&c, &s);
+    LKM_ASSERT(memcmp(&full2, &full1, sizeof full1) == 0,
+               "full flood after a masked flood must be unaffected");
+  }
+#undef LKM_ASSERT
+  fprintf(stderr, "[Logic_KnowledgeMaskSelfCheck] OK\n");
 }
 
 // Cross-TU capacity ABI probe -- see rando_logic.h / Rando_SelfCheckCapacityABI.

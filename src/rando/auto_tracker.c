@@ -483,11 +483,15 @@ static uint32 at_connection_digest(void) {
 // is minimal ({type,msg,counter,active:false}) so a connecting client still gets
 // an immediate, framed ack but no inventory/reachability flows until activation.
 //
-// SPOILER-SAFE BY CONSTRUCTION: this never emits placement (which item sits at an
-// unchecked location). It exposes only the player's own inventory, the locations
-// they have CHECKED, and which unchecked locations are reachable under logic —
-// the same information the player already sees in-game. So it is safe even for
-// race seeds without any race-mode gate.
+// SPOILER-SAFE BY CONSTRUCTION (tracker-player-knowledge invariant): this
+// never emits placement (which item sits at an unchecked location), and the
+// reachability it emits is the KNOWLEDGE-LIMITED live view — undiscovered
+// shuffled topology (dungeon identities, cave contents, un-ridden whirlpools,
+// untraversed decoupled exits) is excluded at the flood, so every statement
+// here is true under all assignments consistent with what the player has
+// observed. Exposes only the player's own inventory, their CHECKED locations,
+// DISCOVERED connections, and that knowledge-limited availability. Safe even
+// for race seeds without any race-mode gate.
 static void at_build_snapshot(AtStr *s, uint32 msg, uint32 counter, bool active,
                               bool completed) {
   at_str_puts(s, "{\"type\":\"state\"");

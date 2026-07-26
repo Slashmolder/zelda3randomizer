@@ -1125,6 +1125,19 @@ present. Older v1/v2 slots have no block, read digest 0 / no feature snapshot,
 and keep the previous warn-only version-drift and live-feature behavior; a
 v2-compat load case is covered by `RandoSave_SelfCheck`.
 
+**format_version 13** (tracker-player-knowledge): the extension block grows to
+carry the slot's **topology-discovery state** — which hidden-identity dungeons
+you have entered, which shuffled cave interiors you have seen, which whirlpool
+pairs you have ridden, and which decoupled cave exits you have traversed —
+plus a reserved bitmap for the deferred door-shuffle phase (sized now so that
+phase needs no further format change). The same state rides a snapshot TLV, so
+cold replay restores it. Pre-v13 slots and TLV-less snapshots read all-zero and
+are then **backfilled from the checked-location bitmap** (a checked location
+implies you were there), so an in-flight save never re-hides places you already
+visited; backfill never derives discovery from placement or settings, so it can
+under-reveal but never over-reveal. This is what keeps the trackers honest — see
+*Player-knowledge gating* under *Tracker windows*.
+
 Atomic-commit: write `<file>.tmp`, fflush, fsync (POSIX) / `_commit` (Windows),
 rename atomically. Save order: sidecar first, then `sram.dat`.
 
@@ -1369,10 +1382,44 @@ desync, the headline advantage of a native port:
 - **Reachability bridge** (`rando.c`) — `Rando_BuildRuntimeCounts` maps the live
   `g_ram` inventory into the logical `RandoCounts` the predicate VM reads (the
   logic macros accept the progressive form, so progressive counts satisfy every
-  tier); `Rando_GetLiveReachability` runs `Logic_ComputeReachability` memoized on
-  the reachability-state counter and snapshots the result out of the shared
+  tier); `Rando_GetLiveReachability` runs the knowledge-limited flood
+  (`Logic_ComputeReachabilityMasked`, see below) memoized on the
+  reachability-state counter and snapshots the result out of the shared
   buffer. Requires the format_version 2 settings blob (see *Save behavior*);
   absent → reachability suppressed.
+
+### Player-knowledge gating (what the trackers will not tell you)
+
+The trackers only ever show what you could know at that moment: **every
+availability status and count is true under every shuffled assignment
+consistent with what you have actually seen in-game.** Concretely, on a seed
+that shuffles world topology:
+
+- A dungeon whose identity is hidden by **dungeon-entrance shuffle** or
+  **dungeon chains** contributes nothing to any "available" state or count
+  until you have been inside it once — and nothing routes *through* it either,
+  so its exterior checks (e.g. a mid-chain dungeon's outdoor ledge) stay dark
+  as well. Its region row is prefixed `?` (hover for an explanation) and the
+  Check Tracker reports how many such dungeons remain unentered, so a dark row
+  reads "go explore", not "dead end".
+- Checks inside a **shuffled cave** stay unavailable until you have opened the
+  door that leads to that interior. Location names and region grouping are the
+  static registry bindings — identical on every seed — so nothing leaks there.
+- A **shuffled whirlpool** pair contributes no reachability until you ride it
+  (one ride reveals both directions). Flute spots are *not* gated: the in-game
+  flute map already shows every destination the moment you can play it, so
+  that mapping is player knowledge by then.
+- Everything lights up live the moment you make the discovery — no reload.
+
+This gating is unconditional (it applies to race and casual seeds alike) and
+has no toggle; the spoiler-reveal flow remains the way to see a seed's layout.
+Seeds with no topology axes are entirely unaffected. Discovery is stored per
+save slot in the sidecar (see *Save behavior*) and in snapshots, and older
+saves backfill it from their checked locations, so an in-flight game never
+re-hides places you already visited. Intra-dungeon **door shuffle** is not yet
+gated (its availability still assumes full knowledge of the door graph) — a
+documented follow-up. Contributor detail: `openspec/specs/randomizer-player-knowledge`,
+enforced by `assets/scripts/check_knowledge_consumers.py`.
 
 On PC the legacy in-game OAM-overlay trackers (`hud.c`) are compiled out — the
 ImGui windows are the single tracker system, and the legacy toggle keys
@@ -1564,6 +1611,7 @@ regression while authoring logic or bumping the generator:
 |---|---|
 | `check_audit_guard.py --strict` | An inventory-cell write outside the approved delivery layer that lacks a `// rando-exempt:` reason. |
 | `check_grant_consumers.py` | A randomized grant site bypassing the public transaction API, or a new low-level resolver/delivery call not in the narrow reasoned allowlist. |
+| `check_knowledge_consumers.py` | A file outside the audited allowlist consuming the full-knowledge reachability flood (`Logic_ComputeReachabilityFullKnowledge` / `Logic_ExpandReachability`), a raw per-seed assignment getter, a raw connection accessor, or `Rando_GetItemName` — the player-knowledge invariant (see *Player-knowledge gating*). Player-facing surfaces must consume `Rando_GetLiveReachability`; intentional exceptions carry `// knowledge-guard: allow <reason>`. |
 | `check_no_embedded_data.py` | A long inline hex/data blob that belongs in a gitignored generated artifact. |
 | `check_determinism.py` / `check_byte_order.py` | Non-deterministic calls (`rand()`, `time()`, float) or unpinned byte order in `src/rando/`. |
 | `check_codegen_wiring.py` | A generated file referenced in one build system but not all three (Makefile / MSVC / Switch). |
@@ -1760,6 +1808,8 @@ Current `kGeneratorVersion` is in `src/rando/rando.h` (search for `#define kGene
 | 79→80 | **Trap context-aware placement** (`add-rando-trap-catalog`) — the two context-locked effects are now filtered at placement time to compatible locations (Cucco only at overworld free-standing types `Standing`/`Pedestal`/`Dash`/`Dig`; Darkness only in dungeon regions), via `Rando_PickTrapEffectId`'s `loc_flags`, so the placed effect always matches the spoiler instead of silently falling back at runtime. Signal is committed-data-only (region `dungeon_id` + location `type`) for CI determinism. | Default `traps=off` byte-identical; the 3 traps-on corpus seeds move their placement digests (a context-locked effect that previously landed on an incompatible junk slot now resolves differently). |
 | 80→81 | **Trap `insanity` frequency** (`add-rando-trap-catalog`) — a 5th `traps` tier that turns **every** eligible junk pickup into a masquerade trap (the lower tiers cap at 4/8/16). The `traps` canonical field widens 2→3 bits non-contiguously: the low 2 bits stay at `[26]` bits 2-3 (so `off`/`low`/`medium`/`high` — and `instant_flute` at bit4 — are byte-identical) and the 3rd bit (`insanity`=4) uses the previously-free `[26]` bit5. | Default `traps=off` byte-identical; existing `low`/`medium`/`high` seeds unchanged (same bits, same placement). Corpus placement digests **0-changed** — only the manifest `generator_version` bumps. Only new `insanity` seeds set bit5. |
 | 112→113 | **Dungeon chains** (`dungeon_chains=true`) — an experimental one-directional structure axis routes each main dungeon door through zero or more pool dungeons to a terminal pool boss, with every pool dungeon and boss used once. The axis occupies canonical byte `[25]` bit6, persists chain layout identity in sidecar v5 and snapshot TLVs (`chains_attempt` + `chains_digest24`, plus origin/terminal session state), and normalizes off under entrance shuffle, door shuffle, boss shuffle, non-Open/Standard worlds, or non-NoGlitches logic. | Existing 136 corpus entries byte-identical; five chain-on entries added (`chains-open-ganon`, `chains-standard-fast-ganon`, `chains-prize-open-fast-ganon`, `chains-forced-keys-items`, `chains-hunt-none`); branch corpus 141/141 green. |
+
+| 155→157 | **Player-knowledge tracker gating** (`tracker-player-knowledge`) — the live tracker flood becomes knowledge-limited (`Logic_ComputeReachabilityMasked`; the full-knowledge entry is renamed `Logic_ComputeReachabilityFullKnowledge` and reserved for generation/selftests), backed by per-slot discovery state in sidecar v13 + a snapshot TLV. Display/runtime only — the mask is an explicit parameter no generation path passes. | **All 243 corpus placement digests 0-changed** — only the manifest `generator_version` re-stamps. The bump satisfies the mechanical §13.6 source gate (`src/rando/**` changed), not a placement change; the regen against the v155 baseline *is* the proof the mask never reaches the placer. Version 156 is skipped: concurrent in-flight `main` work claimed it, so this branch leapfrogs to avoid a same-version collision at merge. |
 
 The pattern: predicate changes that affect only one region (12→13's
 EP gate) hit a subset of seeds; layout-only changes with default-zero

@@ -197,6 +197,25 @@ Vanilla ALTTP repeatedly uses one item/state as a stand-in for "the player reach
 
 - **A vanilla stat the randomizer now VARIES, used by vanilla code as an array index or exact threshold** — the sibling of the proxy class for the HP/damage axis. Vanilla assumes a stat is the fixed value it shipped; a randomizer that scales it can push it out of an assumed range. Enemy-HP randomization (the `enemy_shuffle` stat axis) scales `sprite_health`; Helmasaur King indexes `kHelmasaurKing_Tab1[13]` by `sprite_health >> 2` (`sprite_main.c`) — vanilla HP 48 → index 12 (last valid), but any up-scale reads OUT OF BOUNDS (UB/crash on the first dungeon boss). It's the only boss that table-indexes by health; the fix was a blanket **bosses-exempt-from-stat-scaling** rule (they were already excluded from substitution/reshuffle — the stat axis was the only leak). `--rando-selftest`'s bound check can't catch it (it doesn't model per-sprite stat consumers); a fresh-eyes audit did. When adding any stat-randomization axis, grep for `[sprite_<stat>` array indexing and exact-value branches, and exempt or re-bound them.
 
+### Second documented bug class: full-knowledge state surfaced to player-facing surfaces
+
+The tracker sibling of the proxy class. Invariant (openspec
+`randomizer-player-knowledge`): **a player-facing surface may only state what is
+true under every shuffled assignment consistent with the player's in-game
+observations** — the live reachability flood over the TRUE shuffled graph leaks
+topology (a dungeon-region "avail" at sphere 0 names the dungeon behind an
+unentered door; chains' vanilla aux exits leak via overworld pass-through, which
+display-side masking can't fix — only excluding the region from the flood can).
+Fixes route through `Rando_GetLiveReachability` (the knowledge-limited view,
+gated on persisted discovery bits — sidecar v13 / type-10 TLV); the
+full-knowledge flood is `Logic_ComputeReachabilityFullKnowledge`
+(generation/selftest only) and `assets/scripts/check_knowledge_consumers.py`
+fails CI on new full-knowledge/assignment-getter consumers outside the audited
+allowlist. A NEW topology/assignment axis must define its discovery model (or
+claim the safe classification — e.g. flute blips: edges gated on an item whose
+in-game UI reveals the mapping) in its spec, or it fails review against that
+capability.
+
 Corollary: a freeze inside a prize/cutscene/receipt sequence is often a *downstream* symptom — the sequence is waiting on an object a grant/gate bug prevented from spawning. Chase the un-spawned awaited object before hunting the immobilizer.
 
 ### Runtime-debugging discipline (learned the hard way on the Dark Chapel re-entry — days of it)

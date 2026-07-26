@@ -43,7 +43,13 @@
 //      grant transactions); corpus regenerated on the merged behavior.
 // 155: 154 union + add-rando-ow-warp-shuffle (flute/whirlpool axes + OW
 //      screen-component substrate) — reconciled on the feature merge.
-#define kGeneratorVersion 155u  // 154 union + OW warp shuffle
+// 156: reserved by concurrent in-flight main work (uncommitted at branch
+//      time; leapfrogged to avoid a same-version collision on merge).
+// 157: tracker-player-knowledge — knowledge-limited live reachability +
+//      discovery persistence. Placement is corpus-byte-identical to 155
+//      (243/243 digests unchanged; display/runtime only) — the bump
+//      satisfies the mechanical §13.6 source gate, not a placement change.
+#define kGeneratorVersion 157u  // tracker-player-knowledge (digest-neutral)
 // The share-string binary layout packs version into 1 byte
 // (rando_share.h: ShareString.version is uint8). Compile-time enforce
 // kGeneratorVersion ≤ 255 so silent truncation can't ship.
@@ -851,6 +857,36 @@ void Rando_BumpReachabilityCounter(void);
 uint32 Rando_GetReachabilityCounter(void);
 
 // ---------------------------------------------------------------------------
+// tracker-player-knowledge — persisted per-slot topology-discovery state (see
+// openspec randomizer-player-knowledge). Records what the player has OBSERVED
+// so the knowledge-limited live reachability never reveals an undiscovered
+// shuffled assignment. Marks are no-ops without an active slot; every newly
+// set bit bumps the reachability counter (memo invalidation + auto-tracker
+// emission). Persisted via sidecar slot-ext v13 + the type-10 snapshot TLV
+// (kRandoSnapshotTail_Type_Discovery).
+// ---------------------------------------------------------------------------
+bool Rando_DungeonDiscovered(uint8 rando_dungeon);        // been inside (kRandoDungeon_*)
+void Rando_MarkDungeonDiscovered(uint8 rando_dungeon);
+bool Rando_CaveInteriorDiscovered(int interior);          // vanilla cave interior index
+void Rando_MarkCaveInteriorDiscovered(int interior);
+bool Rando_DecoupledExitDiscovered(int interior);         // decoupled exit net traversed
+void Rando_MarkDecoupledExitDiscovered(int interior);
+uint8 Rando_DiscoveredWhirlpoolMask(void);                // bit = whirlpool table index
+void Rando_MarkWhirlpoolPairDiscovered(uint8 entered_idx, uint8 partner_idx);
+void Rando_TickDiscovery(void);                           // per-frame dungeon observation
+// Hidden-identity dungeons not yet entered (kRandoDungeon_* bits) — the
+// tracker windows' "(unexplored)" affordance; identical derivation to the
+// live knowledge mask so display and flood can never disagree. 0 with no
+// slot, unknown settings, or no topology axes.
+uint16 Rando_HiddenUndiscoveredDungeonMask(void);
+void Rando_GetDiscoveryState(uint16 *dungeons, uint8 *whirlpools,
+                             uint8 caves[8], uint8 exits[8]);
+void Rando_SetDiscoveryState(uint16 dungeons, uint8 whirlpools,
+                             const uint8 caves[8], const uint8 exits[8]);
+void Rando_ResetDiscoveryState(void);
+void Rando_BackfillDiscoveryFromChecked(void);            // idempotent OR from checked state
+
+// ---------------------------------------------------------------------------
 // Tracker overlay toggle state. In-memory only, not
 // persisted. Both default to false at process start AND on every
 // Rando_DeactivateSlot (so launching/loading defaults to hidden).
@@ -1106,7 +1142,7 @@ RandoGrantResult Rando_GrantBossPrizeReceipt(
 // ---------------------------------------------------------------------------
 // Active per-seed shuffle assignments. The predicate VM's OP_HAS_PRIZE and
 // OP_MEDALLION_OPENS consult these via PredicateContext; the placer + sphere
-// computation + tracker call Logic_ComputeReachability which reads them.
+// computation + tracker call Logic_ComputeReachabilityFullKnowledge which reads them.
 //
 // Callers MUST set these before generating reachability — otherwise both ops
 // degrade to "false", which makes prize-gated locations (Sahasrahla, GT

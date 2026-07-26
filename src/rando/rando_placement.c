@@ -1743,7 +1743,7 @@ static bool accessibility_reachability_ok(const RandoSettings *settings,
 //      progression items still unplaced.
 //   4. For each progression item (in shuffled order):
 //        a. Remove from assumed inventory.
-//        b. Run Logic_ComputeReachability with current counts.
+//        b. Run Logic_ComputeReachabilityFullKnowledge with current counts.
 //        c. Filter open locations to reachable + can_place(item).
 //        d. If candidates: pick a random one (Rng_NextRange).
 //        e. If no candidates: forward-fill fallback.
@@ -2385,7 +2385,7 @@ static const RandoReachability *compute_reachability_collecting_placed(
   local = *base_counts;
   static uint8 collected[kRandoLocationCapacity];
   memset(collected, 0, open_n * sizeof(collected[0]));
-  const RandoReachability *r = Logic_ComputeReachability(&local, settings);
+  const RandoReachability *r = Logic_ComputeReachabilityFullKnowledge(&local, settings);
   for (;;) {
     bool added = false;
     for (uint16 k = 0; k < open_n; k++) {
@@ -2867,7 +2867,7 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
     const RandoReachability *r = souls_collect_model
         ? compute_reachability_collecting_placed(
               &counts, settings, placement_at, open_loc_idx, open_n, item)
-        : Logic_ComputeReachability(&counts, settings);
+        : Logic_ComputeReachabilityFullKnowledge(&counts, settings);
     if (g_place_profile_active) g_place_profile.candidate_scan_slots += open_n;
 
     // Find candidate locations: open + reachable + accepts item.
@@ -3243,7 +3243,7 @@ bool Goal_IsCompletable(const RandoSettings *settings, uint64 seed_u64,
       final_inv.by_item_id[item_id]++;
     }
   }
-  const RandoReachability *r = Logic_ComputeReachability(&final_inv, settings);
+  const RandoReachability *r = Logic_ComputeReachabilityFullKnowledge(&final_inv, settings);
   if (r == NULL) {
     fprintf(stderr, "Goal_IsCompletable: reachability returned NULL (empty graph?)\n");
     return false;
@@ -3501,7 +3501,7 @@ bool Logic_ComputeSpheres(const RandoSettings *settings,
   uint8 sphere = 0;
   bool hit_sphere_cap = false;
   while (remaining > 0 && sphere < kSphereMaxCount) {
-    const RandoReachability *r = Logic_ComputeReachability(&counts, settings);
+    const RandoReachability *r = Logic_ComputeReachabilityFullKnowledge(&counts, settings);
     uint16 added_this_sphere = 0;
     for (uint16 i = 0; i < placements->count; i++) {
       if (out->sphere_index_by_placement[i] != kSphereIndexUnreachable) continue;

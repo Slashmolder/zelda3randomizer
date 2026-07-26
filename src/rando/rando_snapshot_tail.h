@@ -82,6 +82,14 @@
 // it; silently replaying with vanilla entrances would desync the certified
 // placement). Warm same-slot replays keep the activation-installed layout.
 #define kRandoSnapshotTail_Type_EntranceLayout 9u
+// tracker-player-knowledge — topology-discovery state (what the player has
+// observed: dungeons entered, cave interiors seen, whirlpools ridden,
+// decoupled exits traversed) for cold replay. Self-contained like Souls:
+// absent (older snapshot / older writer) → zeros, then the loader backfills
+// dungeon/cave bits from the type-3 checked bitmap (FINISH_LOAD). The payload
+// is length-tolerant so the deferred door phase can append its bitmap without
+// a new type.
+#define kRandoSnapshotTail_Type_Discovery 10u
 
 // Upper bound on a single TLV payload's claimed length. The largest legal
 // payload is the RandoState body (52 + kRandoLocationCapacity*2 bytes); the

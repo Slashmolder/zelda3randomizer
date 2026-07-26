@@ -118,6 +118,7 @@ static uint32 settings_blob_len_versioned(uint16 format_version) {
 }
 
 static uint32 slot_ext_len_versioned(uint16 format_version) {
+  if (format_version >= 13) return kRandoSidecar_SlotExtV13Size;
   if (format_version >= 12) return kRandoSidecar_SlotExtV12Size;
   if (format_version >= 11) return kRandoSidecar_SlotExtV11Size;
   if (format_version >= 9) return kRandoSidecar_SlotExtV9Size;
@@ -453,6 +454,14 @@ uint32 RandoSave_SerializeSlot(const RandoSidecarSlot *slot, uint8 *buf, uint32 
   p[59] = (uint8)(slot->header.ow_digest24 & 0xff);
   p[60] = (uint8)((slot->header.ow_digest24 >> 8) & 0xff);
   p[61] = (uint8)((slot->header.ow_digest24 >> 16) & 0xff);
+  // format_version 13: topology-discovery block @62-81
+  // (tracker-player-knowledge). Always written (all-zero = nothing
+  // discovered, a valid state). @82-231 is the RESERVED door-discovery
+  // bitmap for the deferred door phase — kept zero by the leading memset.
+  put_u16le(p + 62, slot->header.discovered_dungeons);
+  p[64] = slot->header.discovered_whirlpools;
+  memcpy(p + 66, slot->header.discovered_caves, sizeof(slot->header.discovered_caves));
+  memcpy(p + 74, slot->header.discovered_exits, sizeof(slot->header.discovered_exits));
   return size;
 }
 
@@ -615,6 +624,20 @@ static uint32 deserialize_slot_versioned_ext(const uint8 *buf, uint32 buf_size,
       out->header.ow_attempt = 0;
       out->header.ow_digest24 = 0;
     }
+    if (format_version >= 13 && ext_len >= kRandoSidecar_SlotExtV13Size) {
+      // tracker-player-knowledge: topology-discovery block @62-81. Pre-v13
+      // files read zeros; activation then backfills dungeon/cave bits from
+      // checked-location state (never from placement/settings).
+      out->header.discovered_dungeons = get_u16le(p + 62);
+      out->header.discovered_whirlpools = p[64];
+      memcpy(out->header.discovered_caves, p + 66, sizeof(out->header.discovered_caves));
+      memcpy(out->header.discovered_exits, p + 74, sizeof(out->header.discovered_exits));
+    } else {
+      out->header.discovered_dungeons = 0;
+      out->header.discovered_whirlpools = 0;
+      memset(out->header.discovered_caves, 0, sizeof(out->header.discovered_caves));
+      memset(out->header.discovered_exits, 0, sizeof(out->header.discovered_exits));
+    }
   } else {
     // v1/v2 files physically lack the block — digest 0 = "absent", which keeps
     // the legacy warn-only entrance version-drift behavior for old slots.
@@ -638,6 +661,10 @@ static uint32 deserialize_slot_versioned_ext(const uint8 *buf, uint32 buf_size,
     out->header.bonk_registry_digest = 0;
     out->header.bonk_registry_count = 0;
     out->header.bonk_registry_present = 0;
+    out->header.discovered_dungeons = 0;
+    out->header.discovered_whirlpools = 0;
+    memset(out->header.discovered_caves, 0, sizeof(out->header.discovered_caves));
+    memset(out->header.discovered_exits, 0, sizeof(out->header.discovered_exits));
   }
   return total;
 }
@@ -1094,6 +1121,11 @@ void RandoSave_SelfCheck(void) {
   // add-enemy-souls soul-ownership round-trip coverage (v6 extension block).
   src.header.souls_present = 1;
   for (int i = 0; i < 12; i++) src.header.soul_flags[i] = (uint8)(0x81 + i);
+  // tracker-player-knowledge discovery round-trip coverage (v13 ext @62-81).
+  src.header.discovered_dungeons = 0x1235;      // distinct bit pattern
+  src.header.discovered_whirlpools = 0x2C;
+  for (int i = 0; i < 8; i++) src.header.discovered_caves[i] = (uint8)(0x11 * (i + 1));
+  for (int i = 0; i < 8; i++) src.header.discovered_exits[i] = (uint8)(0xF0 - i);
   // Key Ring/Skeleton ownership is derived from these ordinary persisted rows
   // plus the checked bitmap, so keep both new item identities in the generic
   // sidecar round-trip fixture rather than inventing separate save fields.
@@ -1107,7 +1139,7 @@ void RandoSave_SelfCheck(void) {
   src.placement_count = 5;
   src.checked_bitmap[0] = 0x05;  // checked Key Ring (loc 0) + Skeleton Key (loc 2)
 
-  uint8 buf[256];
+  uint8 buf[512];  // v13 ext (238B) puts the fixture slot at ~394 bytes
   uint32 wrote = RandoSave_SerializeSlot(&src, buf, sizeof(buf));
   if (wrote == 0) selfcheck_die("serialize returned 0");
   if (wrote != RandoSave_SlotOnDiskSize(src.header.placement_table_size)) {
@@ -1161,6 +1193,21 @@ void RandoSave_SelfCheck(void) {
       selfcheck_die("dungeon chains identity not at expected v5 ext offset");
     if (buf[ext + 21] != 0 || buf[ext + 22] != 0 || buf[ext + 23] != 0)
       selfcheck_die("v5 ext reserved bytes not zero");
+    // tracker-player-knowledge: discovery block byte layout (v13 ext @62-81).
+    if (get_u16le(buf + ext + 62) != 0x1235)
+      selfcheck_die("discovered_dungeons not at expected v13 ext offset (LE)");
+    if (buf[ext + 64] != 0x2C)
+      selfcheck_die("discovered_whirlpools not at expected v13 ext offset");
+    if (buf[ext + 65] != 0) selfcheck_die("v13 ext reserved @65 not zero");
+    if (buf[ext + 66] != 0x11 || buf[ext + 73] != 0x88)
+      selfcheck_die("discovered_caves not at expected v13 ext offset");
+    if (buf[ext + 74] != 0xF0 || buf[ext + 81] != 0xE9)
+      selfcheck_die("discovered_exits not at expected v13 ext offset");
+    // Reserved door-discovery bitmap @82-231 + tail @232-237 must be zero.
+    for (int i = 82; i < (int)kRandoSidecar_SlotExtV13Size; i++) {
+      if (buf[ext + i] != 0)
+        selfcheck_die("v13 ext reserved door/tail bytes not zero");
+    }
   }
   // Phase C entrance shuffle: entrance_axes @71, entrance_attempt @72.
   if (buf[71] != 0x05) selfcheck_die("entrance_axes at @71 wrong");
@@ -1189,6 +1236,13 @@ void RandoSave_SelfCheck(void) {
   if (dst.header.ow_attempt != src.header.ow_attempt ||
       dst.header.ow_digest24 != src.header.ow_digest24)
     selfcheck_die("ow warp identity round-trip (v12 ext)");
+  if (dst.header.discovered_dungeons != src.header.discovered_dungeons ||
+      dst.header.discovered_whirlpools != src.header.discovered_whirlpools ||
+      memcmp(dst.header.discovered_caves, src.header.discovered_caves,
+             sizeof(src.header.discovered_caves)) != 0 ||
+      memcmp(dst.header.discovered_exits, src.header.discovered_exits,
+             sizeof(src.header.discovered_exits)) != 0)
+    selfcheck_die("discovery state round-trip (v13 ext)");
   if (dst.header.slot_kind != src.header.slot_kind) selfcheck_die("slot_kind round-trip");
   if (dst.header.generator_version != src.header.generator_version) selfcheck_die("gen_version round-trip");
   if (memcmp(dst.header.settings_hash, src.header.settings_hash, 16) != 0) selfcheck_die("settings_hash round-trip");
@@ -1383,7 +1437,7 @@ void RandoSave_SelfCheck(void) {
   // The appended key-rings byte must zero-extend to Off while every v9
   // extension field remains intact.
   {
-    uint8 current[256], v9buf[256];
+    uint8 current[512], v9buf[256];  // current holds a v13-size serialize
     uint32 current_used = RandoSave_SerializeSlot(&src, current, sizeof(current));
     if (current_used == 0) selfcheck_die("v9 compat: serialize current slot");
     uint32 base = slot_on_disk_size_base(src.header.placement_table_size);
@@ -1423,6 +1477,27 @@ void RandoSave_SelfCheck(void) {
           v11dst.header.bonk_registry_digest != src.header.bonk_registry_digest ||
           v11dst.header.bonk_registry_count != src.header.bonk_registry_count)
         selfcheck_die("v11 bonk registry extension round-trip");
+    }
+    // tracker-player-knowledge: a v12 file (62-byte ext, no discovery block)
+    // must load with all discovery state zero (the loader then backfills from
+    // checked state) while every v12 field stays intact.
+    {
+      uint8 v12buf[512];
+      uint32 base12 = slot_on_disk_size_base(src.header.placement_table_size);
+      uint32 v12_total = base12 + kSettingsCanonicalLen + kRandoSidecar_SlotExtV12Size;
+      memcpy(v12buf, current, base12 + kSettingsCanonicalLen + kRandoSidecar_SlotExtV12Size);
+      RandoSidecarSlot v12dst;
+      uint32 v12_used = deserialize_slot_versioned(v12buf, v12_total, &v12dst, 12);
+      if (v12_used != v12_total) selfcheck_die("v12 compat: used != v12 total");
+      if (v12dst.header.ow_attempt != src.header.ow_attempt ||
+          v12dst.header.ow_digest24 != src.header.ow_digest24 ||
+          v12dst.header.bonk_registry_present != src.header.bonk_registry_present)
+        selfcheck_die("v12 compat: v12 ext fields must survive");
+      if (v12dst.header.discovered_dungeons != 0 ||
+          v12dst.header.discovered_whirlpools != 0 ||
+          v12dst.header.discovered_caves[0] != 0 || v12dst.header.discovered_caves[7] != 0 ||
+          v12dst.header.discovered_exits[0] != 0 || v12dst.header.discovered_exits[7] != 0)
+        selfcheck_die("v12 compat: discovery must read as all-zero");
     }
   }
 
@@ -1616,14 +1691,14 @@ void RandoSave_SelfCheck(void) {
     // odd size would disagree with the writer on where the bitmap starts.
     RandoSidecarSlot odd = src;
     odd.header.placement_table_size = 43;  // odd — corrupt by construction
-    uint8 odd_buf[256];
+    uint8 odd_buf[512];  // ample capacity so the reject is for oddness, not size
     if (RandoSave_SerializeSlot(&odd, odd_buf, sizeof(odd_buf)) != 0) {
       selfcheck_die("serialize must reject odd placement_table_size");
     }
     // Loader side: serialize the valid slot afresh (`buf` was magic-corrupted
     // by an earlier reject test), then corrupt the size field (@61 u16 LE) to
     // an odd value — deserialize must reject it.
-    uint8 corrupt[256];
+    uint8 corrupt[512];
     uint32 cw = RandoSave_SerializeSlot(&src, corrupt, sizeof(corrupt));
     if (cw == 0) selfcheck_die("re-serialize for odd-size loader test");
     put_u16le(corrupt + 61, 43);
@@ -1689,7 +1764,7 @@ void RandoSave_SelfCheck(void) {
     drift_src.placements[0].location_id = 2;
     drift_src.placements[0].item_id = 0x0042;
     drift_src.placement_count = 1;
-    uint8 drift_buf[256];
+    uint8 drift_buf[512];
     uint32 drift_wrote = RandoSave_SerializeSlot(&drift_src, drift_buf, sizeof(drift_buf));
     if (drift_wrote == 0) selfcheck_die("§8.5: serialize for drift round-trip");
     RandoSidecarSlot drift_dst;

@@ -813,7 +813,7 @@ static void Panel_General() {
               "OverworldGlitches / MajorGlitches / HybridMajorGlitches: logic may\n"
               "expect glitch routes, so some items need advanced techniques to reach\n"
               "(MajorGlitches is the most permissive tier; all are unverified on the\n"
-              "US 1.0 ROM). NoLogic: reachability is NOT enforced at all — items can\n"
+              "US 1.0 ROM). NoLogic: reachability is NOT enforced at all - items can\n"
               "land anywhere and the seed may be impossible.");
   // Tricks — multi-select bitmask. Each checkbox toggles one settings.tricks bit.
   if (ImGui::TreeNodeEx("Tricks (out-of-logic techniques)",
@@ -1092,7 +1092,7 @@ static void Panel_Dungeons() {
   if (rings_forced_off) {
     ImGui::EndDisabled();
     ImGui::SameLine();
-    ImGui::TextDisabled("(effective: Off — %s)",
+    ImGui::TextDisabled("(effective: Off - %s)",
                         Settings_GenericKeysActive(s) ? "Retro Generic Keys"
                                                       : "Vanilla small keys");
     HelpTooltip("The requested mode is preserved, but rings are effective only when dungeon-specific small keys are shuffled.");

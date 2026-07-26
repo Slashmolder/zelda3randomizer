@@ -76,7 +76,14 @@
 // 12 — appends the OW warp layout identity (@58 ow_attempt, @59-61
 //      ow_digest24 LE) to the slot extension block
 //      (add-rando-ow-warp-shuffle). Both-direction gating as always.
-#define kRandoSidecar_FileFormatVersion 12
+// 13 — appends the topology-discovery block (tracker-player-knowledge):
+//      dungeons/whirlpools/caves/decoupled-exits the player has observed,
+//      plus a RESERVED door-discovery bitmap for the deferred door phase
+//      (sized now so that phase needs no further format change). Pre-v13
+//      files read all-zero discovery; the loader then backfills dungeon/cave
+//      bits from checked-location state (Rando_BackfillDiscoveryFromChecked —
+//      checked implies having been there, so backfill never over-reveals).
+#define kRandoSidecar_FileFormatVersion 13
 #define kRandoSidecar_SlotCount         3       // mirrors sram.dat's 3-slot layout
 #define kRandoSidecar_FileHeaderSize    16
 #define kRandoSidecar_SlotHeaderSize    80
@@ -125,7 +132,17 @@
 //   @57     bonk_registry_present (u8; 1 = refuse bonk-enabled drift)
 #define kRandoSidecar_SlotExtV11Size    58
 #define kRandoSidecar_SlotExtV12Size    62
-#define kRandoSidecar_SlotExtCurrentSize kRandoSidecar_SlotExtV12Size
+// format_version >= 13 (tracker-player-knowledge): topology-discovery state.
+//   @62-63   discovered_dungeons (u16 LE; bit d = kRandoDungeon_* d entered)
+//   @64      discovered_whirlpools (u8; bit = kRandoOwWhirlpools table index)
+//   @65      reserved
+//   @66-73   discovered_caves[8] (bit = vanilla cave interior index)
+//   @74-81   discovered_exits[8] (bit = decoupled cave-exit net traversed)
+//   @82-231  discovered_doors[150] (RESERVED for the deferred door-shuffle
+//            knowledge phase — (kDoorTbl_DoorCount+7)/8 bytes; zero on write)
+//   @232-237 reserved[6]
+#define kRandoSidecar_SlotExtV13Size    238
+#define kRandoSidecar_SlotExtCurrentSize kRandoSidecar_SlotExtV13Size
 
 // Per randomizer-save spec § Slot header: 3-value discriminator.
 // Empty=0 is the all-zeroes default, distinguishable from an explicit
@@ -363,6 +380,15 @@ typedef struct RandoSlotHeader {
   uint32 bonk_registry_digest;   // v11 ext block @51-54
   uint16 bonk_registry_count;    // v11 ext block @55-56
   uint8 bonk_registry_present;   // v11 ext block @57
+  // tracker-player-knowledge — topology-discovery state (v13 ext block).
+  // What the player has observed; the knowledge-limited live reachability
+  // gates on these. Pre-v13 files read zeros and the loader backfills the
+  // dungeon/cave bits from checked-location state. The reserved on-disk door
+  // bitmap (@82-231) has no in-memory field until the deferred door phase.
+  uint16 discovered_dungeons;    // v13 ext block @62-63
+  uint8 discovered_whirlpools;   // v13 ext block @64
+  uint8 discovered_caves[8];     // v13 ext block @66-73
+  uint8 discovered_exits[8];     // v13 ext block @74-81
 } RandoSlotHeader;
 
 // Bitmap covers placement_table_size / 2 locations.

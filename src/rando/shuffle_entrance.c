@@ -496,6 +496,39 @@ static bool dungeon_door_edge(uint16 entry_region, uint16 *from,
   return false;
 }
 
+// tracker-player-knowledge — bitmask (kRandoDungeon_* order, via each pool
+// entry's lobby region dungeon_id binding) of dungeons whose IDENTITY the
+// active entrance topology hides: the stage-2 pool (base 10 + GT opt-in) or,
+// under cross-category, the cross-eligible dungeon list. Identity-mapped
+// assignments are deliberately included — the player cannot know a door maps
+// to itself. 0 when no dungeon-entrance axis is active.
+uint16 Entrance_HiddenDungeonPoolMask(const RandoSettings *settings) {
+  uint8 didx[kEntranceDungeonCount];
+  int n = 0;
+  const uint8 *rows = NULL;
+  if (Entrance_IsCrossActive(settings)) {
+    n = cross_dungeon_list(didx);
+    rows = didx;
+  } else if (Entrance_IsDungeonActive(settings)) {
+    n = Entrance_DungeonPoolCount(settings);
+  } else {
+    return 0;
+  }
+  uint16 mask = 0;
+  for (int i = 0; i < n && i < kEntranceDungeonCount; i++) {
+    const RandoDungeon *d = &kDungeons[rows ? rows[i] : i];
+    uint16 rid = Rando_FindRegionByName(dungeon_override_key(d));
+    if (rid == 0xFFFF) continue;  // broken build; Entrance_SelfCheck hard-fails it
+    for (uint32 r = 0; r < kRandoRegionsCount; r++) {
+      if (kRandoRegions[r].id != rid) continue;
+      if (kRandoRegions[r].dungeon_id < 16)
+        mask |= (uint16)(1u << kRandoRegions[r].dungeon_id);
+      break;
+    }
+  }
+  return mask;
+}
+
 bool Entrance_IsCrossActive(const RandoSettings *settings) {
   if (settings == NULL || !settings->cross_category) return false;
   // Cross is the "mix caves + dungeons" master mode; the Crossed preset sets
@@ -775,6 +808,29 @@ const char *Entrance_CaveInteriorName(int interior) {
   return kCaveInteriors[interior].name;
 }
 
+// tracker-player-knowledge — vanilla interior owning location `loc`, or -1.
+// Linear over the static interior→location lists (~60 member locations total);
+// callers are activation-time backfill and the once-per-memo-rebuild knowledge
+// mask, so no reverse index is warranted.
+int Entrance_CaveInteriorOfLocation(uint16 loc) {
+  for (int i = 0; i < kEntranceCaveInteriorCount; i++) {
+    for (int k = 0; k < kCaveInteriors[i].location_count; k++) {
+      if (kCaveInteriors[i].location_ids[k] == loc) return i;
+    }
+  }
+  return -1;
+}
+
+// tracker-player-knowledge — member-location list of one interior (for the
+// knowledge mask's suppressed-location bitset). Returns the count; *out_ids
+// may be NULL when the interior has no member locations.
+int Entrance_CaveInteriorLocationList(int interior, const uint16 **out_ids) {
+  if (out_ids) *out_ids = NULL;
+  if (interior < 0 || interior >= kEntranceCaveInteriorCount) return 0;
+  if (out_ids) *out_ids = kCaveInteriors[interior].location_ids;
+  return kCaveInteriors[interior].location_count;
+}
+
 // ---------------------------------------------------------------------------
 // Decoupled / per-endpoint ("Insanity", Stage 4 — D.1/D.2: logic + generation)
 // ---------------------------------------------------------------------------
@@ -819,7 +875,12 @@ void Entrance_ApplyDecoupledExitEdges(const uint8 *exit_assign, int n) {
     if (from_r == 0xFFFF || to_r == 0xFFFF || from_r == to_r) continue;
     uint32 pred_off = 0; uint16 pred_len = 0;
     cave_source_pred(i, &pred_off, &pred_len);
-    Rando_AddEntranceEdge(from_r, to_r, pred_off, pred_len);
+    // tracker-player-knowledge — tag with the entered-interior index so the
+    // masked live view can hide this one-way warp until the player has
+    // actually traversed it (Rando_MarkDecoupledExitDiscovered at the exit
+    // replay). Inert for generation (no mask there).
+    Rando_AddEntranceEdgeTagged(from_r, to_r, pred_off, pred_len,
+                                (uint8)(kKnowledgeTag_DecoupledExit | i));
   }
 }
 

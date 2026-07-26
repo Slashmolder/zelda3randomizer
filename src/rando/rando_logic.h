@@ -7,7 +7,7 @@
 //     selected_key_rings_mask) for can_place (only context where OP_ITEM_IS may
 //     appear)
 //
-// Logic_ComputeReachability runs the fixed-point expansion over the static
+// Logic_ComputeReachabilityFullKnowledge runs the fixed-point expansion over the static
 // EdgeDef[] graph (consulting the RegionRemap overlay for Phase C entrance
 // shuffle; identity in Phase A).
 //
@@ -204,7 +204,7 @@ typedef struct PredicateContext {
   // kRandoDungeonVanillaBoss (vanilla boss), so reachability is unchanged.
   const uint8 *boss_assignment;                // [16]; entries are boss-pool indices
 
-  // Per-iteration reachability state (filled by Logic_ComputeReachability;
+  // Per-iteration reachability state (filled by Logic_ComputeReachabilityFullKnowledge;
   // unused by standalone Predicate_Evaluate calls — pass 0 / NULL).
   uint64 cleared_dungeons_bitmask;             // bit d = dungeon d cleared
   const uint8 *reachable_regions_bitset;       // bit array of region ids; NULL = none reachable
@@ -262,14 +262,64 @@ typedef struct RandoReachability RandoReachability;
 // install; deactivation clears.
 void Logic_SetResolvedTowerCrystals(uint8 count_plus1);
 
-const RandoReachability *Logic_ComputeReachability(const RandoCounts *counts,
+// tracker-player-knowledge — knowledge-exclusion input for the LIVE tracker
+// view (openspec randomizer-player-knowledge). The masked flood presents only
+// what the player could know: regions belonging to a hidden-identity dungeon
+// never enter the fixpoint (blocking onward propagation — the chains aux-exit
+// pass-through channel), knowledge-tagged added edges (whirlpool pairs,
+// decoupled cave exits) are skipped while undiscovered, and suppressed
+// locations (undiscovered shuffled cave contents) are never reported
+// reachable. Passed EXPLICITLY per call — never process-global state — and
+// only the live bridge (Rando_GetLiveReachability) passes it; every
+// generation/placer/selftest path uses the FullKnowledge entry point.
+typedef struct RandoKnowledgeMask {
+  // bit d (kRandoDungeon_* order, matching RandoRegionDef.dungeon_id):
+  // dungeon d's regions are excluded from the fixpoint.
+  uint16 hidden_dungeon_mask;
+  // bit i = kRandoOwWhirlpools table index i: added edges tagged
+  // (kKnowledgeTag_Whirlpool | i) are skipped.
+  uint8 hidden_whirlpool_mask;
+  // bit j = cave interior j: added edges tagged
+  // (kKnowledgeTag_DecoupledExit | j) are skipped.
+  uint64 hidden_exit_mask;
+  // Optional bitset over location ids ((kRandoLocationCapacity+7)>>3 bytes);
+  // a set bit is never reported reachable. NULL = no suppression.
+  const uint8 *suppressed_locations;
+} RandoKnowledgeMask;
+
+// Knowledge tags carried by per-seed ADDED edges (Rando_AddEntranceEdgeTagged).
+// 0 = untagged (never suppressed). The low bits carry the whirlpool table
+// index (0..7) / cave interior index (0..63).
+enum {
+  kKnowledgeTag_None = 0,
+  kKnowledgeTag_Whirlpool = 0x40,      // | table index (0..7)
+  kKnowledgeTag_DecoupledExit = 0x80,  // | cave interior (0..63)
+  kKnowledgeTag_KindMask = 0xC0,
+};
+
+// FULL-KNOWLEDGE flood — generation/placer/selftest ONLY. Player-facing
+// surfaces must consume the knowledge-limited live bridge instead
+// (Rando_GetLiveReachability); check_knowledge_consumers.py enforces the
+// split. (Renamed from Logic_ComputeReachability by tracker-player-knowledge
+// so a new call site must consciously pick a side.)
+const RandoReachability *Logic_ComputeReachabilityFullKnowledge(const RandoCounts *counts,
                                                    const RandoSettings *settings);
+// Knowledge-limited flood: identical to FullKnowledge when mask is NULL
+// (byte-for-byte — the empty-mask short-circuit), else applies the exclusions
+// above. Only the live tracker bridge passes a non-NULL mask.
+const RandoReachability *Logic_ComputeReachabilityMasked(const RandoCounts *counts,
+                                                         const RandoSettings *settings,
+                                                         const RandoKnowledgeMask *mask);
 // Continue the previous reachability fixed-point after only increasing item
 // counts under the same settings/shuffle state. Used by soul collection during
 // assumed fill; Logic_SelfCheck enforces that generated reachability predicates
 // stay monotone in inventory/reachability so preserved bits cannot become stale.
+// Generation-only (full knowledge), like the FullKnowledge entry point.
 const RandoReachability *Logic_ExpandReachability(const RandoCounts *counts,
                                                   const RandoSettings *settings);
+// tracker-player-knowledge structural probe: masked ⊆ full, exclusion, and
+// full-flood purity after a masked flood. Exits(2) on failure.
+void Logic_KnowledgeMaskSelfCheck(void);
 
 // Diagnostic-only generation work counter. The generator brackets one run
 // with Begin/Freeze; the fixed-point loop counts completed expansion passes
@@ -281,9 +331,9 @@ uint64 Logic_WorkCounterFreeze(void);
 bool Reachability_HasLocation(const RandoReachability *r, uint16 location_id);
 bool Reachability_HasRegion(const RandoReachability *r, uint16 region_id);
 
-// Copy the last Logic_ComputeReachability result into a private snapshot buffer
+// Copy the last Logic_ComputeReachabilityFullKnowledge result into a private snapshot buffer
 // (refresh=true) and return it, or return the existing snapshot unchanged
-// (refresh=false). The snapshot survives later Logic_ComputeReachability calls,
+// (refresh=false). The snapshot survives later Logic_ComputeReachabilityFullKnowledge calls,
 // which only touch the shared result buffer. Used by the runtime tracker bridge
 // to hold a stable reachability across frames / multiple windows.
 const RandoReachability *Reachability_Snapshot(bool refresh);
@@ -706,6 +756,13 @@ void Rando_SetEntranceRegionOverridePred(uint16 loc_id, uint16 region_id,
 // Rando_BeginEntranceEdgeOverrides; walked when edge overrides are active.
 void Rando_AddEntranceEdge(uint16 from_region, uint16 to_region,
                            uint32 pred_off, uint16 pred_len);
+// tracker-player-knowledge — tagged variant: `knowledge_tag` (kKnowledgeTag_*)
+// lets the masked live flood skip the edge while its observable (whirlpool
+// pair / decoupled exit) is undiscovered. Tag 0 == the plain form. Inert for
+// generation (no mask ⇒ tags never consulted).
+void Rando_AddEntranceEdgeTagged(uint16 from_region, uint16 to_region,
+                                 uint32 pred_off, uint16 pred_len,
+                                 uint8 knowledge_tag);
 int Rando_GetEntranceAddedEdgeCount(void);
 // Budget introspection for the combined-consumer selfcheck: edges dropped by
 // the cap since the last Begin (must stay 0) and the store capacity.

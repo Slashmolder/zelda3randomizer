@@ -266,6 +266,10 @@ static void ZeldaRunGameLoop() {
   frame_counter++;
   ClearOamBuffer();
   Rando_TickTrapEffects();
+  // tracker-player-knowledge — per-frame "inside dungeon X" observation, the
+  // single discovery choke point (no per-entry-path hooks). No-op without an
+  // active rando slot; two byte reads + a bit test when idle.
+  Rando_TickDiscovery();
   Module_MainRouting();
   // Draw the in-game tracker overlays here, after the game has built OAM for
   // the frame and BEFORE NMI_PrepareSprites packs the extended-OAM table, so
