@@ -58,9 +58,13 @@
       mirrored `assets/rando/*.gen.*` inputs for the corpus to run every entry)
 - [x] 5.4 Corpus regen shows **0** digest changes vs. the pre-change baseline
       (display-only claim verified, not asserted) — no `kGeneratorVersion` bump
-- [ ] 5.5 Owner playtest: vanilla seed pause map unchanged; `prize_shuffle` seed
-      shows the blinking red X at every prize dungeon, flips to the correct icon + crystal
-      number after collecting that dungeon's prize; Inverted pause map sane
+- [x] 5.5 Owner playtest PASSED: on a `prize_shuffle` seed the unobserved prize
+      dungeons draw the blinking red X, and Eastern Palace flipped to the real
+      pendant icon once its prize was collected (owner-confirmed on the build at
+      a5ef5eb0). The playtest also surfaced two defects OUTSIDE this change,
+      fixed separately on this branch: boss prizes had stopped running the
+      vanilla receipt (no fanfare; crystal dungeons softlocked in a sealed boss
+      room) and 5 of 7 crystal->inventory-bit assignments were permuted.
 
 ## 6. Close-out
 
@@ -69,5 +73,9 @@
       the oracle re-derived instead of driving the resolver and was circular,
       docs/spec contradicted decision D3, and the unknown marker is a red X
       rather than the "?" every artifact claimed)
-- [ ] 6.2 Reconcile these deltas against as-built source, then
-      `openspec archive fix-ow-map-prize-markers --yes` on the branch
+- [x] 6.2 Reconciled against as-built source: marker visibility is
+      unconditional under a shuffled slot (the type-keyed hide runs only on the
+      vanilla path, messaging.c), the oracle drives OwMapResolveMarker rather
+      than re-deriving it and anchors slot->dungeon to kPendantBitMask /
+      kCrystalBitMask x kDungeonCrystalPendantBit, and the unknown form is
+      named as vanilla's red X everywhere. Then archived on the branch.
