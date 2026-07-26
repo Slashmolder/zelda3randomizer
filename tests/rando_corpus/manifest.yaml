@@ -1551,3 +1551,12 @@ entries:
     label: "warp-inverted-normalized-off"
     expected_digest: "ec3998501175114525b400840424233eecc9055a337337189778311b08bfce51"
     expected_sphere_digest: "a6b5863b17c2e12692d6b77f70b131ac51e8acc76801df4c45a9020ae4ccaa68"
+  # Twin of the row above WITHOUT the warp axes: both rows must stay
+  # byte-identical forever. A future bump_rando_corpus re-pin absorbs digest
+  # movement silently; a broken Inverted warp normalization would make this
+  # pair DIVERGE in the regen diff, which is the visible tripwire.
+  - settings: { mode.state: inverted, goal: fast_ganon }
+    seed: "0x0000000000000159"
+    label: "warp-inverted-normalized-off-twin"
+    expected_digest: "ec3998501175114525b400840424233eecc9055a337337189778311b08bfce51"
+    expected_sphere_digest: "a6b5863b17c2e12692d6b77f70b131ac51e8acc76801df4c45a9020ae4ccaa68"

@@ -1847,13 +1847,15 @@ void RandoSnapshotTail_SelfCheck(void) {
         selfcheck_die("type-2 active entrance should preserve same-slot header");
       fclose(fcur);
 
-      // Composed entrance+warp cold replay must land in activation-order
-      // overlay state from the LOADER ALONE: the type-2 restore installs the
-      // warp overlay, the later EntranceLayout TLV resets the shared edge
-      // stores, and the loader's trailing reinstall reconverges them. Unlike
-      // the probe above, NO manual reinstall runs between Load and the fold
-      // compare — this asserts the state a player actually resumes into.
-      // Skipped assetless (warp compute fails closed without the graph).
+      // Composed entrance+warp COLD replay must land in activation-order
+      // overlay state from the LOADER ALONE. The slot is deactivated before
+      // the load so the type-2 handler takes the genuinely cold arm: settings
+      // reconstruction + install_active_shuffles' digest-gated warp install,
+      // then the later EntranceLayout TLV resets the shared edge stores, and
+      // the loader's trailing reinstall reconverges them. Unlike the probe
+      // above, NO manual reinstall runs between Load and the fold compare —
+      // this asserts the state a player actually resumes into on a fresh
+      // process. Skipped assetless (warp compute fails closed sans graph).
       if (kRandoOwGraphPresent) {
         RandoSettings warp_settings = active_settings;
         warp_settings.flute_shuffle = kFluteShuffle_Random;
@@ -1881,8 +1883,10 @@ void RandoSnapshotTail_SelfCheck(void) {
         if (fwarp == NULL) selfcheck_die("composed warp: tmpfile() returned NULL");
         if (!RandoSnapshotTail_Save(fwarp))
           selfcheck_die("composed warp: Save returned false");
-        Rando_ClearEntranceRegionOverrides();
-        Rando_ClearEntranceEdgeOverrides();
+        // Full teardown: an ACTIVE matching slot would route the type-2
+        // handler down the warm arm and skip the cold reconstruction this
+        // probe exists to exercise.
+        Rando_DeactivateSlot();
         Placement_Install(NULL);
         Rando_ClearSnapshotContext();
         g_rando_slot_active = 1;
