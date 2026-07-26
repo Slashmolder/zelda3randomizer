@@ -1411,6 +1411,23 @@ that shuffles world topology:
   that mapping is player knowledge by then.
 - Everything lights up live the moment you make the discovery — no reload.
 
+The same rule governs **in-world** surfaces that would otherwise state a
+per-seed assignment. The overworld pause map's pendant/crystal markers are
+vanilla's own such surface: each marker hard-codes one dungeon's *vanilla*
+prize, so under `prize_shuffle` it pointed you at the wrong dungeons entirely.
+Markers now follow the dungeon, not the prize:
+
+- Every prize dungeon keeps its marker at its normal overworld spot, showing
+  the blinking **"?"** until you collect *that dungeon's* prize; then it turns
+  into the real pendant or crystal (with the right crystal number). Owning a
+  pendant no longer clears some other dungeon's marker, and a dungeon you have
+  already cleared no longer keeps one.
+- The marker never moves under **entrance shuffle**. It marks where the
+  dungeon's vanilla entrance is, which is a fact about vanilla, not about your
+  seed — relocating it would give away the shuffled topology.
+- With `prize_shuffle` off (or no slot loaded) the pause map is exactly vanilla,
+  markers disappearing on pickup and all.
+
 This gating is unconditional (it applies to race and casual seeds alike) and
 has no toggle; the spoiler-reveal flow remains the way to see a seed's layout.
 Seeds with no topology axes are entirely unaffected. Discovery is stored per

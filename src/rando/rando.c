@@ -41,6 +41,7 @@
 #include "inverted_maps.h"  // InvertedHoleBlocks_Install (no-art Ganon pit shadow)
 #include "shuffle_cosmetic.h"  // Cosmetic_SetSeed (cosmetic_seed=0 -> slot seed)
 #include "medallion_icons.h"  // Rando_MedallionIcons_SelfCheck
+#include "ow_map_prizes.h"  // RandoOwMap_SelfCheck
 #include "../ancilla.h"  // AncillaAdd_RandoIconReceipt (Phase B Slice 9)
 #include "../config.h"  // g_config.cosmetic_seed
 #include "../types.h"
@@ -10481,6 +10482,7 @@ static const RandoSelfCheckEntry kRandoSelfChecks[] = {
   { kRandoSelfCheckGroup_Runtime,     Rando_MirrorlessAwayWorldSelfCheck },
   { kRandoSelfCheckGroup_Runtime,     Rando_ShuffleInstallSelfCheck },
   { kRandoSelfCheckGroup_Ui,          Rando_MedallionIcons_SelfCheck },
+  { kRandoSelfCheckGroup_Ui,          RandoOwMap_SelfCheck },  // fix-ow-map-prize-markers
 };
 
 uint8 Rando_SelfCheckGroupCount(void) {

@@ -14,6 +14,29 @@
 #include "rando_logic.h"
 
 // ---------------------------------------------------------------------------
+// Prize ids (mirror item_registry.yaml prize IDs offset to a small palette).
+// The op_registry.yaml's _resolve_prize_id mapping in rando_logic_gen.py
+// declares prizes in this exact order — keep aligned.
+//
+// NOTE the Red/Blue naming is the REGISTRY's, and it is swapped relative to the
+// in-game colour: kPrize_RedPendant is the Desert/Power pendant, which the game
+// draws BLUE, and kPrize_BluePendant is the Hera/Wisdom pendant, drawn RED (see
+// PrizeIcon in rando_window/tracker_windows.cpp). Key display code off the ID.
+// ---------------------------------------------------------------------------
+enum {
+  kPrize_GreenPendant = 0,
+  kPrize_RedPendant = 1,
+  kPrize_BluePendant = 2,
+  kPrize_Crystal1 = 3,
+  kPrize_Crystal2 = 4,
+  kPrize_Crystal3 = 5,
+  kPrize_Crystal4 = 6,
+  kPrize_Crystal5 = 7,
+  kPrize_Crystal6 = 8,
+  kPrize_Crystal7 = 9,
+};
+
+// ---------------------------------------------------------------------------
 // Prize shuffle (task 4.1a).
 //
 // Assigns each of {Crystal 1..7, Green/Red/Blue Pendant} to a dungeon. The

@@ -68,6 +68,13 @@ GUARDS: dict[str, set[str]] = {
         "src/rando/rando_placement.c",      # placer prize handling (generation)
         "src/dungeon.c",                    # falling-prize sprite (fires after the boss kill)
         "src/rando/rando_window/tracker_windows.cpp",  # prize column: "?"-gated until obtained (audited)
+        # Overworld pause-map markers: same "?"-until-obtained gating as the
+        # tracker's prize column, reading only after the dungeon's prize
+        # LOCATION is checked. Deliberately its own module rather than
+        # allowlisting src/messaging.c, so this entry cannot authorize
+        # unrelated future assignment reads in the engine file that draws it
+        # (fix-ow-map-prize-markers; audited).
+        "src/rando/ow_map_prizes.c",
     },
     "Rando_GetMedallionAssignment": {
         "src/rando/rando.c",

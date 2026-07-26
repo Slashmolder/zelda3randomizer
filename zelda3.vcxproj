@@ -430,6 +430,7 @@
     <ClCompile Include="src\rando\rando_generate.c" />
     <ClCompile Include="src\rando\rando_map.c" />
     <ClCompile Include="src\rando\medallion_icons.c" />
+    <ClCompile Include="src\rando\ow_map_prizes.c" />
     <ClCompile Include="src\rando\inverted_maps.c" />
     <ClCompile Include="src\rando\inverted_maps_apply.c" />
     <ClCompile Include="src\rando\auto_tracker.c" />

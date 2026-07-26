@@ -2,6 +2,7 @@
 #include "zelda_rtl.h"
 #include "rando/rando.h"  // Phase B Slice 1 — Rando_OnGameSave
 #include "rando/shuffle_ow_warp.h"  // add-rando-ow-warp-shuffle flute blips
+#include "rando/ow_map_prizes.h"  // fix-ow-map-prize-markers pause-map markers
 #include "variables.h"
 #include "config.h"
 #include "features.h"
@@ -24,7 +25,8 @@
 #include "rando/rando_hints.h"
 #include "rando/rando_dialogue.h"
 
-static void WorldMap_AddSprite(int spr, uint8 big, uint8 flags, uint8 ch, uint16 x, uint16 y);
+static void WorldMap_AddSprite(int spr, uint8 big, uint8 flags, uint8 ch, uint16 x, uint16 y,
+                               uint8 num_char);
 static bool WorldMap_CalculateOamCoordinates(Point16U *pt);
 
 static const int8 kDungMap_Tab0[14] = {-1, -1, -1, -1, -1, 2, 0, 10, 4, 8, -1, 6, 12, 14};
@@ -267,7 +269,10 @@ static const uint8 kOverworldMap_tab1[333] = {
   0xf7, 0xf7, 0xf6, 0xf5, 0xf4, 0xf4, 0xf3, 0xf2, 0xf2, 0xf1, 0xf0, 0xef, 0xee, 0xee, 0xed, 0xec,
   0xeb, 0xea, 0xe9, 0xe8, 0xe8, 0xe7, 0xe6, 0xe5, 0xe4, 0xe3, 0xe2, 0xe1, 0xe0,
 };
-static const uint8 kOverworldMapData[7] = {0x79, 0x6e, 0x6f, 0x6d, 0x7c, 0x6c, 0x7f};
+// non-static: fix-ow-map-prize-markers re-keys the crystal NUMBER glyph by
+// crystal id (prize_shuffle breaks the vanilla slot->number correspondence).
+// Indexed by `sprite index - 8`; single source for the rando path + its oracle.
+const uint8 kOverworldMapData[7] = {0x79, 0x6e, 0x6f, 0x6d, 0x7c, 0x6c, 0x7f};
 static const uint8 kBirdTravel_tab1[8] = {0x7f, 0x79, 0x6c, 0x6d, 0x6e, 0x6f, 0x7c, 0x7d};
 // non-static: add-rando-ow-warp-shuffle reuses the hand-tuned vanilla blip
 // positions (shuffle_ow_warp.c) — single source for the rando path + oracle.
@@ -298,6 +303,24 @@ static const uint16 kOwMapCrystal3_tab[9] = {0, 0, 0, 0x6234, 0, 0, 0, 0x6434, 0
 static const uint16 kOwMapCrystal4_tab[9] = {0, 0, 0, 0, 0, 0, 0, 0x6434, 0};
 static const uint16 kOwMapCrystal5_tab[9] = {0, 0, 0, 0, 0, 0, 0, 0x6434, 0};
 static const uint16 kOwMapCrystal6_tab[9] = {0, 0, 0, 0, 0, 0, 0, 0x6434, 0};
+// The seven pause-map prize marker slots, gathered so the draw loop below (and
+// rando/ow_map_prizes.c, which re-keys them by DUNGEON under prize_shuffle) can
+// index them. Slot i draws as sprite `14 - i`; `x == 0xff00` means "no marker
+// in this slot for this map-icon state". The tab word is `ch << 8 | flags`,
+// with `tab == 0` meaning vanilla's blinking "unknown" marker.
+static const uint16 *const kOwMapCrystal_x[7] = {
+  kOwMapCrystal0_x, kOwMapCrystal1_x, kOwMapCrystal2_x, kOwMapCrystal3_x,
+  kOwMapCrystal4_x, kOwMapCrystal5_x, kOwMapCrystal6_x,
+};
+static const uint16 *const kOwMapCrystal_y[7] = {
+  kOwMapCrystal0_y, kOwMapCrystal1_y, kOwMapCrystal2_y, kOwMapCrystal3_y,
+  kOwMapCrystal4_y, kOwMapCrystal5_y, kOwMapCrystal6_y,
+};
+// non-static: see kOverworldMapData above.
+const uint16 *const kOwMapCrystal_tab[7] = {
+  kOwMapCrystal0_tab, kOwMapCrystal1_tab, kOwMapCrystal2_tab, kOwMapCrystal3_tab,
+  kOwMapCrystal4_tab, kOwMapCrystal5_tab, kOwMapCrystal6_tab,
+};
 static const uint8 kOwMap_tab2[4] = {0x68, 0x69, 0x78, 0x69};
 static const uint8 kOverworldMap_Table4[4] = {0x34, 0x74, 0xf4, 0xb4};
 static const uint8 kOverworldMap_Timer[2] = {33, 12};
@@ -1143,7 +1166,7 @@ void FluteMenu_HandleSelection() {  // 8ab78b
   }
   birdtravel_var1[0] = birdtravel_var1[0] & 7;
   if (frame_counter & 0x10 && WorldMap_CalculateOamCoordinates(&pt))
-    WorldMap_AddSprite(16, 2, 0x3e, 0, pt.x - 4, pt.y - 4);
+    WorldMap_AddSprite(16, 2, 0x3e, 0, pt.x - 4, pt.y - 4, 0);
 
   uint16 ybak = link_y_coord_spexit;
   uint16 xbak = link_x_coord_spexit;
@@ -1161,7 +1184,7 @@ void FluteMenu_HandleSelection() {  // 8ab78b
       bird_travel_y_hi[i] = (uint8)(rando_by >> 8);
       link_y_coord_spexit = rando_by;
       if (WorldMap_CalculateOamCoordinates(&pt))
-        WorldMap_AddSprite(i, 0, (i == birdtravel_var1[0]) ? 0x30 + (frame_counter & 6) : 0x32, kBirdTravel_tab1[i], pt.x, pt.y);
+        WorldMap_AddSprite(i, 0, (i == birdtravel_var1[0]) ? 0x30 + (frame_counter & 6) : 0x32, kBirdTravel_tab1[i], pt.x, pt.y, 0);
       continue;
     }
     bird_travel_x_lo[i] = kBirdTravel_x_lo[i];
@@ -1173,7 +1196,7 @@ void FluteMenu_HandleSelection() {  // 8ab78b
     link_y_coord_spexit = kBirdTravel_y_hi[i] << 8 | kBirdTravel_y_lo[i];
 
     if (WorldMap_CalculateOamCoordinates(&pt))
-      WorldMap_AddSprite(i, 0, (i == birdtravel_var1[0]) ? 0x30 + (frame_counter & 6) : 0x32, kBirdTravel_tab1[i], pt.x, pt.y);
+      WorldMap_AddSprite(i, 0, (i == birdtravel_var1[0]) ? 0x30 + (frame_counter & 6) : 0x32, kBirdTravel_tab1[i], pt.x, pt.y, 0);
   }
   link_x_coord_spexit = xbak;
   link_y_coord_spexit = ybak;
@@ -1466,7 +1489,7 @@ void WorldMap_HandleSprites() {  // 8abf66
   Point16U pt;
 
   if (frame_counter & 0x10 && WorldMap_CalculateOamCoordinates(&pt))
-    WorldMap_AddSprite(0, 2, 0x3e, 0, pt.x - 4, pt.y - 4);
+    WorldMap_AddSprite(0, 2, 0x3e, 0, pt.x - 4, pt.y - 4, 0);
 
   uint16 ybak = link_y_coord_spexit;
   uint16 xbak = link_x_coord_spexit;
@@ -1486,7 +1509,7 @@ void WorldMap_HandleSprites() {  // 8abf66
     link_x_coord_spexit = bird_travel_x_hi[k] << 8 | bird_travel_x_lo[k];
     link_y_coord_spexit = bird_travel_y_hi[k] << 8 | bird_travel_y_lo[k];
     if (WorldMap_CalculateOamCoordinates(&pt))
-      WorldMap_AddSprite(15, 2, kOverworldMap_Table4[frame_counter >> 1 & 3], 0x6a, pt.x, pt.y);
+      WorldMap_AddSprite(15, 2, kOverworldMap_Table4[frame_counter >> 1 & 3], 0x6a, pt.x, pt.y, 0);
   }
 
   if (save_ow_event_info[0x5b] & 0x20 || (((savegame_map_icons_indicator >= 6) ^ is_in_dark_world) & 1))
@@ -1494,137 +1517,51 @@ void WorldMap_HandleSprites() {  // 8abf66
 
   k = savegame_map_icons_indicator;
 
-  if (!OverworldMap_CheckForPendant(0) && !OverworldMap_CheckForCrystal(0) && !sign16(kOwMapCrystal0_x[k])) {
-    link_x_coord_spexit = kOwMapCrystal0_x[k];
-    link_y_coord_spexit = kOwMapCrystal0_y[k];
-    uint8 t = kOwMapCrystal0_tab[k] >> 8;
-    if (t != 0) {
-      if (t != 100 && frame_counter & 0x10)
-        goto endif_crystal0;
-      link_x_coord_spexit -= 4, link_y_coord_spexit -= 4;
-    }
-    if (WorldMap_CalculateOamCoordinates(&pt)) {
-      uint16 info = kOwMapCrystal0_tab[k];
-      uint8 ext = 2;
-      if (!(info >> 8))
-        info = kOwMap_tab2[frame_counter >> 3 & 3] << 8 | 0x32, ext = 0;
-      WorldMap_AddSprite(14, ext, (uint8)info, (uint8)(info >> 8), pt.x, pt.y);
-    }
-  endif_crystal0:;
-  }
+  // Vanilla draws seven byte-identical copies of this block, one per marker
+  // slot (slot i => sprite 14 - i). Folded into a loop so the rando prize
+  // re-keying below is ONE hook instead of seven. The pendant ownership test
+  // only exists for slots 0..2 in vanilla, and is vacuous elsewhere anyway
+  // (it requires map-icon state 3, where slots 4..6 hold no marker).
+  for (int i = 0; i < 7; i++) {
+    // fix-ow-map-prize-markers: under prize_shuffle the vanilla (icon, crystal
+    // number, ownership test) triple asserts the VANILLA dungeon->prize
+    // assignment, which the seed has replaced. Resolve the slot by DUNGEON
+    // instead, knowledge-gated: the true prize only once its location is
+    // checked, the vanilla blinking "unknown" marker (tab 0) until then.
+    // Substituting before the `t` branch reuses vanilla's own kOwMap_tab2 path.
+    uint16 tab = kOwMapCrystal_tab[i][k];
+    uint8 num_char = 0;
+    bool rando_marker = RandoOwMap_PrizeMarker(k, (uint8)i, &tab, &num_char);
 
-  if (!OverworldMap_CheckForPendant(1) && !OverworldMap_CheckForCrystal(1) && !sign16(kOwMapCrystal1_x[k])) {
-    link_x_coord_spexit = kOwMapCrystal1_x[k];
-    link_y_coord_spexit = kOwMapCrystal1_y[k];
-    uint8 t = kOwMapCrystal1_tab[k] >> 8;
-    if (t != 0) {
-      if (t != 100 && frame_counter & 0x10)
-        goto endif_crystal1;
-      link_x_coord_spexit -= 4, link_y_coord_spexit -= 4;
+    if (!rando_marker) {
+      // Vanilla hides a marker once the prize TYPE is owned. Under a shuffled
+      // assignment that tests the wrong thing in both directions, so the rando
+      // path keeps the marker for the whole game and lets the icon carry the
+      // state (unknown -> the dungeon's real prize once collected).
+      if (i < 3 && OverworldMap_CheckForPendant(i))
+        continue;
+      if (OverworldMap_CheckForCrystal(i))
+        continue;
     }
-    if (WorldMap_CalculateOamCoordinates(&pt)) {
-      uint16 info = kOwMapCrystal1_tab[k];
-      uint8 ext = 2;
-      if (!(info >> 8))
-        info = kOwMap_tab2[frame_counter >> 3 & 3] << 8 | 0x32, ext = 0;
-      WorldMap_AddSprite(13, ext, (uint8)info, (uint8)(info >> 8), pt.x, pt.y);
-    }
-  endif_crystal1:;
-  }
+    if (sign16(kOwMapCrystal_x[i][k]))
+      continue;
 
-  if (!OverworldMap_CheckForPendant(2) && !OverworldMap_CheckForCrystal(2) && !sign16(kOwMapCrystal2_x[k])) {
-    link_x_coord_spexit = kOwMapCrystal2_x[k];
-    link_y_coord_spexit = kOwMapCrystal2_y[k];
-    uint8 t = kOwMapCrystal2_tab[k] >> 8;
+    link_x_coord_spexit = kOwMapCrystal_x[i][k];
+    link_y_coord_spexit = kOwMapCrystal_y[i][k];
+    uint8 t = tab >> 8;
     if (t != 0) {
       if (t != 100 && frame_counter & 0x10)
-        goto endif_crystal2;
+        continue;
       link_x_coord_spexit -= 4, link_y_coord_spexit -= 4;
     }
     if (WorldMap_CalculateOamCoordinates(&pt)) {
-      uint16 info = kOwMapCrystal2_tab[k];
+      uint16 info = tab;
       uint8 ext = 2;
       if (!(info >> 8))
         info = kOwMap_tab2[frame_counter >> 3 & 3] << 8 | 0x32, ext = 0;
-      WorldMap_AddSprite(12, ext, (uint8)info, (uint8)(info >> 8), pt.x, pt.y);
+      WorldMap_AddSprite(14 - i, ext, (uint8)info, (uint8)(info >> 8), pt.x, pt.y,
+                         num_char);
     }
-  endif_crystal2:;
-  }
-
-  if (!OverworldMap_CheckForCrystal(3) && !sign16(kOwMapCrystal3_x[k])) {
-    link_x_coord_spexit = kOwMapCrystal3_x[k];
-    link_y_coord_spexit = kOwMapCrystal3_y[k];
-    uint8 t = kOwMapCrystal3_tab[k] >> 8;
-    if (t != 0) {
-      if (t != 100 && frame_counter & 0x10)
-        goto endif_crystal3;
-      link_x_coord_spexit -= 4, link_y_coord_spexit -= 4;
-    }
-    if (WorldMap_CalculateOamCoordinates(&pt)) {
-      uint16 info = kOwMapCrystal3_tab[k];
-      uint8 ext = 2;
-      if (!(info >> 8))
-        info = kOwMap_tab2[frame_counter >> 3 & 3] << 8 | 0x32, ext = 0;
-      WorldMap_AddSprite(11, ext, (uint8)info, (uint8)(info >> 8), pt.x, pt.y);
-    }
-  endif_crystal3:;
-  }
-
-  if (!OverworldMap_CheckForCrystal(4) && !sign16(kOwMapCrystal4_x[k])) {
-    link_x_coord_spexit = kOwMapCrystal4_x[k];
-    link_y_coord_spexit = kOwMapCrystal4_y[k];
-    uint8 t = kOwMapCrystal4_tab[k] >> 8;
-    if (t != 0) {
-      if (t != 100 && frame_counter & 0x10)
-        goto endif_crystal4;
-      link_x_coord_spexit -= 4, link_y_coord_spexit -= 4;
-    }
-    if (WorldMap_CalculateOamCoordinates(&pt)) {
-      uint16 info = kOwMapCrystal4_tab[k];
-      uint8 ext = 2;
-      if (!(info >> 8))
-        info = kOwMap_tab2[frame_counter >> 3 & 3] << 8 | 0x32, ext = 0;
-      WorldMap_AddSprite(10, ext, (uint8)info, (uint8)(info >> 8), pt.x, pt.y);
-    }
-  endif_crystal4:;
-  }
-
-  if (!OverworldMap_CheckForCrystal(5) && !sign16(kOwMapCrystal5_x[k])) {
-    link_x_coord_spexit = kOwMapCrystal5_x[k];
-    link_y_coord_spexit = kOwMapCrystal5_y[k];
-    uint8 t = kOwMapCrystal5_tab[k] >> 8;
-    if (t != 0) {
-      if (t != 100 && frame_counter & 0x10)
-        goto endif_crystal5;
-      link_x_coord_spexit -= 4, link_y_coord_spexit -= 4;
-    }
-    if (WorldMap_CalculateOamCoordinates(&pt)) {
-      uint16 info = kOwMapCrystal5_tab[k];
-      uint8 ext = 2;
-      if (!(info >> 8))
-        info = kOwMap_tab2[frame_counter >> 3 & 3] << 8 | 0x32, ext = 0;
-      WorldMap_AddSprite(9, ext, (uint8)info, (uint8)(info >> 8), pt.x, pt.y);
-    }
-  endif_crystal5:;
-  }
-
-  if (!OverworldMap_CheckForCrystal(6) && !sign16(kOwMapCrystal6_x[k])) {
-    link_x_coord_spexit = kOwMapCrystal6_x[k];
-    link_y_coord_spexit = kOwMapCrystal6_y[k];
-    uint8 t = kOwMapCrystal6_tab[k] >> 8;
-    if (t != 0) {
-      if (t != 100 && frame_counter & 0x10)
-        goto endif_crystal6;
-      link_x_coord_spexit -= 4, link_y_coord_spexit -= 4;
-    }
-    if (WorldMap_CalculateOamCoordinates(&pt)) {
-      uint16 info = kOwMapCrystal6_tab[k];
-      uint8 ext = 2;
-      if (!(info >> 8))
-        info = kOwMap_tab2[frame_counter >> 3 & 3] << 8 | 0x32, ext = 0;
-      WorldMap_AddSprite(8, ext, (uint8)info, (uint8)(info >> 8), pt.x, pt.y);
-    }
-  endif_crystal6:;
   }
 
 out:
@@ -1684,10 +1621,15 @@ static bool WorldMap_CalculateOamCoordinates(Point16U *pt) {  // 8ac39f
   }
 }
 
-static void WorldMap_AddSprite(int spr, uint8 big, uint8 flags, uint8 ch, uint16 x, uint16 y) {  // 8ac51c
+// `num_char` overrides the crystal-NUMBER glyph a crystal marker (ch == 100)
+// blinks to. 0 = vanilla, i.e. the glyph baked into this OAM slot. Nonzero only
+// from the rando prize path, where the placed crystal's number no longer
+// matches the slot (fix-ow-map-prize-markers).
+static void WorldMap_AddSprite(int spr, uint8 big, uint8 flags, uint8 ch, uint16 x, uint16 y,
+                               uint8 num_char) {  // 8ac51c
   if (!(frame_counter & 0x10) && ch == 100) {
     assert(spr >= 8);
-    ch = kOverworldMapData[spr - 8];
+    ch = num_char ? num_char : kOverworldMapData[spr - 8];
     flags = 0x32;
     big = 0;
   } else {

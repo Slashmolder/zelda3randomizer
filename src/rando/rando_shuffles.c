@@ -16,23 +16,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-// ---------------------------------------------------------------------------
-// Prize ids (mirror item_registry.yaml prize IDs offset to a small palette).
-// The op_registry.yaml's _resolve_prize_id mapping in rando_logic_gen.py
-// declares prizes in this exact order — keep aligned.
-// ---------------------------------------------------------------------------
-enum {
-  kPrize_GreenPendant = 0,
-  kPrize_RedPendant = 1,
-  kPrize_BluePendant = 2,
-  kPrize_Crystal1 = 3,
-  kPrize_Crystal2 = 4,
-  kPrize_Crystal3 = 5,
-  kPrize_Crystal4 = 6,
-  kPrize_Crystal5 = 7,
-  kPrize_Crystal6 = 8,
-  kPrize_Crystal7 = 9,
-};
+// Prize ids (kPrize_*) live in rando_shuffles.h — the pause-map marker module
+// consumes the same vocabulary.
 
 // ---------------------------------------------------------------------------
 // Pendant pool — dungeons that hold a pendant in vanilla: EP, DP, TH.
