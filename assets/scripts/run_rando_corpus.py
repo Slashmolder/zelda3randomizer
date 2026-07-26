@@ -155,6 +155,12 @@ def entry_uses_ow_warp(entry: dict) -> bool:
     assetless runs; local checks run the full corpus.
     """
     settings = entry.get("settings", {}) or {}
+    # Inverted normalizes BOTH warp axes off (v1 scope, rando_settings.c), so
+    # an inverted row requesting them never touches the graph — it runs
+    # everywhere and exists to LOCK that normalization (the pot cave-forced-off
+    # precedent).
+    if str(settings.get("mode.state", "open")).lower() == "inverted":
+        return False
     flute = settings.get("flute_shuffle", "off")
     if isinstance(flute, str):
         if flute.lower() not in ("", "0", "off", "false", "none"):

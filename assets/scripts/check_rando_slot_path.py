@@ -97,32 +97,49 @@ def local_pot_registry_available() -> bool:
     return False
 
 
+def local_ow_graph_available() -> bool:
+    """Return whether this checkout's baked OW warp graph has real tables."""
+    source = REPO / "src" / "rando" / "logic_data.c"
+    try:
+        text = source.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    match = re.search(r"const\s+uint8\s+kRandoOwGraphPresent\s*=\s*(\d+)\s*;",
+                      text)
+    return bool(match) and int(match.group(1)) != 0
+
+
 # (label, settings_csv, seed, expect_ok, check_parity, expect_world_state,
-#  allow_missing_pot_registry, expected_refusal_reason)
+#  required_local_artifact, expected_refusal_reason)
 # - expect_ok:        slot generation should succeed (True) or be refused (False)
 # - check_parity:     also run --generate-seed and require an identical digest
 #                     (only meaningful for accepted, attempt-0-success cells)
 # - expect_world_state: persisted slot header world_state (0=open,1=standard,
 #                     2=inverted,3=retro per WorldState enum); None to skip
-# - allow_missing_pot_registry: public CI has no local ROM-derived pot registry.
-#                     With --allow-missing-pot-registry, such cells become
+# - required_local_artifact: None, "pots", or "owgraph". Public CI has no
+#                     ROM-derived pot registry and no OW warp graph; with the
+#                     matching --allow-missing-* flag, such cells become
 #                     fail-closed refusal tests: BOTH slot and CLI paths must
-#                     reject specifically because the registry is absent.
+#                     reject specifically because that artifact is absent.
 # - expected_refusal_reason: stable semantic reason required from BOTH paths for
 #                     an intentionally rejected cell; None for accepted cells.
 MATRIX = [
-    ("open-fg-items",       "mode.state=open,goal=fast_ganon,accessibility=items",     "0x77", True,  True,  0, False, None),
-    ("open-fg-locations",   "mode.state=open,goal=fast_ganon,accessibility=locations", "0x77", True,  True,  0, False, None),
-    ("open-fg-beatable",    "mode.state=open,goal=fast_ganon,accessibility=none",      "0x77", True,  True,  0, False, None),
-    ("open-fg-beatable-alias", "mode.state=open,goal=fast_ganon,accessibility=beatable","0x77", True, True,  0, False, None),
-    ("standard-fg",         "mode.state=standard,goal=fast_ganon",                     "0x3",  True,  True,  1, False, None),
-    ("inverted-fg",         "mode.state=inverted,goal=fast_ganon",                     "0x50", True,  True,  2, False, None),
-    ("open-completionist",  "mode.state=open,goal=completionist",                      "0x7",  True,  True,  0, False, None),
-    ("door-pot-keys-open",  "mode.state=open,goal=fast_ganon,door_shuffle=basic,pot_shuffle=keys", "0x504f54", True, True, 0, True, None),
-    ("door-pot-all-items-open", "mode.state=open,goal=fast_ganon,door_shuffle=basic,pot_shuffle=all,accessibility=items", "0x504f55", True, True, 0, True, None),
+    ("open-fg-items",       "mode.state=open,goal=fast_ganon,accessibility=items",     "0x77", True,  True,  0, None, None),
+    ("open-fg-locations",   "mode.state=open,goal=fast_ganon,accessibility=locations", "0x77", True,  True,  0, None, None),
+    ("open-fg-beatable",    "mode.state=open,goal=fast_ganon,accessibility=none",      "0x77", True,  True,  0, None, None),
+    ("open-fg-beatable-alias", "mode.state=open,goal=fast_ganon,accessibility=beatable","0x77", True, True,  0, None, None),
+    ("standard-fg",         "mode.state=standard,goal=fast_ganon",                     "0x3",  True,  True,  1, None, None),
+    ("inverted-fg",         "mode.state=inverted,goal=fast_ganon",                     "0x50", True,  True,  2, None, None),
+    ("open-completionist",  "mode.state=open,goal=completionist",                      "0x7",  True,  True,  0, None, None),
+    ("door-pot-keys-open",  "mode.state=open,goal=fast_ganon,door_shuffle=basic,pot_shuffle=keys", "0x504f54", True, True, 0, "pots", None),
+    ("door-pot-all-items-open", "mode.state=open,goal=fast_ganon,door_shuffle=basic,pot_shuffle=all,accessibility=items", "0x504f55", True, True, 0, "pots", None),
+    # OW warp axes ride the sidecar ext v12 identity (ow_attempt/ow_digest24)
+    # through persistence + digest parity; assetless CI asserts the semantic
+    # fail-closed refusal instead (graph tables absent).
+    ("warp-both-open",      "mode.state=open,goal=fast_ganon,flute_shuffle=random,whirlpool_shuffle=true", "0x159", True, True, 0, "owgraph", None),
     # Stable slot/CLI rejection: all-tier overworld checks include missable
     # pre/post-Aga windows, so 100%-locations is intentionally unsupported.
-    ("all-enemy-locations-REJECT", "mode.state=open,goal=fast_ganon,dungeon_items.small_keys=wild,enemy_drop_checks=all,accessibility=locations", "0x12", False, False, None, False, "unsupported-enemy-locations"),
+    ("all-enemy-locations-REJECT", "mode.state=open,goal=fast_ganon,dungeon_items.small_keys=wild,enemy_drop_checks=all,accessibility=locations", "0x12", False, False, None, None, "unsupported-enemy-locations"),
     # Seed reselected 3 -> 1 (2026-07-16): regenerating the stale Jul-7
     # gitignored artifacts (the room-0x099 big-key self-lock gates + the
     # CanKillHceThings alignment) tipped seed 3 from feasible to the
@@ -130,8 +147,8 @@ MATRIX = [
     # refuses; 1/2/4-7/9-11 pass — verified by sweep on main-identical code,
     # A/B-proven pre-existing, NOT a shopsanity regression). Both cells stay
     # paired on one seed so the items/beatable tiers compare like-for-like.
-    ("std-ganonhunt-hard-items-OK",     "mode.state=standard,goal=ganonhunt,item_pool=hard,accessibility=items", "1", True, True, 1, False, None),
-    ("std-ganonhunt-hard-beatable-OK",  "mode.state=standard,goal=ganonhunt,item_pool=hard,accessibility=none",  "1", True,  True,  1, False, None),
+    ("std-ganonhunt-hard-items-OK",     "mode.state=standard,goal=ganonhunt,item_pool=hard,accessibility=items", "1", True, True, 1, None, None),
+    ("std-ganonhunt-hard-beatable-OK",  "mode.state=standard,goal=ganonhunt,item_pool=hard,accessibility=none",  "1", True,  True,  1, None, None),
 ]
 
 
@@ -188,6 +205,11 @@ def semantic_refusal(stderr: str) -> str | None:
         and ("unsupported" in stderr or "not supported" in stderr)
     ):
         return "unsupported-enemy-locations"
+    if (
+        "OW graph tables are absent/empty" in stderr
+        and "refusing" in stderr
+    ):
+        return "missing-ow-graph"
     return None
 
 
@@ -248,6 +270,11 @@ def main(argv: list[str]) -> int:
         help="when the local registry is absent, require both slot and CLI "
              "pot-shuffle paths to refuse specifically for that reason",
     )
+    parser.add_argument(
+        "--allow-missing-ow-graph", action="store_true",
+        help="when the baked OW warp graph is absent, require both slot and "
+             "CLI warp-axis paths to refuse specifically for that reason",
+    )
     args = parser.parse_args(argv)
 
     if not args.binary.is_file():
@@ -270,11 +297,23 @@ def main(argv: list[str]) -> int:
               "pass --allow-missing-pot-registry explicitly (public assetless CI).",
               file=sys.stderr)
         return 2
+    ow_graph_present = local_ow_graph_available()
+    if not ow_graph_present and not args.allow_missing_ow_graph:
+        print("check_rando_slot_path: baked OW warp graph is absent; the requested "
+              "matrix includes warp-axis cells. Prepare local artifacts or "
+              "pass --allow-missing-ow-graph explicitly (public assetless CI).",
+              file=sys.stderr)
+        return 2
+    # required_local_artifact -> (present?, semantic refusal reason, label)
+    artifact_state = {
+        "pots": (pot_registry_present, "missing-pot-registry", "pot registry"),
+        "owgraph": (ow_graph_present, "missing-ow-graph", "OW warp graph"),
+    }
     jobs = max(1, args.jobs)
 
     def run_cell(cell):
         (label, settings, seed, expect_ok, check_parity, expect_ws,
-         allow_missing_pots, expected_refusal_reason) = cell
+         required_artifact, expected_refusal_reason) = cell
         lines: list[str] = []
         res = run_slot(args.binary, settings, seed)
         if res is None:
@@ -288,32 +327,33 @@ def main(argv: list[str]) -> int:
             )
             return lines, True
         ok = raw_ok
-        if allow_missing_pots and not pot_registry_present:
+        if required_artifact is not None and not artifact_state[required_artifact][0]:
+            _, refusal_reason, artifact_label = artifact_state[required_artifact]
             slot_reason = semantic_refusal(
                 f"{res.get('_stderr', '')}\n{res.get('error', '')}"
             )
             slot_refused = (
                 not ok
                 and res.get("_returncode") == 1
-                and slot_reason == "missing-pot-registry"
+                and slot_reason == refusal_reason
             )
             cli = run_seed_digest(args.binary, settings, seed)
             cli_refused = (
                 cli.get("status") == "rejected"
-                and cli.get("reason") == "missing-pot-registry"
+                and cli.get("reason") == refusal_reason
             )
             if slot_refused and cli_refused:
                 lines.append(
-                    f"  OK   [{label}]: missing pot registry refused by both slot and CLI paths"
+                    f"  OK   [{label}]: missing {artifact_label} refused by both slot and CLI paths"
                 )
                 return lines, False
             if ok:
                 lines.append(
-                    f"  FAIL [{label}]: slot path accepted pot shuffle without a pot registry"
+                    f"  FAIL [{label}]: slot path accepted this cell without the {artifact_label}"
                 )
             else:
                 lines.append(
-                    f"  FAIL [{label}]: slot path did not produce the semantic missing-registry "
+                    f"  FAIL [{label}]: slot path did not produce the semantic {refusal_reason} "
                     f"refusal (exit={res.get('_returncode')}, reason={slot_reason!r}, "
                     f"error={res.get('error', '')!r})"
                 )
@@ -323,7 +363,7 @@ def main(argv: list[str]) -> int:
                 )
             elif not cli_refused:
                 lines.append(
-                    f"        CLI path did not produce the semantic missing-registry refusal "
+                    f"        CLI path did not produce the semantic {refusal_reason} refusal "
                     f"(status={cli.get('status')}, reason={cli.get('reason')!r}, "
                     f"detail={cli.get('detail')})"
                 )

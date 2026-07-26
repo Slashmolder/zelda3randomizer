@@ -350,6 +350,7 @@ def runtime_common(runner: Runner, binary: Path, object_dir: Path,
     slot_args = ["--binary", str(binary)]
     if not corpus_local:
         slot_args.append("--allow-missing-pot-registry")
+        slot_args.append("--allow-missing-ow-graph")
     runner.run("slot-path matrix", script("check_rando_slot_path.py", *slot_args))
     runner.run("randomizer invariant sweep",
                script("check_rando_invariants.py", "--binary", str(binary)))

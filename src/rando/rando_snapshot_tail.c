@@ -97,6 +97,8 @@
 #include "souls.h"          // add-enemy-souls (soul ownership TLV)
 #include "rando_save.h"     // RandoSidecarSlot (self-check synthetic activation)
 #include "rando_settings.h" // kSettingsCanonicalLen, Settings_CanonicalDeserialize
+#include "rando_logic.h"    // kRandoOwGraphPresent (composed cold-replay probe gate)
+#include "shuffle_ow_warp.h"  // OwWarp_Compute/Digest24 (composed probe identity)
 #include "rando_share.h"    // Share_PackBinary (self-check valid raw share string)
 #include "shuffle_doors.h"  // DoorShuffle_Generate/Digest (self-check)
 #include "shuffle_chains.h" // Chains_Compute/Digest (self-check)
@@ -1241,6 +1243,13 @@ static uint64 snapshot_selfcheck_fold_entrance_logic_state(void) {
     h = (h ^ (v & 0xFF)) * 0x100000001b3ull;
     h = (h ^ (v >> 8)) * 0x100000001b3ull;
   }
+  // The added-edge store is the third overlay surface (decoupled/cross
+  // entrance edges + the warp overlay). Fold its count so a wiped overlay
+  // cannot alias the pre-wipe digest — the composed cold-replay probe
+  // depends on this distinguishing power.
+  uint32 n = (uint32)Rando_GetEntranceAddedEdgeCount();
+  h = (h ^ (n & 0xFF)) * 0x100000001b3ull;
+  h = (h ^ ((n >> 8) & 0xFF)) * 0x100000001b3ull;
   return h;
 }
 
@@ -1837,6 +1846,55 @@ void RandoSnapshotTail_SelfCheck(void) {
       if (snapshot_selfcheck_fold_entrance_logic_state() != active_entrance_digest)
         selfcheck_die("type-2 active entrance should preserve same-slot header");
       fclose(fcur);
+
+      // Composed entrance+warp cold replay must land in activation-order
+      // overlay state from the LOADER ALONE: the type-2 restore installs the
+      // warp overlay, the later EntranceLayout TLV resets the shared edge
+      // stores, and the loader's trailing reinstall reconverges them. Unlike
+      // the probe above, NO manual reinstall runs between Load and the fold
+      // compare — this asserts the state a player actually resumes into.
+      // Skipped assetless (warp compute fails closed without the graph).
+      if (kRandoOwGraphPresent) {
+        RandoSettings warp_settings = active_settings;
+        warp_settings.flute_shuffle = kFluteShuffle_Random;
+        warp_settings.whirlpool_shuffle = 1;
+        RandoSidecarSlot warp_slot = active_slot;
+        Settings_CanonicalSerialize(&warp_settings, warp_slot.settings_canonical);
+        OwWarpLayout wl;
+        if (!OwWarp_Compute(&warp_settings, active_ss.seed_u64, 0, &wl))
+          selfcheck_die("composed warp: OwWarp_Compute failed with graph present");
+        warp_slot.header.ow_attempt = 0;
+        warp_slot.header.ow_digest24 = OwWarp_Digest24(&wl) & 0xFFFFFFu;
+        Rando_ActivateSidecarSlot(&warp_slot);
+        if (!Rando_HasActiveSettings())
+          selfcheck_die("composed warp: synthetic slot did not activate");
+        uint64 composed_digest = snapshot_selfcheck_fold_entrance_logic_state();
+        if (composed_digest == active_entrance_digest)
+          selfcheck_die("composed warp: warp overlay did not move the edge fold");
+        Rando_SetSnapshotContext((uint16)kGeneratorVersion,
+                                 warp_slot.header.settings_hash,
+                                 warp_slot.header.share_string);
+        Rando_SetSnapshotSettingsContext(warp_slot.settings_canonical, 0,
+                                         warp_slot.header.ow_attempt,
+                                         warp_slot.header.ow_digest24);
+        FILE *fwarp = tmpfile();
+        if (fwarp == NULL) selfcheck_die("composed warp: tmpfile() returned NULL");
+        if (!RandoSnapshotTail_Save(fwarp))
+          selfcheck_die("composed warp: Save returned false");
+        Rando_ClearEntranceRegionOverrides();
+        Rando_ClearEntranceEdgeOverrides();
+        Placement_Install(NULL);
+        Rando_ClearSnapshotContext();
+        g_rando_slot_active = 1;
+        fseek(fwarp, 0, SEEK_SET);
+        (void)RandoSnapshotTail_Load(fwarp);
+        if (!Rando_HasActiveSettings())
+          selfcheck_die("composed warp: cold replay should restore settings");
+        if (snapshot_selfcheck_fold_entrance_logic_state() != composed_digest)
+          selfcheck_die("composed warp: loader post-state lost overlay edges "
+                        "(cold replay stranded the warp overlay)");
+        fclose(fwarp);
+      }
 
       Rando_ActivateSidecarSlot(&active_slot);
       if (!Rando_HasActiveSettings())

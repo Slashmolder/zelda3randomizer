@@ -1541,3 +1541,13 @@ entries:
     label: "warp-hunt-none"
     expected_digest: "edd3447bedff66849a2155547bf3d4db33036fc8466b10e2674e22edae6597dc"
     expected_sphere_digest: "3a94247df6f6824a52b05df37ee03ffa674d474605a0c20406453af6e699df6b"
+  # Normalization lock: Inverted forces BOTH warp axes off (v1 scope,
+  # rando_settings.c), so this row is byte-identical to plain
+  # inverted/fast_ganon at the same seed (verified at capture) and runs in
+  # assetless CI (entry_uses_ow_warp returns false for inverted) — the
+  # cave-forced-off pot-row precedent applied to the warp axes.
+  - settings: { mode.state: inverted, goal: fast_ganon, flute_shuffle: random, whirlpool_shuffle: true }
+    seed: "0x0000000000000159"
+    label: "warp-inverted-normalized-off"
+    expected_digest: "ec3998501175114525b400840424233eecc9055a337337189778311b08bfce51"
+    expected_sphere_digest: "a6b5863b17c2e12692d6b77f70b131ac51e8acc76801df4c45a9020ae4ccaa68"
