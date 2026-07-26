@@ -75,6 +75,37 @@ typedef enum {
   kAccessibility_None = 2,
 } Accessibility;
 
+// Hints v2 configurable delivery coverage. Values intentionally match the
+// canonical two-bit wire code in [28] bits 5-6: zero is the historical/default
+// Full coverage so old settings blobs and Balanced seeds remain byte-identical.
+typedef enum {
+  kHintTileCoverage_Full = 0,      // all 15 telepathic tiles
+  kHintTileCoverage_None = 1,      // no telepathic tiles
+  kHintTileCoverage_Sparse = 2,    // 5 telepathic tiles
+  kHintTileCoverage_Standard = 3,  // 10 telepathic tiles
+} HintTileCoverage;
+
+// Hints v2 content emphasis. The value is split across canonical [28] bit 7
+// (low bit) and [29] bit 7 (high bit). Variety=0 is the historical/default
+// Balanced behavior.
+typedef enum {
+  kHintMix_Variety = 0,
+  kHintMix_Important = 1,
+  kHintMix_Difficult = 2,
+  kHintMix_WorldInfo = 3,
+} HintMix;
+
+// Named hint-policy tuples. Custom is derived from any enabled tuple that does
+// not exactly match Sparse/Balanced/Direct; it is never directly applied or
+// serialized as a separate setting.
+typedef enum {
+  kHintProfile_Off = 0,
+  kHintProfile_Sparse = 1,
+  kHintProfile_Balanced = 2,
+  kHintProfile_Direct = 3,
+  kHintProfile_Custom = 4,
+} HintProfile;
+
 typedef enum {
   kPyramidBowUpgrade_Silvers = 0,
   // Legacy serialized slot. The Pyramid Fairy trade-in was retired by the
@@ -116,11 +147,27 @@ typedef struct RandoSettings {
   uint8 race_mode;                  // bool; Phase B feature, bit reserved in hash from Phase A
   uint16 pieces_required;           // for triforce-hunt / ganonhunt (was uint8; spec is uint16)
   uint16 pieces_placed;             // for triforce-hunt / ganonhunt
-  // Phase B Slice 5 §61 — hints axis. Binary on/off matching ALTTPR
-  // `spoil.Hints` (HintService.php:54). Default 0 (off). Canonical
-  // serialization at offset [22] — landed with §66 in the kGenVer 13→14
-  // bump.
+  // Hints axis. Public Off/Balanced; historical on/full/sahasrahla inputs
+  // normalize to Balanced. Default Balanced. Canonical byte [22], landed in
+  // the kGenVer 13→14 bump.
   uint8 hints;
+  // Configurable Hints v2 policy. Defaults are Full tile coverage, Variety
+  // content, and three clues per paid service. Their wire encodings are all
+  // zero, preserving the historical/default canonical bytes:
+  //   hint_tile_coverage: [28] bits 5-6 (HintTileCoverage)
+  //   hint_mix: low bit [28] bit 7, high bit [29] bit 7 (HintMix)
+  //   hint_paid_depth: actual count 0..3, remapped into [30] bits 6-7 so
+  //                    actual 3 is wire zero.
+  // Off, and the empty delivery tuple (None tiles + zero paid clues), normalize
+  // to one canonical Off representation with all three policy defaults.
+  uint8 hint_tile_coverage;
+  uint8 hint_mix;
+  uint8 hint_paid_depth;
+  // Independent NPC transaction disclosure. When enabled, randomized
+  // purchase/reward NPCs identify the item before the player commits. This is
+  // intentionally not part of HintProfile or the generated hint-plan policy:
+  // it remains meaningful while clue delivery is Off. Canonical [25] bit 7.
+  uint8 hint_npc_reward_reveal;
   // Phase B Slice 7 §63 / Slice 8 §64 — shuffle axes. Binary on/off.
   // Default 0 (off). Canonical serialization at offsets [23] and [24]
   // — landed with §66 in the kGenVer 13→14 bump.
@@ -156,8 +203,7 @@ typedef struct RandoSettings {
   // add-rando-enemy-shuffle — enemy (sprite-type) substitution axis. Binary
   // on/off, default off. Like boss/drop shuffle this is ORTHOGONAL to item
   // placement (draws no fill RNG, adds no logic predicate), so it does NOT grow
-  // the canonical layout: it bit-PACKS into the reserved pad bit [26] bit 0 (the
-  // deserializer's permissive trailing pad — the intended extension surface), so
+  // the canonical layout: it bit-PACKS into the reserved pad bit [26] bit 0, so
   // kSettingsCanonicalLen stays 28 and default-settings settings_hash stays
   // byte-identical. See kEnemyShuffleAxis_* below + Settings_CanonicalSerialize.
   uint8 enemy_shuffle;  // bool
@@ -219,15 +265,16 @@ typedef struct RandoSettings {
   // (composes with any tier); NO door-shuffle degrade (no gated check is
   // door-oracle-controlled). Canonical byte [28] bit 4 (kNpcSoulsAxis_*);
   // pre-feature builds hard-refuse strings carrying it (forward-compat
-  // refusal), and this build still refuses bits 5-7.
+  // refusal). Configurable hints now use bits 5-7.
   uint8 npc_souls;
   // add-rando-grass-rock-shuffle — overworld terrain checks. Two independent
   // tier axes (TerrainShuffle: off/junk/all): grass covers bushes + cuttable
   // thick grass, rock covers light(Glove)/heavy(Mitt) small rocks + big
   // piles. junk = locations are junk-pad-only fill (no progression, no logic
   // pressure); all = full open locations. Serialized in the APPENDED
-  // canonical byte [29] (grass bits 0-1, rock bits 2-3 — byte [28]'s free
-  // bits belong to the souls axes); older/shorter blobs zero-extend to Off.
+  // canonical byte [29] (grass bits 0-1, rock bits 2-3 — byte [28]'s lower
+  // bits belong to the enemy/souls axes and its tail now carries hint policy);
+  // older/shorter blobs zero-extend to Off.
   // No derived-rule couplings: composes with door/cave-entrance/pot/enemy
   // shuffles (terrain is overworld-surface-bound; see the change's D12).
   uint8 grass_shuffle;
@@ -278,8 +325,8 @@ enum {
   kShopsanityAxis_Enabled = 1u << 4,  // canonical [29] bit 4
                                       // (add-rando-shopsanity)
   kBonkShuffleAxis_Shift = 5,         // canonical [29] bits 5-6
-  kBonkShuffleAxis_Mask  = 3u << 5,   // (add-rando-bonk-sanity); bit 7
-                                      // refused-undefined
+  kBonkShuffleAxis_Mask  = 3u << 5,   // (add-rando-bonk-sanity)
+  kHintMixAxis_HighBit = 1u << 7,     // configurable hints: mix bit 1
 };
 
 enum {
@@ -287,13 +334,15 @@ enum {
   kKeyRingsAxis_Mask = 3u << 0,
   kSkeletonKeyAxis_Enabled = 1u << 2,
   kKeyRingsAxis_DefinedMask = kKeyRingsAxis_Mask | kSkeletonKeyAxis_Enabled,
-  // add-rando-ow-warp-shuffle — canonical [30] bits 3-5. Bits 6-7 stay
-  // refused-undefined (the Settings_SelfCheck probe moved to bit 6).
+  // add-rando-ow-warp-shuffle — canonical [30] bits 3-5.
   kWhirlpoolAxis_Enabled = 1u << 3,
   kFluteShuffleAxis_Shift = 4,
   kFluteShuffleAxis_Mask = 3u << 4,
+  // configurable hints — paid depth uses canonical [30] bits 6-7.
+  kHintPaidDepthAxis_Shift = 6,
+  kHintPaidDepthAxis_Mask = 3u << 6,
   kCanon30_DefinedMask = kKeyRingsAxis_DefinedMask | kWhirlpoolAxis_Enabled |
-                         kFluteShuffleAxis_Mask,
+                         kFluteShuffleAxis_Mask | kHintPaidDepthAxis_Mask,
 };
 
 // add-rando-ow-warp-shuffle — flute-spot shuffle modes. Values are part of
@@ -344,9 +393,16 @@ enum {
   kSoulsShuffleAxis_Mask  = 3u << 2,  // 0x0C
 };
 
-// add-npc-souls — canonical [28] bit 4. Bits 5-7 remain refused-undefined.
+// add-npc-souls — canonical [28] bit 4. Configurable hints claim bits 5-7:
+// tile coverage in bits 5-6 and the low hint-mix bit in bit 7.
 enum {
-  kNpcSoulsAxis_Enabled = 1u << 4,    // canonical [28] bit 4
+  kNpcSoulsAxis_Enabled = 1u << 4,
+  kHintTileCoverageAxis_Shift = 5,
+  kHintTileCoverageAxis_Mask = 3u << 5,
+  kHintMixAxis_LowBit = 1u << 7,
+  kCanon28_DefinedMask = 3u | kSoulsShuffleAxis_Mask |
+                         kNpcSoulsAxis_Enabled |
+                         kHintTileCoverageAxis_Mask | kHintMixAxis_LowBit,
 };
 
 // add-rando-enemy-shuffle — bit positions for the packed pad byte (canonical
@@ -422,6 +478,7 @@ enum {
   kEntranceAxis_Decoupled       = 1u << 4,
   kEntranceAxis_ShuffleGanonsTower = 1u << 5,
   kEntranceAxis_DungeonChains   = 1u << 6,
+  kHintNpcRewardRevealAxis_Enabled = 1u << 7,
 };
 
 // ===========================================================================
@@ -441,12 +498,14 @@ enum {
 // add-rando-door-shuffle packs its axis into [27] (bits 0-1).
 // LENGTH STAYED 28 through those axes because all reused previously-zero pad
 // bytes. add-rando-pot-sanity took the LAST free bits of [26] (6-7) and [27]
-// (bit 7) for pot_shuffle, so [26] and [27] are now fully allocated. The only
-// remaining extension surface at historical length 28 is [25] bit 7
+// (bit 7) for pot_shuffle, so [26] and [27] are now fully allocated. NPC reward
+// disclosure takes the last historical extension bit, [25] bit 7
 // (entrance/chains axes use 0-6). add-rando-enemy-drop-sanity grows the length
 // to 29 by appending [28] (bits 0-1). add-enemy-souls takes [28] bits 2-3
 // (kSoulsShuffleAxis_*); add-npc-souls takes [28] bit 4 (kNpcSoulsAxis_*);
-// [28] bits 5-7 remain free (refused by Settings_FromCanonical until claimed).
+// Configurable hints claim [28] bits 5-7, [29] bit 7, and [30] bits 6-7
+// without changing the canonical length. Every default policy component uses
+// wire zero, so default/Balanced canonical bytes and settings_hash stay stable.
 // add-rando-grass-rock-shuffle grew 29 -> 30 by appending [29]: grass_shuffle
 // bits 0-1 + rock_shuffle bits 2-3 (kGrassShuffleAxis_*/kRockShuffleAxis_*).
 // The length change alters every settings_hash (SHA input length) — covered
@@ -454,16 +513,36 @@ enum {
 // the stored blob. add-rando-shopsanity takes [29] bit 4
 // (kShopsanityAxis_Enabled) — length UNCHANGED, so default settings_hash is
 // stable across that change. add-rando-bonk-sanity takes [29] bits 5-6
-// (kBonkShuffleAxis_*); only bit 7 remains refused-undefined.
+// (kBonkShuffleAxis_*); configurable hints take bit 7.
 // add-rando-key-rings-skeleton-key grows 30 -> 31 with append-only byte [30]:
-// key_rings bits 0-1, skeleton_key bit 2, bits 3-7 refused-undefined; sidecar
-// format_version 10 carries the widened blob.
+// key_rings bits 0-1, skeleton_key bit 2, and warp shuffle bits 3-5. Configurable
+// hints take bits 6-7; sidecar format_version 10 carries the widened blob.
 #define kSettingsCanonicalLen 31
 
 // Populate the struct with Phase A defaults (Open / Fast Ganon / Normal
 // pool / 7 crystals each / dungeon items Vanilla / prize+medallion shuffle
 // on / Randomized weapons / Items-accessibility / Silvers / 20-of-30 pieces).
 void Settings_SetDefaults(RandoSettings *s);
+
+// Normalize the configurable-hints policy to its one canonical disabled form.
+// Off, or enabled with no tile and no paid delivery, becomes:
+// Off + Full + Variety + paid depth 3. Other valid policies are unchanged.
+void Settings_NormalizeHintPolicy(RandoSettings *s);
+
+// Central named-profile authority shared by CLI, UIs, and spoiler metadata.
+// Apply returns false and leaves `s` unchanged for NULL, Custom, or an invalid
+// profile. All four applicable tuples are normalized before returning.
+HintProfile Settings_GetHintProfile(const RandoSettings *s);
+bool Settings_ApplyHintProfile(RandoSettings *s, HintProfile profile);
+const char *Settings_HintProfileName(HintProfile profile);   // stable lowercase
+const char *Settings_HintProfileTitle(HintProfile profile);  // display title
+
+// Effective hint-delivery helpers for generation and both settings UIs. They
+// consume raw settings safely: an empty delivery tuple behaves as Off even
+// before explicit normalization. Null settings are disabled.
+bool Settings_HintsEnabled(const RandoSettings *s);
+uint8 Settings_HintTileCount(const RandoSettings *s);          // 0, 5, 10, or 15
+uint8 Settings_EffectiveHintPaidDepth(const RandoSettings *s); // 0 when disabled
 
 // Effective small-keys mode after derived overrides. ALTTPR's Retro world-state
 // forces `region.wildKeys` (small keys enter the general/wild pool, no longer
@@ -614,12 +693,11 @@ int Settings_CanonicalDeserialize(const uint8 in[kSettingsCanonicalLen],
 // in range. The byte-blob paths (sidecar slot activation, suppressed-spoiler
 // reveal, native-window prefs restore) previously copied enum bytes RAW, so a
 // corrupt/foreign blob flowed into consumers like `1u << settings->world_state`
-// (UB for ws >= 32). The bit-PACKED flag bytes (canonical [25]-[27]) are NOT
-// inspected here: Settings_CanonicalDeserialize masks their defined bits and
-// deliberately stays permissive on undefined bits (forward-compat — see the
-// deserializer's contract); pieces_required/placed accept the full uint16
-// range the CLI parser allows. Called by Settings_CanonicalDeserialize, so a
-// blob with an out-of-range enum now fails deserialization (return -2).
+// (UB for ws >= 32). Settings_CanonicalDeserialize decodes the fully allocated
+// bit-packed bytes [25]-[27] before this validates their boolean/enum fields;
+// pieces_required/placed accept the full uint16 range the CLI parser allows.
+// Called by Settings_CanonicalDeserialize, so a blob with an out-of-range enum
+// now fails deserialization (return -2).
 bool Settings_Validate(const RandoSettings *s);
 
 // Compute SHA-256 of the canonical-serialized bytes. Writes 32 bytes.
@@ -665,6 +743,18 @@ bool Rando_SettingsAssumeJpGlitches(const RandoSettings *s);
 //   "mode.state=open,goal=fast_ganon,crystals.ganon=7"
 //   "goal=triforce-hunt,pieces_required=25,pieces_placed=30"
 //   "dungeon_items.small_keys=dungeon,prize_shuffle=true"
+//   "hints=sparse,hint_mix=difficult"
+//
+// Hint profiles are off/sparse/balanced/direct. Component overrides are
+// hint_tiles=none|sparse|standard|full (few/many/all are UI-name aliases),
+// hint_paid=0..3, and
+// hint_mix=variety|important|difficult|world-info. They apply after the profile
+// regardless of CSV order; Off wins and clears them. The longer historical
+// development spellings hint_tile_coverage and hint_paid_depth remain aliases
+// and share duplicate-key identity with their public names. Independent NPC
+// transaction disclosure uses hint_npc_reward_reveal=true|false;
+// hint_npc_rewards, hint_vendor_items, and hint_npc_items are aliases sharing
+// the same duplicate-key identity.
 int Settings_ParseCsv(const char *csv, RandoSettings *out);
 
 // ---------------------------------------------------------------------------

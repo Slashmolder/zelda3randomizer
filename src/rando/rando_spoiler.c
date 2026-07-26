@@ -86,6 +86,228 @@ static void write_hex(FILE *f, const uint8 *bytes, size_t n) {
   }
 }
 
+static void write_json_string(FILE *f, const char *text) {
+  fputc('"', f);
+  if (text != NULL) {
+    for (const char *p = text; *p; p++) {
+      unsigned char uc = (unsigned char)*p;
+      switch (uc) {
+        case '"':  fputs("\\\"", f); break;
+        case '\\': fputs("\\\\", f); break;
+        case '\n': fputs("\\n", f);  break;
+        case '\r': fputs("\\r", f);  break;
+        case '\t': fputs("\\t", f);  break;
+        case '\b': fputs("\\b", f);  break;
+        case '\f': fputs("\\f", f);  break;
+        default:
+          if (uc < 0x20) fprintf(f, "\\u%04x", (unsigned)uc);
+          else           fputc((int)uc, f);
+          break;
+      }
+    }
+  }
+  fputc('"', f);
+}
+
+typedef struct SpoilerHintAssignment {
+  RandoHintNpc npc;
+  uint8 queue_index;
+  uint8 tile_index;
+  bool paid;
+  bool found;
+} SpoilerHintAssignment;
+
+static const char *spoiler_hint_fact_kind_name(uint8 kind) {
+  switch ((RandoHintFactKind)kind) {
+    case kRandoHintFact_PriorityItem:         return "priority_item";
+    case kRandoHintFact_MajorItem:            return "major_item";
+    case kRandoHintFact_HighFrictionLocation: return "high_friction_location";
+    case kRandoHintFact_Goal:                 return "goal";
+    case kRandoHintFact_ActiveSetting:        return "active_setting";
+    case kRandoHintFact_RegionValue:          return "region_value";
+    case kRandoHintFact_Useful:               return "useful";
+    case kRandoHintFact_Flavor:               return "flavor";
+    default:                                  return "unknown";
+  }
+}
+
+static const char *spoiler_hint_template_name(uint8 template_id) {
+  switch ((RandoHintTemplateId)template_id) {
+    case kRandoHintTemplate_ExactPlacement: return "exact_placement";
+    case kRandoHintTemplate_Goal:           return "goal";
+    case kRandoHintTemplate_ActiveSetting:  return "active_setting";
+    case kRandoHintTemplate_RegionValue:    return "region_value";
+    case kRandoHintTemplate_Flavor:         return "flavor";
+    default:                                return "unknown";
+  }
+}
+
+static uint16 spoiler_hint_dialogue_id(RandoHintNpc npc) {
+  if (npc <= kRandoHintNpc_None || npc >= kRandoHintNpc__Count)
+    return 0xFFFFu;
+  return (uint16)(kRandoHintDialogueBase + ((uint16)npc - 1));
+}
+
+static bool spoiler_find_hint_assignment(const RandoHintPlan *plan,
+                                         uint8 fact_id,
+                                         SpoilerHintAssignment *out) {
+  if (plan == NULL || out == NULL) return false;
+  memset(out, 0, sizeof(*out));
+
+  for (uint8 npc = kRandoHintNpc_TeleEasternPalace;
+       npc <= kRandoHintNpc_TeleSouthEastDarkworldCave; npc++) {
+    if (plan->primary_fact_by_npc[npc] != fact_id) continue;
+    out->npc = (RandoHintNpc)npc;
+    out->tile_index =
+        (uint8)(npc - (uint8)kRandoHintNpc_TeleEasternPalace);
+    out->found = true;
+    return true;
+  }
+
+  for (uint8 source = 0; source < kRandoHintPaidSourceCount; source++) {
+    uint8 count = plan->paid_count[source];
+    if (count > kRandoHintPaidQueueCapacity)
+      count = kRandoHintPaidQueueCapacity;
+    for (uint8 queue = 0; queue < count; queue++) {
+      if (plan->paid_queue[source][queue] != fact_id) continue;
+      out->npc =
+          (RandoHintNpc)((uint8)kRandoHintNpc_ForkStoryteller + source);
+      out->queue_index = queue;
+      out->paid = true;
+      out->found = true;
+      return true;
+    }
+  }
+  return false;
+}
+
+static uint8 spoiler_hint_primary_count(const RandoHintPlan *plan) {
+  uint8 count = 0;
+  if (plan == NULL) return 0;
+  uint8 fact_count = plan->fact_count;
+  if (fact_count > kRandoHintPlanMaxFacts)
+    fact_count = kRandoHintPlanMaxFacts;
+  for (uint8 i = 0; i < fact_count; i++)
+    if (plan->facts[i].primary) count++;
+  return count;
+}
+
+static uint16 spoiler_hint_row_count(const RandoHintPlan *plan) {
+  if (plan == NULL) return 0;
+  uint16 fact_count = plan->fact_count;
+  if (fact_count > kRandoHintPlanMaxFacts)
+    fact_count = kRandoHintPlanMaxFacts;
+  return (uint16)(fact_count + (plan->murahdahla_active ? 1u : 0u));
+}
+
+// Generator 156's race stamp predates configurable policy metadata. The
+// current binary deliberately reveals that one frozen predecessor, so its JSON
+// writer must reproduce the exact 156 field set; current and future generators
+// retain the additive configurable-hints schema. Generator 157 is the first
+// schema-bearing version, not an alias for the current generator.
+static bool spoiler_has_configurable_hint_schema(const RandoSpoiler *s) {
+  return s != NULL &&
+         s->generator_version >= kRandoHintConfigurableGeneratorVersion;
+}
+
+typedef struct SpoilerHintPolicy {
+  const char *profile;
+  const char *mix;
+  uint8 tile_count;
+  uint8 paid_depth;
+} SpoilerHintPolicy;
+
+typedef struct SpoilerHintTopology {
+  uint8 tile_source_count;
+  uint8 paid_source_count;
+  uint8 paid_fact_count;
+} SpoilerHintTopology;
+
+static const char *spoiler_hint_mix_name(uint8 mix) {
+  switch ((HintMix)mix) {
+    case kHintMix_Variety:   return "variety";
+    case kHintMix_Important: return "important";
+    case kHintMix_Difficult: return "difficult";
+    case kHintMix_WorldInfo: return "world-info";
+    default:                 return "unknown";
+  }
+}
+
+static HintProfile spoiler_hint_profile_from_policy(
+    uint8 tile_count, uint8 paid_depth, uint8 mix) {
+  RandoSettings settings = {0};
+  settings.hints = kHintsMode_Balanced;
+  settings.hint_mix = mix;
+  settings.hint_paid_depth = paid_depth;
+  switch (tile_count) {
+    case 0:  settings.hint_tile_coverage = kHintTileCoverage_None; break;
+    case 5:  settings.hint_tile_coverage = kHintTileCoverage_Sparse; break;
+    case 10: settings.hint_tile_coverage = kHintTileCoverage_Standard; break;
+    case 15: settings.hint_tile_coverage = kHintTileCoverage_Full; break;
+    default: settings.hint_tile_coverage = 0xff; break;
+  }
+  return Settings_GetHintProfile(&settings);
+}
+
+// Report the normalized generation policy, not the number of rows that
+// happened to survive candidate scarcity. Algorithm 1 predates configurable
+// policy and is frozen to the legacy full-coverage Variety tuple.
+static SpoilerHintPolicy spoiler_hint_policy(const RandoHintPlan *plan) {
+  SpoilerHintPolicy policy = {
+    Settings_HintProfileName(kHintProfile_Off), "not-applicable", 0, 0,
+  };
+  if (plan == NULL || plan->mode == kHintsMode_Off)
+    return policy;
+
+  uint8 mix = plan->mix;
+  if (plan->algorithm_version == kRandoHintPlanLegacyAlgorithmVersion) {
+    policy.tile_count = 15;
+    policy.paid_depth = 3;
+    mix = kHintMix_Variety;
+  } else {
+    policy.tile_count = plan->tile_target;
+    policy.paid_depth = plan->paid_depth;
+  }
+  policy.mix = spoiler_hint_mix_name(mix);
+  policy.profile = Settings_HintProfileName(
+      spoiler_hint_profile_from_policy(
+          policy.tile_count, policy.paid_depth, mix));
+  return policy;
+}
+
+// Count actual retained delivery topology independently from requested
+// coverage/depth. A scarce plan may legitimately report fewer assigned tile
+// or paid facts, but it may never report a source that has no valid fact.
+static SpoilerHintTopology spoiler_hint_topology(
+    const RandoHintPlan *plan) {
+  SpoilerHintTopology topology = {0, 0, 0};
+  if (plan == NULL) return topology;
+  uint8 fact_count = plan->fact_count;
+  if (fact_count > kRandoHintPlanMaxFacts)
+    fact_count = kRandoHintPlanMaxFacts;
+
+  for (uint8 npc = kRandoHintNpc_TeleEasternPalace;
+       npc <= kRandoHintNpc_TeleSouthEastDarkworldCave; npc++) {
+    if (plan->primary_fact_by_npc[npc] < fact_count)
+      topology.tile_source_count++;
+  }
+  for (uint8 source = 0; source < kRandoHintPaidSourceCount; source++) {
+    uint8 count = plan->paid_count[source];
+    if (count > kRandoHintPaidQueueCapacity)
+      count = kRandoHintPaidQueueCapacity;
+    uint8 valid_count = 0;
+    for (uint8 queue = 0; queue < count; queue++) {
+      if (plan->paid_queue[source][queue] < fact_count)
+        valid_count++;
+    }
+    if (valid_count != 0)
+      topology.paid_source_count++;
+    topology.paid_fact_count =
+        (uint8)(topology.paid_fact_count + valid_count);
+  }
+  return topology;
+}
+
 static void spoiler_write_key_ring_names_json(FILE *f, uint16 mask) {
   bool first = true;
   fprintf(f, "[");
@@ -414,16 +636,10 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
           (unsigned)s->generation_wall_clock_ms);
   fprintf(f, "    \"goal_completable\": %s,\n",
           s->goal_completable ? "true" : "false");
-  // hints_count: number of populated hint NPCs (0 when hints==Off or no
-  // hints were generated). Mirrors the length of the hints[] array below;
-  // a tooling convenience so consumers can choose behavior without parsing hints[].
-  {
-    uint16 hints_count = 0;
-    for (uint16 npc = 1; npc < (uint16)kRandoHintNpc__Count; npc++) {
-      if (Rando_GetHintString((RandoHintNpc)npc) != NULL) hints_count++;
-    }
-    fprintf(f, "    \"hints_count\": %u,\n", (unsigned)hints_count);
-  }
+  // Number of explicit delivery rows plus the separate Murahdahla
+  // compatibility row, exactly mirroring the top-level hints[] length.
+  fprintf(f, "    \"hints_count\": %u,\n",
+          (unsigned)spoiler_hint_row_count(s->hint_plan));
   // Emit a customizer_active marker ONLY when the seed was hand-placed (derived
   // from the canonical settings, so it round-trips on race-mode reveal).
   // Conditional emission keeps every non-customizer
@@ -538,6 +754,8 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
   // struct (NOT the canonical-serialization order; that's a determinism
   // contract for the hash, not a human-readable surface).
   // -----------------------------------------------------------------------
+  uint8 canon[kSettingsCanonicalLen];
+  Settings_CanonicalSerialize(s->settings, canon);
   fprintf(f, "  \"settings\": {\n");
   fprintf(f, "    \"settings_version\": %u,\n", s->settings->settings_version);
   fprintf(f, "    \"world_state\": %u,\n", s->settings->world_state);
@@ -571,7 +789,30 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
   fprintf(f, "    \"accessibility\": %u,\n", Settings_EffectiveAccessibility(s->settings));
   fprintf(f, "    \"pieces_required\": %u,\n", s->settings->pieces_required);
   fprintf(f, "    \"pieces_placed\": %u,\n", s->settings->pieces_placed);
-  fprintf(f, "    \"hints\": %u,\n", s->settings->hints);
+  fprintf(f, "    \"hints\": %u,\n", (unsigned)canon[22]);
+  if (spoiler_has_configurable_hint_schema(s)) {
+    fprintf(f, "    \"hint_tile_coverage\": %u,\n",
+            (unsigned)((canon[28] & kHintTileCoverageAxis_Mask) >>
+                       kHintTileCoverageAxis_Shift));
+    fprintf(f, "    \"hint_mix\": %u,\n",
+            (unsigned)(((canon[28] & kHintMixAxis_LowBit) ? 1u : 0u) |
+                       ((canon[29] & kHintMixAxis_HighBit) ? 2u : 0u)));
+    {
+      uint8 paid_wire =
+          (uint8)((canon[30] & kHintPaidDepthAxis_Mask) >>
+                  kHintPaidDepthAxis_Shift);
+      fprintf(f, "    \"hint_paid_depth\": %u,\n",
+              (unsigned)((paid_wire + 3u) & 3u));
+    }
+    // NPC reward previews are an independent disclosure axis, not part of the
+    // clue profile or hint-plan digest. Decode the canonical bit so generation
+    // and race reveal emit the same value even if the caller's raw settings
+    // struct has not been normalized.
+    fprintf(f, "    \"hint_npc_reward_reveal\": %s,\n",
+            (canon[25] & kHintNpcRewardRevealAxis_Enabled)
+                ? "true"
+                : "false");
+  }
   fprintf(f, "    \"boss_shuffle\": %u,\n", s->settings->boss_shuffle);
   fprintf(f, "    \"drop_shuffle\": %u,\n", s->settings->drop_shuffle);
   fprintf(f, "    \"enemy_drop_checks\": %u,\n",
@@ -597,8 +838,6 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
   // echo reads 1 at generate but 0 after a canonical round-trip at reveal —
   // which false-fails the race-mode stamp. Decoding from `canon` makes every
   // emitted value canonical-consistent, so generate and reveal always agree.
-  uint8 canon[kSettingsCanonicalLen];
-  Settings_CanonicalSerialize(s->settings, canon);
   fprintf(f, "    \"tricks\": %u,\n", canon[4]);
   fprintf(f, "    \"logic\": %u,\n", canon[6]);
   fprintf(f, "    \"pyramid_bow_upgrade\": %u,\n", canon[9]);
@@ -637,8 +876,14 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
   // the axis off: without the field a player has only canonical_hex to tell
   // whether their shopsanity request survived. canon[] is post-normalization,
   // so this is already the EFFECTIVE value.
-  fprintf(f, "    \"shopsanity\": %s,\n",
-          (canon[29] & kShopsanityAxis_Enabled) ? "true" : "false");
+  //
+  // The signed generator-156 Hints 1/1 race fixture predates this field. Its
+  // explicit reveal exception must reproduce that exact frozen JSON schema;
+  // every current/future schema-bearing generator keeps the shopsanity echo.
+  if (s->generator_version != kRandoHintLegacyGeneratorVersion) {
+    fprintf(f, "    \"shopsanity\": %s,\n",
+            (canon[29] & kShopsanityAxis_Enabled) ? "true" : "false");
+  }
   KeyRingSelection key_rings;
   bool key_rings_selection_valid =
       KeyRings_Resolve(s->settings, s->seed_u64, &key_rings);
@@ -868,48 +1113,130 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
   }
   fprintf(f, "],\n");
   // -----------------------------------------------------------------------
-  // hints[] — emitted by `Rando_GenerateHints`,
-  // populated only when `settings.hints == kHintsMode_On`. Each entry
-  // mirrors ALTTPR's `(npc_string_id, text)` shape from HintService
-  // output; the `dialogue_id` is the runtime carve from `kRandoHint*`.
-  // When the runtime intercept (#85) lands these texts will surface
-  // in-game; today they're spoiler-only.
+  // Immutable hint-plan identity plus complete delivery rows. The plan is an
+  // explicit caller-owned spoiler input; discovery, resolved state, paid
+  // cursors, and presentation latches are intentionally absent.
   // -----------------------------------------------------------------------
+  fprintf(f, "  \"hint_plan\": ");
+  if (s->hint_plan == NULL) {
+    fprintf(f, "null,\n");
+  } else {
+    const RandoHintPlan *plan = s->hint_plan;
+    uint8 fact_count = plan->fact_count;
+    if (fact_count > kRandoHintPlanMaxFacts)
+      fact_count = kRandoHintPlanMaxFacts;
+    uint8 primary_count = spoiler_hint_primary_count(plan);
+    if (primary_count > fact_count) primary_count = fact_count;
+    SpoilerHintPolicy policy = spoiler_hint_policy(plan);
+    SpoilerHintTopology topology = spoiler_hint_topology(plan);
+    fprintf(f, "{\n");
+    fprintf(f, "    \"algorithm_version\": %u,\n",
+            (unsigned)plan->algorithm_version);
+    fprintf(f, "    \"text_schema_version\": %u,\n",
+            (unsigned)plan->text_schema_version);
+    fprintf(f, "    \"digest\": \"");
+    write_hex(f, plan->digest, kRandoHintPlanDigestBytes);
+    fprintf(f, "\",\n");
+    fprintf(f, "    \"fact_count\": %u,\n", (unsigned)fact_count);
+    fprintf(f, "    \"primary_count\": %u,\n", (unsigned)primary_count);
+    if (spoiler_has_configurable_hint_schema(s)) {
+      fprintf(f, "    \"reserve_count\": %u,\n",
+              (unsigned)(fact_count - primary_count));
+      fprintf(f, "    \"profile\": \"%s\",\n", policy.profile);
+      fprintf(f, "    \"tile_count\": %u,\n",
+              (unsigned)policy.tile_count);
+      fprintf(f, "    \"paid_depth\": %u,\n",
+              (unsigned)policy.paid_depth);
+      fprintf(f, "    \"mix\": \"%s\",\n", policy.mix);
+      fprintf(f, "    \"source_count\": %u,\n",
+              (unsigned)(topology.tile_source_count +
+                         topology.paid_source_count));
+      fprintf(f, "    \"tile_source_count\": %u,\n",
+              (unsigned)topology.tile_source_count);
+      fprintf(f, "    \"paid_source_count\": %u,\n",
+              (unsigned)topology.paid_source_count);
+      fprintf(f, "    \"paid_fact_count\": %u\n",
+              (unsigned)topology.paid_fact_count);
+    } else {
+      fprintf(f, "    \"reserve_count\": %u\n",
+              (unsigned)(fact_count - primary_count));
+    }
+    fprintf(f, "  },\n");
+  }
+
   fprintf(f, "  \"hints\": [");
   {
     bool first = true;
-    for (uint16 npc = 1; npc < (uint16)kRandoHintNpc__Count; npc++) {
-      const char *text = Rando_GetHintString((RandoHintNpc)npc);
-      if (text == NULL) continue;
-      const char *npc_str = Rando_GetHintNpcStringId((RandoHintNpc)npc);
-      uint16 dlg = Rando_GetHintDialogueId((RandoHintNpc)npc);
-      if (first) fprintf(f, "\n");
-      fprintf(f, "    %s{\"npc\": \"%s\", \"dialogue_id\": %u, \"text\": \"",
-              first ? "" : ",\n    ", npc_str ? npc_str : "?", (unsigned)dlg);
-      // Escape JSON string chars in the text: quotes, backslash, the named
-      // control escapes (\n \r \t \b \f), and \uXXXX for any other byte < 0x20.
-      // Bytes >= 0x20 (incl. high/UTF-8 bytes >= 0x80) pass through unchanged,
-      // so output is byte-identical to the old quote+backslash-only path for
-      // every current hint string — this only kicks in if a name table ever
-      // carries a control byte. Test the UNSIGNED value so high bytes are
-      // not misread as < 0x20.
-      for (const char *p = text; *p; p++) {
-        unsigned char uc = (unsigned char)*p;
-        switch (uc) {
-          case '"':  fputs("\\\"", f); break;
-          case '\\': fputs("\\\\", f); break;
-          case '\n': fputs("\\n", f);  break;
-          case '\r': fputs("\\r", f);  break;
-          case '\t': fputs("\\t", f);  break;
-          case '\b': fputs("\\b", f);  break;
-          case '\f': fputs("\\f", f);  break;
-          default:
-            if (uc < 0x20) fprintf(f, "\\u%04x", (unsigned)uc);
-            else           fputc((int)uc, f);
-            break;
-        }
+    const RandoHintPlan *plan = s->hint_plan;
+    uint8 fact_count = plan != NULL ? plan->fact_count : 0;
+    if (fact_count > kRandoHintPlanMaxFacts)
+      fact_count = kRandoHintPlanMaxFacts;
+    for (uint8 i = 0; i < fact_count; i++) {
+      const RandoHintFact *fact = &plan->facts[i];
+      SpoilerHintAssignment assignment;
+      bool assigned =
+          spoiler_find_hint_assignment(plan, fact->fact_id, &assignment);
+      RandoHintNpc npc = assigned ? assignment.npc : kRandoHintNpc_None;
+      const char *npc_str =
+          assigned ? Rando_GetHintNpcStringId(npc) : "unassigned";
+      uint16 dialogue_id =
+          assigned ? spoiler_hint_dialogue_id(npc) : 0xFFFFu;
+
+      fprintf(f, "%s    {\"npc\": ",
+              first ? "\n" : ",\n");
+      write_json_string(f, npc_str != NULL ? npc_str : "unassigned");
+      fprintf(f, ", \"dialogue_id\": %u, \"text\": ",
+              (unsigned)dialogue_id);
+      write_json_string(f, fact->text);
+      fprintf(f, ", \"fact_id\": %u, \"fact_kind\": ",
+              (unsigned)fact->fact_id);
+      write_json_string(f, spoiler_hint_fact_kind_name(fact->kind));
+      fprintf(f, ", \"fact_kind_id\": %u, \"precision\": ",
+              (unsigned)fact->kind);
+      write_json_string(
+          f, fact->location_id != 0xFFFFu && fact->item_id != 0xFFFFu
+                 ? "exact"
+                 : "positive_summary");
+      fprintf(f, ", \"template\": ");
+      write_json_string(f, spoiler_hint_template_name(fact->template_id));
+      fprintf(f, ", \"template_id\": %u, \"template_parameter\": %u, "
+                 "\"primary\": %s, \"source\": ",
+              (unsigned)fact->template_id,
+              (unsigned)fact->template_parameter,
+              fact->primary ? "true" : "false");
+      write_json_string(f, npc_str != NULL ? npc_str : "unassigned");
+      fprintf(f, ", \"source_id\": %u, \"source_kind\": ",
+              (unsigned)npc);
+      write_json_string(
+          f, !assigned ? "unassigned" : assignment.paid ? "paid" : "tile");
+      if (assigned && assignment.paid) {
+        fprintf(f, ", \"queue_index\": %u",
+                (unsigned)assignment.queue_index);
+      } else if (assigned) {
+        fprintf(f, ", \"tile_index\": %u",
+                (unsigned)assignment.tile_index);
       }
-      fprintf(f, "\"}");
+      if (fact->location_id != 0xFFFFu)
+        fprintf(f, ", \"location_id\": %u", (unsigned)fact->location_id);
+      if (fact->item_id != 0xFFFFu)
+        fprintf(f, ", \"item_id\": %u", (unsigned)fact->item_id);
+      if (fact->region_id != 0xFFFFu)
+        fprintf(f, ", \"region_id\": %u", (unsigned)fact->region_id);
+      fprintf(f, "}");
+      first = false;
+    }
+
+    // Murahdahla is intentionally not a delivery fact: no fact id, source
+    // assignment, queue position, or discovery bit, and it is excluded from
+    // the delivery fact counts above.
+    if (plan != NULL && plan->murahdahla_active) {
+      RandoHintNpc npc = kRandoHintNpc_Murahdahla;
+      fprintf(f, "%s    {\"npc\": ", first ? "\n" : ",\n");
+      write_json_string(f, Rando_GetHintNpcStringId(npc));
+      fprintf(f, ", \"dialogue_id\": %u, \"text\": ",
+              (unsigned)spoiler_hint_dialogue_id(npc));
+      write_json_string(f, plan->murahdahla_text);
+      fprintf(f, ", \"compatibility\": \"murahdahla\"}");
       first = false;
     }
     if (!first) fprintf(f, "\n  ");
@@ -1273,6 +1600,12 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
   fprintf(f, "\n");
   fprintf(f, "World state: %u, Goal: %u\n",
           s->settings->world_state, s->settings->goal);
+  if (spoiler_has_configurable_hint_schema(s)) {
+    uint8 canon[kSettingsCanonicalLen];
+    Settings_CanonicalSerialize(s->settings, canon);
+    fprintf(f, "NPC reward previews: %s (Original/US rich dialogue only)\n",
+            (canon[25] & kHintNpcRewardRevealAxis_Enabled) ? "yes" : "no");
+  }
   {
     KeyRingSelection key_rings;
     bool selection_valid = KeyRings_Resolve(
@@ -1476,23 +1809,77 @@ bool Spoiler_WriteText(const RandoSpoiler *s, const char *out_path) {
     }
   }
 
-  // Hints — mirrors the JSON `hints[]` array. The
-  // section is omitted entirely when no hints are populated (settings.hints
-  // == kHintsMode_Off, or non-rando spoiler context). Runtime telepathic-
-  // tile dispatch (#85) is deferred — these hints are spoiler-only today.
+  // Hints — mirrors the caller-owned JSON plan and delivery rows. Mutable
+  // discovery/resolution/paid-cursor state is deliberately not serialized.
   {
-    bool any_hint = false;
-    for (uint16 npc = 1; npc < (uint16)kRandoHintNpc__Count; npc++) {
-      if (Rando_GetHintString((RandoHintNpc)npc) != NULL) { any_hint = true; break; }
-    }
-    if (any_hint) {
+    const RandoHintPlan *plan = s->hint_plan;
+    uint8 fact_count = plan != NULL ? plan->fact_count : 0;
+    if (fact_count > kRandoHintPlanMaxFacts)
+      fact_count = kRandoHintPlanMaxFacts;
+    if (plan != NULL) {
+      uint8 primary_count = spoiler_hint_primary_count(plan);
+      if (primary_count > fact_count) primary_count = fact_count;
+      SpoilerHintPolicy policy = spoiler_hint_policy(plan);
+      SpoilerHintTopology topology = spoiler_hint_topology(plan);
       fprintf(f, "Hints:\n");
       fprintf(f, "------\n");
-      for (uint16 npc = 1; npc < (uint16)kRandoHintNpc__Count; npc++) {
-        const char *text = Rando_GetHintString((RandoHintNpc)npc);
-        if (text == NULL) continue;
-        const char *npc_str = Rando_GetHintNpcStringId((RandoHintNpc)npc);
-        fprintf(f, "  %-42s : %s\n", npc_str ? npc_str : "?", text);
+      fprintf(f, "  Plan: algorithm %u, text schema %u, digest ",
+              (unsigned)plan->algorithm_version,
+              (unsigned)plan->text_schema_version);
+      write_hex(f, plan->digest, kRandoHintPlanDigestBytes);
+      fprintf(f, "\n  Facts: %u primary, %u reserve\n",
+              (unsigned)primary_count,
+              (unsigned)(fact_count - primary_count));
+      if (spoiler_has_configurable_hint_schema(s)) {
+        fprintf(f, "  Policy: profile %s, tiles %u, paid depth %u, mix %s\n",
+                policy.profile, (unsigned)policy.tile_count,
+                (unsigned)policy.paid_depth, policy.mix);
+        fprintf(f, "  Sources: %u total, %u tile, %u paid services, "
+                   "%u paid facts\n",
+                (unsigned)(topology.tile_source_count +
+                           topology.paid_source_count),
+                (unsigned)topology.tile_source_count,
+                (unsigned)topology.paid_source_count,
+                (unsigned)topology.paid_fact_count);
+      }
+
+      for (uint8 i = 0; i < fact_count; i++) {
+        const RandoHintFact *fact = &plan->facts[i];
+        SpoilerHintAssignment assignment;
+        bool assigned =
+            spoiler_find_hint_assignment(plan, fact->fact_id, &assignment);
+        const char *npc_str =
+            assigned ? Rando_GetHintNpcStringId(assignment.npc) : "unassigned";
+        fprintf(f, "  [%02u] %-36s %s",
+                (unsigned)fact->fact_id,
+                npc_str != NULL ? npc_str : "unassigned",
+                fact->primary ? "primary" : "reserve");
+        if (assigned && assignment.paid)
+          fprintf(f, " queue %u", (unsigned)assignment.queue_index);
+        else if (assigned)
+          fprintf(f, " tile %u", (unsigned)assignment.tile_index);
+        fprintf(f, " | %s/%s/template:%s",
+                spoiler_hint_fact_kind_name(fact->kind),
+                fact->location_id != 0xFFFFu && fact->item_id != 0xFFFFu
+                    ? "exact"
+                    : "positive_summary",
+                spoiler_hint_template_name(fact->template_id));
+        fprintf(f, " parameter:%u",
+                (unsigned)fact->template_parameter);
+        if (fact->location_id != 0xFFFFu)
+          fprintf(f, " location:%u", (unsigned)fact->location_id);
+        if (fact->item_id != 0xFFFFu)
+          fprintf(f, " item:%u", (unsigned)fact->item_id);
+        if (fact->region_id != 0xFFFFu)
+          fprintf(f, " region:%u", (unsigned)fact->region_id);
+        fprintf(f, "\n       %s\n", fact->text);
+      }
+      if (plan->murahdahla_active) {
+        const char *npc_str =
+            Rando_GetHintNpcStringId(kRandoHintNpc_Murahdahla);
+        fprintf(f, "  [compat] %-31s %s\n",
+                npc_str != NULL ? npc_str : "murahdahla",
+                plan->murahdahla_text);
       }
       fprintf(f, "\n");
     }

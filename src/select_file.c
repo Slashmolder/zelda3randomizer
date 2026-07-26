@@ -22,7 +22,6 @@
 #include "rando/rando_save.h"
 #include "rando/rando_share.h"
 #include "rando/rando_settings.h"
-#include "rando/rando_hints.h"  // Rando_GenerateHints (populate hints[] before spoiler write)
 #include "rando/rando_spoiler.h"
 #include "rando/rando_textfield.h"
 #include "rando/vanilla_assets_hash.h"  // kVanillaAssetsHash + kVanillaAssetsHashKnown
@@ -2508,7 +2507,7 @@ enum {
   kRow_PrizeShuffle,
   kRow_MedallionShuffle,
   kRow_RaceMode,
-  kRow_Hints,              // Slice 5 — telepathic-tile hints (on/off)
+  kRow_Hints,              // named hint profile; A opens detailed policy
   kRow_Traps,              // add-rando-traps — off/low/medium/high
   kRow_EnemyDropChecks,    // add-rando-enemy-drop-sanity — off/keys/dungeon
   // Phase-B disabled rows (label-only; cursor skips over input but A
@@ -2529,6 +2528,16 @@ enum {
   kSettingsView_Main = 0,
   kSettingsView_Recommended = 1,
   kSettingsView_AssetWarn = 2,
+  kSettingsView_Hints = 3,
+};
+
+enum {
+  kHintOptionRow_Tiles = 0,
+  kHintOptionRow_Paid,
+  kHintOptionRow_Mix,
+  kHintOptionRow_NpcRewards,
+  kHintOptionRow_Reset,
+  kHintOptionRow__Count,
 };
 
 // Asset-warn dialog choices.
@@ -2613,6 +2622,8 @@ static bool g_settings_seed_prepopulated = false;
 // Recommended-features panel state.
 static uint8 g_rec_cursor = 0;
 static uint32 g_rec_working_features0 = 0;
+// Detailed hint-policy panel state.
+static uint8 g_hint_options_cursor = 0;
 // Asset-warn dialog state.
 static uint8 g_asset_warn_cursor = 0;
 static bool g_asset_warn_pending = false;
@@ -2698,6 +2709,18 @@ static uint64 DeriveSeedFromState(void) {
 // ---------------------------------------------------------------------------
 // Settings-row helpers — get a label + a current-value string for any row.
 // ---------------------------------------------------------------------------
+static void CycleNamedHintProfile(RandoSettings *s, int delta) {
+  int profile = Settings_GetHintProfile(s);
+  // A derived Custom policy has no position in the named cycle. Treat it as
+  // Balanced for navigation so Right selects Direct and Left selects Sparse;
+  // merely opening the detail panel never changes imported settings.
+  if (profile == kHintProfile_Custom) profile = kHintProfile_Balanced;
+  profile += delta;
+  if (profile < kHintProfile_Off) profile = kHintProfile_Direct;
+  if (profile > kHintProfile_Direct) profile = kHintProfile_Off;
+  Settings_ApplyHintProfile(s, (HintProfile)profile);
+}
+
 static const char *RowLabel(int row) {
   switch (row) {
     case kRow_Preset:                    return "PRESET";
@@ -2818,8 +2841,16 @@ static const char *RowValueText(int row, char *scratch, int scratch_len) {
       return s->medallion_shuffle ? "ON" : "OFF";
     case kRow_RaceMode:
       return s->race_mode ? "ON" : "OFF";
-    case kRow_Hints:
-      return s->hints ? "ON" : "OFF";
+    case kRow_Hints: {
+      const bool npc = s->hint_npc_reward_reveal != 0;
+      switch (Settings_GetHintProfile(s)) {
+        case kHintProfile_Off:      return npc ? "OFF+NPC" : "OFF";
+        case kHintProfile_Sparse:   return npc ? "SPRS+NPC" : "SPRS";
+        case kHintProfile_Balanced: return npc ? "BAL+NPC" : "BAL";
+        case kHintProfile_Direct:   return npc ? "DIR+NPC" : "DIR";
+        default:                    return npc ? "CUST+NPC" : "CUST";
+      }
+    }
     case kRow_Traps:
       switch (s->traps) {
         case kTrapFrequency_Off:      return "OFF";
@@ -2903,13 +2934,19 @@ static void CycleRow(int row, int delta) {
       if (n < 0) n = kPreset__Count - 1;
       if (n >= kPreset__Count) n = 0;
       g_settings_preset_index = (uint8)n;
-      // HINTS is a UI-scoped axis (defaulted ON in SelectFile_Settings_Activate),
-      // not a preset axis. Settings_ApplyPreset runs Settings_SetDefaults which
-      // resets hints to OFF; preserve the user's HINTS choice across a preset
-      // cycle so cycling PRESET doesn't silently turn hints off.
+      // Hints are a UI-scoped axis, not a seed-preset axis. Preserve the full
+      // policy so a Custom tuple survives a normal preset cycle.
       uint8 saved_hints = s->hints;
+      uint8 saved_hint_tile_coverage = s->hint_tile_coverage;
+      uint8 saved_hint_mix = s->hint_mix;
+      uint8 saved_hint_paid_depth = s->hint_paid_depth;
+      uint8 saved_hint_npc_reward_reveal = s->hint_npc_reward_reveal;
       Settings_ApplyPreset((SettingsPreset)g_settings_preset_index, s);
       s->hints = saved_hints;
+      s->hint_tile_coverage = saved_hint_tile_coverage;
+      s->hint_mix = saved_hint_mix;
+      s->hint_paid_depth = saved_hint_paid_depth;
+      s->hint_npc_reward_reveal = saved_hint_npc_reward_reveal;
       break;
     }
     case kRow_WorldState: {
@@ -3058,7 +3095,7 @@ static void CycleRow(int row, int delta) {
     case kRow_PrizeShuffle: s->prize_shuffle ^= 1; break;
     case kRow_MedallionShuffle: s->medallion_shuffle ^= 1; break;
     case kRow_RaceMode: s->race_mode ^= 1; break;
-    case kRow_Hints: s->hints ^= 1; break;
+    case kRow_Hints: CycleNamedHintProfile(s, delta); break;
     case kRow_Traps: {
       int n = (int)s->traps + delta;
       if (n < kTrapFrequency_Off) n = kTrapFrequency_Insanity;
@@ -3128,11 +3165,10 @@ static void SelectFile_Settings_Activate(uint8 target_slot,
   g_settings_scroll_offset = 0;
   g_settings_preset_index = kPreset_OpenGanon;
   Settings_ApplyPreset(kPreset_OpenGanon, &g_settings_working);
-  // Default the in-game HINTS row to ON (user preference). This is UI-scoped:
-  // the global Settings_SetDefaults (used by CLI / corpus) stays hints=OFF, so
-  // default-settings placement/spoiler stamps are unchanged. The player can
-  // still toggle HINTS off in the menu before generating.
-  g_settings_working.hints = 1;
+  // Ensure the named default is a complete policy, not just the legacy mode
+  // byte. Opening the detailed view never reapplies this helper, so a Custom
+  // working policy stays exact until the player changes an option.
+  Settings_ApplyHintProfile(&g_settings_working, kHintProfile_Balanced);
   TextField_Init(&g_settings_seed_field, /*base32_only=*/false);
   g_settings_seed_field.active = false;  // not focused by default
   g_settings_seed_parse_ok = true;
@@ -3140,6 +3176,7 @@ static void SelectFile_Settings_Activate(uint8 target_slot,
   g_settings_generate_in_progress = false;
   g_rec_cursor = 0;
   g_rec_working_features0 = g_config.features0;
+  g_hint_options_cursor = 0;
   g_asset_warn_cursor = 0;
   g_asset_warn_pending = false;
   if (prepopulate_from_share) {
@@ -3285,6 +3322,71 @@ static void SelectFile_Settings_DrawRecommended(void) {
   memcpy(vram_upload_data, cmd, (size_t)o);
 }
 
+static const char *HintOptionValueText(int row, char *scratch,
+                                       int scratch_len) {
+  const RandoSettings *s = &g_settings_working;
+  const bool enabled = Settings_HintsEnabled(s);
+  if (!enabled && row <= kHintOptionRow_Mix) return "OFF";
+  switch (row) {
+    case kHintOptionRow_Tiles:
+      switch (s->hint_tile_coverage) {
+        case kHintTileCoverage_None:     return "NONE";
+        case kHintTileCoverage_Sparse:   return "FEW 5";
+        case kHintTileCoverage_Standard: return "MANY 10";
+        case kHintTileCoverage_Full:     return "ALL 15";
+        default:                         return "ERR";
+      }
+    case kHintOptionRow_Paid:
+      snprintf(scratch, scratch_len, "%u EACH",
+               (unsigned)Settings_EffectiveHintPaidDepth(s));
+      return scratch;
+    case kHintOptionRow_Mix:
+      switch (s->hint_mix) {
+        case kHintMix_Variety:   return "VARIETY";
+        case kHintMix_Important: return "IMPORT";
+        case kHintMix_Difficult: return "DIFFIC";
+        case kHintMix_WorldInfo: return "WORLD";
+        default:                 return "ERR";
+      }
+    case kHintOptionRow_NpcRewards:
+      return s->hint_npc_reward_reveal ? "ON" : "OFF";
+    case kHintOptionRow_Reset:
+      return "BAL";
+    default:
+      return "ERR";
+  }
+}
+
+static void SelectFile_Settings_DrawHints(void) {
+  static const char *kLabels[kHintOptionRow__Count] = {
+      "TILES", "PAID", "MIX", "NPC ITEM", "RESET"};
+  uint8 cmd[2048];
+  int o = 0;
+  o = emit_clear_area(cmd, o, 0x6100, 640);
+  o = emit_text_run(cmd, o, 0x6108, "HINT OPTIONS", 12, 0x18);
+  o = emit_text_run(cmd, o, 0x6116, "B BACK", 6, 0x18);
+
+  uint16 row_base = 0x6148;
+  for (int i = 0; i < kHintOptionRow__Count; i++) {
+    uint16 vram = (uint16)(row_base + i * 0x40);
+    uint8 attr = i == (int)g_hint_options_cursor ? 0x38 : 0x18;
+    o = emit_text_run(cmd, o, vram, kLabels[i], 8, attr);
+    char scratch[24];
+    const char *value = HintOptionValueText(i, scratch, sizeof(scratch));
+    o = emit_text_run(cmd, o, (uint16)(vram + 12), value, 8, attr);
+  }
+
+  o = emit_text_run(cmd, o, 0x6288, "PAID ARE EXACT", 14, 0x18);
+  o = emit_text_run(cmd, o, 0x62c8, "0 PAY SHOWN PRICE", 17, 0x18);
+  o = emit_text_run(cmd, o, 0x6308, "NPC US TEXT ONLY", 16, 0x18);
+  o = emit_text_run(cmd, o, 0x6348, "LR CHANGE A SELECT", 18, 0x18);
+  cmd[o++] = 0xff;
+  memcpy(vram_upload_data, cmd, (size_t)o);
+
+  FileSelect_DrawFairy(0x18,
+                       (uint8)(0x52 + g_hint_options_cursor * 0x10));
+}
+
 static void SelectFile_Settings_DrawAssetWarn(void) {
   uint8 cmd[2048];
   int o = 0;
@@ -3310,6 +3412,7 @@ static void SelectFile_Settings_Draw(void) {
     case kSettingsView_Main:        SelectFile_Settings_DrawMain(); break;
     case kSettingsView_Recommended: SelectFile_Settings_DrawRecommended(); break;
     case kSettingsView_AssetWarn:   SelectFile_Settings_DrawAssetWarn(); break;
+    case kSettingsView_Hints:       SelectFile_Settings_DrawHints(); break;
   }
 }
 
@@ -3370,6 +3473,95 @@ static bool SelectFile_Settings_HandleRecommendedInput(void) {
   return true;  // swallow all input while in this view
 }
 
+static void SelectFile_Settings_CycleHintOption(int row, int delta) {
+  RandoSettings *s = &g_settings_working;
+  if (row == kHintOptionRow_Tiles) {
+    static const uint8 kCoverage[] = {
+        kHintTileCoverage_None, kHintTileCoverage_Sparse,
+        kHintTileCoverage_Standard, kHintTileCoverage_Full};
+    int index = 0;  // Off behaves like the empty end of the coverage cycle.
+    if (Settings_HintsEnabled(s)) {
+      for (int i = 0; i < 4; i++)
+        if (s->hint_tile_coverage == kCoverage[i]) index = i;
+    }
+    index += delta;
+    if (index < 0) index = 3;
+    if (index > 3) index = 0;
+    s->hints = kHintsMode_Balanced;
+    s->hint_tile_coverage = kCoverage[index];
+  } else if (row == kHintOptionRow_Paid) {
+    int paid = Settings_HintsEnabled(s)
+                   ? Settings_EffectiveHintPaidDepth(s)
+                   : 0;
+    paid += delta;
+    if (paid < 0) paid = 3;
+    if (paid > 3) paid = 0;
+    s->hints = kHintsMode_Balanced;
+    s->hint_paid_depth = (uint8)paid;
+  } else if (row == kHintOptionRow_Mix) {
+    int mix = Settings_HintsEnabled(s) ? s->hint_mix : kHintMix_Variety;
+    mix += delta;
+    if (mix < kHintMix_Variety) mix = kHintMix_WorldInfo;
+    if (mix > kHintMix_WorldInfo) mix = kHintMix_Variety;
+    s->hints = kHintsMode_Balanced;
+    s->hint_mix = (uint8)mix;
+  } else if (row == kHintOptionRow_NpcRewards) {
+    // Independent of clue delivery/profile; Left, Right, and A all toggle.
+    s->hint_npc_reward_reveal ^= 1;
+  } else {
+    return;
+  }
+  Settings_NormalizeHintPolicy(s);
+  SettingsHashRefresh();
+}
+
+static bool SelectFile_Settings_HandleHintsInput(void) {
+  if (filtered_joypad_H & kJoypadH_B) {
+    sound_effect_1 = 0x2c;
+    g_settings_view = kSettingsView_Main;
+    return true;
+  }
+
+  uint8 dir = filtered_joypad_H & 0xf;
+  if (dir & kJoypadH_Up) {
+    sound_effect_2 = 0x20;
+    if (g_hint_options_cursor == 0)
+      g_hint_options_cursor = kHintOptionRow__Count - 1;
+    else
+      g_hint_options_cursor--;
+    return true;
+  }
+  if (dir & kJoypadH_Down) {
+    sound_effect_2 = 0x20;
+    g_hint_options_cursor++;
+    if (g_hint_options_cursor >= kHintOptionRow__Count)
+      g_hint_options_cursor = 0;
+    return true;
+  }
+  if (dir & kJoypadH_Left) {
+    sound_effect_2 = 0x20;
+    SelectFile_Settings_CycleHintOption(g_hint_options_cursor, -1);
+    return true;
+  }
+  if (dir & kJoypadH_Right) {
+    sound_effect_2 = 0x20;
+    SelectFile_Settings_CycleHintOption(g_hint_options_cursor, +1);
+    return true;
+  }
+
+  if (filtered_joypad_L & kJoypadL_A) {
+    sound_effect_1 = 0x2c;
+    if (g_hint_options_cursor <= kHintOptionRow_NpcRewards) {
+      SelectFile_Settings_CycleHintOption(g_hint_options_cursor, +1);
+    } else if (g_hint_options_cursor == kHintOptionRow_Reset) {
+      Settings_ApplyHintProfile(&g_settings_working, kHintProfile_Balanced);
+      SettingsHashRefresh();
+    }
+    return true;
+  }
+  return true;
+}
+
 static bool SelectFile_Settings_HandleAssetWarnInput(void) {
   uint8 dir = filtered_joypad_H & 0xf;
   if (dir & kJoypadH_Up) {
@@ -3428,6 +3620,9 @@ static bool SelectFile_Settings_Update(void) {
   if (g_settings_view == kSettingsView_AssetWarn) {
     return SelectFile_Settings_HandleAssetWarnInput();
   }
+  if (g_settings_view == kSettingsView_Hints) {
+    return SelectFile_Settings_HandleHintsInput();
+  }
 
   // Cancel via B → back to kind picker on the target slot.
   if (filtered_joypad_H & kJoypadH_B) {
@@ -3473,6 +3668,12 @@ static bool SelectFile_Settings_Update(void) {
       case kRow_Recommended:
         g_settings_view = kSettingsView_Recommended;
         g_rec_cursor = 0;
+        break;
+      case kRow_Hints:
+        // Opening the detailed view is read-only: a Custom policy stays
+        // byte-exact until the player actually changes an option.
+        g_settings_view = kSettingsView_Hints;
+        g_hint_options_cursor = kHintOptionRow_Tiles;
         break;
       case kRow_Generate:
         SelectFile_Settings_HandleGenerate();
@@ -3523,7 +3724,6 @@ static bool SelectFile_Settings_Update(void) {
       case kRow_PrizeShuffle:
       case kRow_MedallionShuffle:
       case kRow_RaceMode:
-      case kRow_Hints:
       case kRow_SkeletonKey:
         CycleRow(row, +1);  // bool toggle
         break;

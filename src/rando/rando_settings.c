@@ -27,13 +27,14 @@
 //   offset 19  pieces_required (LE hi)
 //   offset 20  pieces_placed   (LE lo)
 //   offset 21  pieces_placed   (LE hi)
-//   offset 22  hints                       bool          (§66, kGenVer 13→14)
+//   offset 22  hints                       Off/Balanced  (§66, kGenVer 13→14)
 //   offset 23  boss_shuffle                bool          (§66)
 //   offset 24  drop_shuffle                bool          (§66)
 //   offset 25  entrance_axes (bit-packed)  Phase C — bit0 shuffle_caves,
 //                                          bit1 shuffle_dungeons, bit2 coupled,
 //                                          bit3 cross_category, bit4 decoupled,
 //                                          bit5 shuffle_gt, bit6 dungeon_chains.
+//                                          bit7 hint_npc_reward_reveal.
 //                                          0x00 for the default (no shuffle).
 //   offset 26  misc axes (bit-packed)      bit0 enemy_shuffle, bit1
 //                                          customizer_active, bits2-3 traps,
@@ -44,20 +45,26 @@
 //   offset 28  enemy_drop_checks           bits0-1 (EnemyDropChecks enum)
 //                                          bits2-3 souls_shuffle (SoulsShuffle
 //                                          enum, add-enemy-souls)
+//                                          bit4 npc_souls
+//                                          bits5-6 hint tile coverage
+//                                          bit7 hint mix low bit
 //   offset 29  grass_shuffle               bits0-1 (TerrainShuffle enum)
 //              rock_shuffle                bits2-3 (TerrainShuffle enum,
 //                                          add-rando-grass-rock-shuffle)
 //              shopsanity                  bit4 (bool, add-rando-shopsanity)
 //              bonk_shuffle                bits5-6 (TerrainShuffle, add-rando-bonk-sanity)
+//              hint mix                    bit7 (high bit)
 //   offset 30  key_rings                   bits0-1 (KeyRingsMode enum)
 //              skeleton_key                bit2 (bonus-only item toggle)
+//              whirlpool/flute shuffle      bits3-5
+//              hint paid depth wire code    bits6-7
 //
 // settings_version is NOT serialized — it's a runtime constant pinned to 1
 // for Phase A. Bumping the layout requires kGeneratorVersion increment.
 
 #include <string.h>  // memset (used below at Settings_CanonicalDeserialize)
 #include "rando_settings.h"
-#include "rando_hints.h"  // kHintsMode_Off / kHintsMode_On (Slice 5 §61)
+#include "rando_hints.h"  // kHintsMode_Off / kHintsMode_Balanced
 #include "../types.h"
 #include "third_party/sha256/sha256.h"
 
@@ -83,11 +90,15 @@ void Settings_SetDefaults(RandoSettings *s) {
   s->race_mode = 0;
   s->pieces_required = 20;
   s->pieces_placed = 30;
-  // Phase B Slice 5/7/8 §66 — included in canonical serialization
-  // starting at kGeneratorVersion 14. Hints default ON (the intended
-  // out-of-the-box experience — telepathic tiles give item hints);
+  // Hints plus the Phase B shuffle axes are included in canonical serialization
+  // starting at kGeneratorVersion 14. Hints default Balanced (the intended
+  // out-of-the-box semantic plan and discovery journal);
   // the shuffle axes default off.
-  s->hints = kHintsMode_On;
+  s->hints = kHintsMode_Balanced;
+  s->hint_tile_coverage = kHintTileCoverage_Full;
+  s->hint_mix = kHintMix_Variety;
+  s->hint_paid_depth = 3;
+  s->hint_npc_reward_reveal = 0;
   s->boss_shuffle = 0;
   s->drop_shuffle = 0;
   // Phase C — entrance shuffle. All shuffle axes default OFF; `coupled`
@@ -144,6 +155,106 @@ void Settings_SetDefaults(RandoSettings *s) {
   s->whirlpool_shuffle = 0;
 }
 
+bool Settings_HintsEnabled(const RandoSettings *s) {
+  return s != NULL && s->hints == kHintsMode_Balanced &&
+         !(s->hint_tile_coverage == kHintTileCoverage_None &&
+           s->hint_paid_depth == 0);
+}
+
+uint8 Settings_HintTileCount(const RandoSettings *s) {
+  if (!Settings_HintsEnabled(s)) return 0;
+  switch (s->hint_tile_coverage) {
+    case kHintTileCoverage_Full: return 15;
+    case kHintTileCoverage_None: return 0;
+    case kHintTileCoverage_Sparse: return 5;
+    case kHintTileCoverage_Standard: return 10;
+    default: return 0;  // invalid/foreign struct: fail closed
+  }
+}
+
+uint8 Settings_EffectiveHintPaidDepth(const RandoSettings *s) {
+  if (!Settings_HintsEnabled(s) || s->hint_paid_depth > 3) return 0;
+  return s->hint_paid_depth;
+}
+
+void Settings_NormalizeHintPolicy(RandoSettings *s) {
+  if (s == NULL) return;
+  if (s->hints == kHintsMode_Off ||
+      (s->hints == kHintsMode_Balanced &&
+       s->hint_tile_coverage == kHintTileCoverage_None &&
+       s->hint_paid_depth == 0)) {
+    s->hints = kHintsMode_Off;
+    s->hint_tile_coverage = kHintTileCoverage_Full;
+    s->hint_mix = kHintMix_Variety;
+    s->hint_paid_depth = 3;
+  }
+}
+
+HintProfile Settings_GetHintProfile(const RandoSettings *s) {
+  if (!Settings_HintsEnabled(s)) return kHintProfile_Off;
+  if (s->hint_tile_coverage == kHintTileCoverage_Sparse &&
+      s->hint_mix == kHintMix_Variety && s->hint_paid_depth == 1)
+    return kHintProfile_Sparse;
+  if (s->hint_tile_coverage == kHintTileCoverage_Full &&
+      s->hint_mix == kHintMix_Variety && s->hint_paid_depth == 3)
+    return kHintProfile_Balanced;
+  if (s->hint_tile_coverage == kHintTileCoverage_Full &&
+      s->hint_mix == kHintMix_Important && s->hint_paid_depth == 3)
+    return kHintProfile_Direct;
+  return kHintProfile_Custom;
+}
+
+bool Settings_ApplyHintProfile(RandoSettings *s, HintProfile profile) {
+  if (s == NULL) return false;
+  switch (profile) {
+    case kHintProfile_Off:
+      s->hints = kHintsMode_Off;
+      s->hint_tile_coverage = kHintTileCoverage_Full;
+      s->hint_mix = kHintMix_Variety;
+      s->hint_paid_depth = 3;
+      break;
+    case kHintProfile_Sparse:
+      s->hints = kHintsMode_Balanced;
+      s->hint_tile_coverage = kHintTileCoverage_Sparse;
+      s->hint_mix = kHintMix_Variety;
+      s->hint_paid_depth = 1;
+      break;
+    case kHintProfile_Balanced:
+      s->hints = kHintsMode_Balanced;
+      s->hint_tile_coverage = kHintTileCoverage_Full;
+      s->hint_mix = kHintMix_Variety;
+      s->hint_paid_depth = 3;
+      break;
+    case kHintProfile_Direct:
+      s->hints = kHintsMode_Balanced;
+      s->hint_tile_coverage = kHintTileCoverage_Full;
+      s->hint_mix = kHintMix_Important;
+      s->hint_paid_depth = 3;
+      break;
+    case kHintProfile_Custom:
+    default:
+      return false;
+  }
+  Settings_NormalizeHintPolicy(s);
+  return true;
+}
+
+const char *Settings_HintProfileName(HintProfile profile) {
+  static const char *const kNames[] = {
+    "off", "sparse", "balanced", "direct", "custom",
+  };
+  if ((int)profile < 0 || profile > kHintProfile_Custom) return "(unknown)";
+  return kNames[profile];
+}
+
+const char *Settings_HintProfileTitle(HintProfile profile) {
+  static const char *const kTitles[] = {
+    "Off", "Sparse", "Balanced", "Direct", "Custom",
+  };
+  if ((int)profile < 0 || profile > kHintProfile_Custom) return "(Unknown)";
+  return kTitles[profile];
+}
+
 // Apply derived-from-other-fields normalization rules.
 // `goal=completionist` forces `accessibility=locations` per spec —
 // otherwise the canonical hash differs between
@@ -196,6 +307,7 @@ bool Settings_GenericKeysActive(const RandoSettings *s) {
 }
 
 static void apply_derived_rules(RandoSettings *s) {
+  Settings_NormalizeHintPolicy(s);
   if (s->goal == kGoal_Completionist) {
     s->accessibility = kAccessibility_Locations;
   }
@@ -505,17 +617,18 @@ int Settings_CanonicalSerialize(const RandoSettings *s_in,
   out[22] = s->hints;
   out[23] = s->boss_shuffle;
   out[24] = s->drop_shuffle;
-  // Phase C — entrance-shuffle axes bit-packed into the (formerly zero) pad
-  // byte [25]. apply_derived_rules() has normalized coupled/cross/decoupled,
-  // so this is 0x00 for the default settings (corpus byte-identical) and
-  // kSettingsCanonicalLen stayed 28 until the append-only [28] axis.
+  // Phase C entrance-shuffle axes and independent NPC reward disclosure share
+  // the historical pad byte [25]. apply_derived_rules() has normalized
+  // coupled/cross/decoupled; every field defaults off, so this is 0x00 for the
+  // default settings (corpus byte-identical).
   out[25] = (uint8)((s->shuffle_cave_entrances    ? kEntranceAxis_ShuffleCaves    : 0) |
                     (s->shuffle_dungeon_entrances ? kEntranceAxis_ShuffleDungeons : 0) |
                     (s->coupled                   ? kEntranceAxis_Coupled         : 0) |
                     (s->cross_category            ? kEntranceAxis_CrossCategory   : 0) |
                     (s->decoupled                 ? kEntranceAxis_Decoupled       : 0) |
                     (s->shuffle_ganons_tower_entrance ? kEntranceAxis_ShuffleGanonsTower : 0) |
-                    (s->dungeon_chains            ? kEntranceAxis_DungeonChains   : 0));
+                    (s->dungeon_chains            ? kEntranceAxis_DungeonChains   : 0) |
+                    (s->hint_npc_reward_reveal    ? kHintNpcRewardRevealAxis_Enabled : 0));
   // add-rando-enemy-shuffle / customizer / traps / instant-flute — share the
   // formerly-zero pad byte [26]. Defaults keep every bit clear (instant-flute
   // uses an inverse manual-activation bit), preserving default settings_hash.
@@ -537,12 +650,15 @@ int Settings_CanonicalSerialize(const RandoSettings *s_in,
                     ((s->trap_categories << kTrapCategoriesAxis_Shift) & kTrapCategoriesAxis_Mask) |
                     // add-rando-pot-sanity — pot_shuffle high bit in [27] bit 7.
                     ((s->pot_shuffle & 4u) ? kPotShuffleAxis_HighBit : 0));
-  // [28]: enemy_drop_checks in bits 0-1; add-enemy-souls souls_shuffle in
-  // bits 2-3 (kSoulsShuffleAxis_*); add-npc-souls in bit 4 (kNpcSoulsAxis_*).
-  // Defaults keep the byte 0x00.
+  // [28]: enemy/soul axes in bits 0-4, configurable-hints tile coverage in
+  // bits 5-6, and the hint-mix low bit in bit 7. Full/Variety are wire zero,
+  // so defaults keep the byte 0x00.
   out[28] = (uint8)((s->enemy_drop_checks & 3u) |
                     ((s->souls_shuffle << kSoulsShuffleAxis_Shift) & kSoulsShuffleAxis_Mask) |
-                    (s->npc_souls ? kNpcSoulsAxis_Enabled : 0));
+                    (s->npc_souls ? kNpcSoulsAxis_Enabled : 0) |
+                    ((s->hint_tile_coverage << kHintTileCoverageAxis_Shift) &
+                     kHintTileCoverageAxis_Mask) |
+                    ((s->hint_mix & 1u) ? kHintMixAxis_LowBit : 0));
   // add-rando-grass-rock-shuffle — the appended terrain byte [29]:
   // grass_shuffle bits 0-1, rock_shuffle bits 2-3 (TerrainShuffle enum).
   // Defaults keep the byte 0x00; the LENGTH growth 29->30 changes every
@@ -550,7 +666,8 @@ int Settings_CanonicalSerialize(const RandoSettings *s_in,
   out[29] = (uint8)(((s->grass_shuffle << kGrassShuffleAxis_Shift) & kGrassShuffleAxis_Mask) |
                     ((s->rock_shuffle << kRockShuffleAxis_Shift) & kRockShuffleAxis_Mask) |
                     (s->shopsanity ? kShopsanityAxis_Enabled : 0) |
-                    ((s->bonk_shuffle << kBonkShuffleAxis_Shift) & kBonkShuffleAxis_Mask));
+                    ((s->bonk_shuffle << kBonkShuffleAxis_Shift) & kBonkShuffleAxis_Mask) |
+                    ((s->hint_mix & 2u) ? kHintMixAxis_HighBit : 0));
   // add-rando-key-rings-skeleton-key — preserve the REQUESTED ring policy.
   // Effective-off semantics are computed by Settings_EffectiveKeyRings and are
   // deliberately not part of apply_derived_rules.
@@ -559,7 +676,10 @@ int Settings_CanonicalSerialize(const RandoSettings *s_in,
                     (s->skeleton_key ? kSkeletonKeyAxis_Enabled : 0) |
                     (s->whirlpool_shuffle ? kWhirlpoolAxis_Enabled : 0) |
                     ((s->flute_shuffle << kFluteShuffleAxis_Shift) &
-                     kFluteShuffleAxis_Mask));
+                     kFluteShuffleAxis_Mask) |
+                    // Actual depth 3 is wire zero; 0/1/2 map to 1/2/3.
+                    ((((s->hint_paid_depth + 1u) & 3u) <<
+                      kHintPaidDepthAxis_Shift) & kHintPaidDepthAxis_Mask));
   return kSettingsCanonicalLen;
 }
 
@@ -576,14 +696,9 @@ int Settings_CanonicalSerialize(const RandoSettings *s_in,
 // byte [27] bits 0-1 are the add-rando-door-shuffle axis.
 // Pre-extension files have those bits = 0, so older suppressed files still
 // round-trip cleanly.
-// **Forward-compat note**: undefined bits of the packed flag bytes are NOT
-// inspected — a future extension may repurpose them, and rejecting on non-zero
-// would break reveal of pre-extension suppressed files. The deserializer stays
-// permissive. NOTE: add-rando-pot-sanity consumed the last bits of [26] (6-7)
-// and [27] (bit 7) for pot_shuffle, so those bytes are now fully defined and an
-// out-of-range pot_shuffle VALUE there is refused (the enum-rejection rule, not
-// the undefined-bit rule). Real pre-pot files have those bits = 0 (Off), so they
-// still reveal cleanly; [25] bit 7 remains the genuinely-undefined surface.
+// Every bit in the packed flag bytes [25..27] is now defined. Pre-extension
+// files have each added bit clear, so older suppressed files still round-trip
+// cleanly. Enum values reassembled from these bytes remain range-checked below.
 int Settings_CanonicalDeserialize(const uint8 in[kSettingsCanonicalLen],
                                   RandoSettings *out) {
   if (in == NULL || out == NULL) return -1;
@@ -625,6 +740,10 @@ int Settings_CanonicalDeserialize(const uint8 in[kSettingsCanonicalLen],
   s.decoupled                  = (in[25] & kEntranceAxis_Decoupled)       ? 1 : 0;
   s.shuffle_ganons_tower_entrance = (in[25] & kEntranceAxis_ShuffleGanonsTower) ? 1 : 0;
   s.dungeon_chains             = (in[25] & kEntranceAxis_DungeonChains)   ? 1 : 0;
+  // Independent NPC transaction disclosure — [25] bit 7. Zero is the
+  // historical/default behavior and remains independent of clue delivery.
+  s.hint_npc_reward_reveal =
+      (in[25] & kHintNpcRewardRevealAxis_Enabled) ? 1 : 0;
   // add-rando-enemy-shuffle — unpack the enemy-shuffle bit from pad byte [26].
   // A zero byte (the default / any pre-enemy-shuffle file) yields enemy_shuffle=0,
   // identical to a struct with no enemy shuffle.
@@ -642,7 +761,7 @@ int Settings_CanonicalDeserialize(const uint8 in[kSettingsCanonicalLen],
   s.instant_flute = (in[26] & kInstantFluteAxis_ManualActivation) ? 0 : 1;
   // add-rando-door-shuffle — unpack the door_shuffle axis from pad byte [27]
   // bits 0-1. A zero byte (the default / any pre-door-shuffle file) yields
-  // vanilla. Bits 2-7 stay uninspected (the remaining extension surface).
+  // vanilla. Trap-category and pot-shuffle fields consume bits 2-7 below.
   s.door_shuffle = in[27] & kDoorShuffleAxis_Mask;
   // add-rando-trap-catalog — unpack the per-category trap mask from [27] bits 2-6.
   // Zero (default / any pre-catalog file) is the "all categories" sentinel applied
@@ -655,23 +774,28 @@ int Settings_CanonicalDeserialize(const uint8 in[kSettingsCanonicalLen],
                           ((in[27] & kPotShuffleAxis_HighBit) ? 4u : 0u));
   s.enemy_drop_checks = (uint8)(in[28] & 3u);
   // add-enemy-souls — souls_shuffle from [28] bits 2-3. Zero (default / any
-  // pre-souls file) yields Off, identical to a struct with no souls. Bits 4-7
-  // remain genuinely undefined: refuse them like the pre-souls whole-byte
-  // check did (corruption/newer-axis rejection, not masked permissiveness).
+  // pre-souls file) yields Off, identical to a struct with no souls.
   s.souls_shuffle = (uint8)((in[28] & kSoulsShuffleAxis_Mask) >> kSoulsShuffleAxis_Shift);
   // add-npc-souls — [28] bit 4. Zero (default / pre-npc file) yields off.
   s.npc_souls = (in[28] & kNpcSoulsAxis_Enabled) ? 1 : 0;
-  if (in[28] & ~(uint8)(3u | kSoulsShuffleAxis_Mask | kNpcSoulsAxis_Enabled)) return -2;
-  // add-rando-grass-rock-shuffle — the appended terrain byte [29]. Zero
-  // (default) yields Off for both axes; bits 4-7 are refused-undefined like
-  // [28]'s tail, and the per-field value 3 is out of the TerrainShuffle
-  // range (off/junk/all) — corruption, not forward-compat.
+  // Configurable hints — [28] bits 5-6 are tile coverage and bit 7 is the
+  // low hint-mix bit. The high mix bit is decoded from [29] below.
+  s.hint_tile_coverage =
+      (uint8)((in[28] & kHintTileCoverageAxis_Mask) >>
+              kHintTileCoverageAxis_Shift);
+  s.hint_mix = (in[28] & kHintMixAxis_LowBit) ? 1 : 0;
+  if (in[28] & ~(uint8)kCanon28_DefinedMask) return -2;
+  // The appended byte [29] stores terrain axes in bits 0-3, shopsanity in
+  // bit 4, bonk shuffle in bits 5-6, and the hint-mix high bit in bit 7.
+  // Terrain value 3 remains corruption, not forward compatibility.
   s.grass_shuffle = (uint8)((in[29] & kGrassShuffleAxis_Mask) >> kGrassShuffleAxis_Shift);
   s.rock_shuffle = (uint8)((in[29] & kRockShuffleAxis_Mask) >> kRockShuffleAxis_Shift);
   s.shopsanity = (in[29] & kShopsanityAxis_Enabled) ? 1 : 0;
   s.bonk_shuffle = (uint8)((in[29] & kBonkShuffleAxis_Mask) >> kBonkShuffleAxis_Shift);
+  if (in[29] & kHintMixAxis_HighBit) s.hint_mix |= 2u;
   if (in[29] & ~(uint8)(kGrassShuffleAxis_Mask | kRockShuffleAxis_Mask |
-                        kShopsanityAxis_Enabled | kBonkShuffleAxis_Mask)) return -2;
+                        kShopsanityAxis_Enabled | kBonkShuffleAxis_Mask |
+                        kHintMixAxis_HighBit)) return -2;
   if (s.bonk_shuffle > kTerrainShuffle_All) return -2;
   if (s.grass_shuffle > kTerrainShuffle_All || s.rock_shuffle > kTerrainShuffle_All) return -2;
   // add-rando-key-rings-skeleton-key — [30] is strict append-only data. Older
@@ -686,12 +810,16 @@ int Settings_CanonicalDeserialize(const uint8 in[kSettingsCanonicalLen],
   s.flute_shuffle = (uint8)((in[30] & kFluteShuffleAxis_Mask) >>
                             kFluteShuffleAxis_Shift);
   if (s.flute_shuffle > kFluteShuffle_Random) return -2;
-  // FIX #5 — refuse out-of-range enum bytes. The permissiveness documented
-  // above is for the undefined BITS of the flag bytes [25]-[27] (already
-  // masked); the raw enum bytes [0..17] have defined ranges and a value
-  // outside them is corruption, not forward-compat. The reserved mode_weapons==2
-  // reject and the hunt-goal pieces_required<=pieces_placed cross-field rule
-  // live inside Settings_Validate, which this calls.
+  // Configurable hints — paid depth uses a zero-default wire rotation:
+  // wire 0/1/2/3 decodes to actual depth 3/0/1/2.
+  uint8 hint_paid_wire =
+      (uint8)((in[30] & kHintPaidDepthAxis_Mask) >>
+              kHintPaidDepthAxis_Shift);
+  s.hint_paid_depth = (uint8)((hint_paid_wire + 3u) & 3u);
+  // FIX #5 — refuse out-of-range enum bytes and decoded packed-field values.
+  // The reserved mode_weapons==2 reject and the hunt-goal
+  // pieces_required<=pieces_placed cross-field rule live inside
+  // Settings_Validate, which this calls.
   if (!Settings_Validate(&s)) return -2;
   apply_derived_rules(&s);
   *out = s;
@@ -734,10 +862,13 @@ bool Settings_Validate(const RandoSettings *s) {
   if ((s->goal == kGoal_TriforceHunt || s->goal == kGoal_GanonHunt) &&
       s->pieces_required > s->pieces_placed)
     return false;
-  if (s->hints > 1) return false;                                          // [22] off/on
+  if (s->hints > 1) return false;                                          // [22] Off/Balanced
+  if (s->hint_tile_coverage > kHintTileCoverage_Standard) return false;     // [28] bits5-6
+  if (s->hint_mix > kHintMix_WorldInfo) return false;                       // [28]/[29] bit7
+  if (s->hint_paid_depth > 3) return false;                                 // [30] bits6-7
+  if (s->hint_npc_reward_reveal > 1) return false;                          // [25] bit7
   if (s->boss_shuffle > 1 || s->drop_shuffle > 1) return false;            // [23][24] bool
-  // [25] entrance/chains axes / [26] misc axes: bit-packed; deserialize
-  // masks the defined bits, undefined bits stay permissive by contract.
+  // [25] entrance/chains axes + NPC disclosure / [26] misc axes: bit-packed.
   if (s->shuffle_cave_entrances > 1 || s->shuffle_dungeon_entrances > 1 ||
       s->coupled > 1 || s->cross_category > 1 || s->decoupled > 1 ||
       s->shuffle_ganons_tower_entrance > 1 || s->dungeon_chains > 1)
@@ -898,9 +1029,622 @@ void Settings_SelfCheck(void) {
     exit(2);
   }
 
+  // Hints v2 exposes Balanced by name while preserving all historical value-1
+  // spellings and the exact canonical byte they produced.
+  {
+    static const char *const aliases[] = {
+      "hints=balanced", "hints=on", "hints=full", "hints=sahasrahla",
+      "hints=true", "hints=True", "hints=1",
+    };
+    for (size_t i = 0; i < sizeof(aliases) / sizeof(aliases[0]); i++) {
+      RandoSettings parsed;
+      Settings_SetDefaults(&parsed);
+      // A profile is a complete base tuple, not merely an enabled bit.
+      parsed.hint_tile_coverage = kHintTileCoverage_Standard;
+      parsed.hint_mix = kHintMix_Difficult;
+      parsed.hint_paid_depth = 0;
+      if (Settings_ParseCsv(aliases[i], &parsed) != 0 ||
+          parsed.hints != kHintsMode_Balanced ||
+          parsed.hint_tile_coverage != kHintTileCoverage_Full ||
+          parsed.hint_mix != kHintMix_Variety ||
+          parsed.hint_paid_depth != 3) {
+        fprintf(stderr,
+                "Settings_SelfCheck: Balanced hint alias parse failed: %s\n",
+                aliases[i]);
+        exit(2);
+      }
+    }
+    RandoSettings parsed;
+    Settings_SetDefaults(&parsed);
+    static const char *const off_aliases[] = {
+      "hints=off", "hints=none", "hints=false", "hints=False", "hints=0",
+    };
+    for (size_t i = 0;
+         i < sizeof(off_aliases) / sizeof(off_aliases[0]); i++) {
+      Settings_SetDefaults(&parsed);
+      parsed.hint_tile_coverage = kHintTileCoverage_Standard;
+      parsed.hint_mix = kHintMix_Difficult;
+      parsed.hint_paid_depth = 0;
+      if (Settings_ParseCsv(off_aliases[i], &parsed) != 0 ||
+          parsed.hints != kHintsMode_Off ||
+          parsed.hint_tile_coverage != kHintTileCoverage_Full ||
+          parsed.hint_mix != kHintMix_Variety ||
+          parsed.hint_paid_depth != 3) {
+        fprintf(stderr, "Settings_SelfCheck: Off hint alias parse failed: %s\n",
+                off_aliases[i]);
+        exit(2);
+      }
+    }
+  }
+
+  // Configurable hint policy: all 64 semantic combinations have a pinned
+  // zero-default wire mapping, round-trip without touching unrelated bytes,
+  // and the single empty delivery tuple collapses to true Off.
+  {
+    static const uint8 kTileCounts[4] = { 15, 0, 5, 10 };
+    for (uint8 coverage = kHintTileCoverage_Full;
+         coverage <= kHintTileCoverage_Standard; coverage++) {
+      for (uint8 mix = kHintMix_Variety; mix <= kHintMix_WorldInfo; mix++) {
+        for (uint8 depth = 0; depth <= 3; depth++) {
+          RandoSettings policy, round;
+          uint8 blob[kSettingsCanonicalLen];
+          Settings_SetDefaults(&policy);
+          policy.hint_tile_coverage = coverage;
+          policy.hint_mix = mix;
+          policy.hint_paid_depth = depth;
+          Settings_CanonicalSerialize(&policy, blob);
+
+          bool empty = coverage == kHintTileCoverage_None && depth == 0;
+          uint8 normalized_coverage =
+              empty ? kHintTileCoverage_Full : coverage;
+          uint8 normalized_mix = empty ? kHintMix_Variety : mix;
+          uint8 normalized_depth = empty ? 3 : depth;
+          uint8 expected28 =
+              (uint8)((normalized_coverage << kHintTileCoverageAxis_Shift) |
+                      ((normalized_mix & 1u) ? kHintMixAxis_LowBit : 0));
+          uint8 expected29 =
+              (normalized_mix & 2u) ? kHintMixAxis_HighBit : 0;
+          uint8 expected30 =
+              (uint8)(((normalized_depth + 1u) & 3u) <<
+                      kHintPaidDepthAxis_Shift);
+          if (blob[22] != (empty ? kHintsMode_Off : kHintsMode_Balanced) ||
+              blob[28] != expected28 || blob[29] != expected29 ||
+              blob[30] != expected30) {
+            fprintf(stderr,
+                    "Settings_SelfCheck: hint policy wire mismatch "
+                    "(coverage=%u mix=%u depth=%u: %02x/%02x/%02x/%02x)\n",
+                    coverage, mix, depth, blob[22], blob[28], blob[29],
+                    blob[30]);
+            exit(2);
+          }
+          for (int i = 0; i < kSettingsCanonicalLen; i++) {
+            if (i == 22 || i == 28 || i == 29 || i == 30) continue;
+            if (blob[i] != kExpectedCanonical[i]) {
+              fprintf(stderr,
+                      "Settings_SelfCheck: hint policy changed unrelated "
+                      "canonical byte [%d]\n",
+                      i);
+              exit(2);
+            }
+          }
+          if (Settings_CanonicalDeserialize(blob, &round) != 0) {
+            fprintf(stderr,
+                    "Settings_SelfCheck: hint policy deserialize failed\n");
+            exit(2);
+          }
+          if (empty) {
+            if (round.hints != kHintsMode_Off ||
+                round.hint_tile_coverage != kHintTileCoverage_Full ||
+                round.hint_mix != kHintMix_Variety ||
+                round.hint_paid_depth != 3 ||
+                Settings_HintsEnabled(&round) ||
+                Settings_HintTileCount(&round) != 0 ||
+                Settings_EffectiveHintPaidDepth(&round) != 0) {
+              fprintf(stderr,
+                      "Settings_SelfCheck: empty hint policy did not "
+                      "normalize to true Off\n");
+              exit(2);
+            }
+          } else if (!Settings_HintsEnabled(&round) ||
+                     round.hint_tile_coverage != coverage ||
+                     round.hint_mix != mix ||
+                     round.hint_paid_depth != depth ||
+                     Settings_HintTileCount(&round) != kTileCounts[coverage] ||
+                     Settings_EffectiveHintPaidDepth(&round) != depth) {
+            fprintf(stderr,
+                    "Settings_SelfCheck: hint policy semantic round-trip "
+                    "mismatch\n");
+            exit(2);
+          }
+        }
+      }
+    }
+
+    // Hint bits coexist with every previously-defined bit in shared bytes
+    // [28..30]; changing only the hint policy must preserve those neighbors.
+    RandoSettings neighbors, custom, round;
+    uint8 before[kSettingsCanonicalLen], after[kSettingsCanonicalLen];
+    Settings_SetDefaults(&neighbors);
+    neighbors.dungeon_small_keys_mode = kDungeonItemMode_Wild;
+    neighbors.enemy_drop_checks = kEnemyDropChecks_Keys;
+    neighbors.souls_shuffle = kSoulsShuffle_Bosses;
+    neighbors.npc_souls = 1;
+    neighbors.grass_shuffle = kTerrainShuffle_All;
+    neighbors.rock_shuffle = kTerrainShuffle_Junk;
+    neighbors.shopsanity = 1;
+    neighbors.bonk_shuffle = kTerrainShuffle_All;
+    neighbors.key_rings = kKeyRings_Random;
+    neighbors.skeleton_key = 1;
+    neighbors.whirlpool_shuffle = 1;
+    neighbors.flute_shuffle = kFluteShuffle_Random;
+    Settings_CanonicalSerialize(&neighbors, before);
+    custom = neighbors;
+    custom.hint_tile_coverage = kHintTileCoverage_Standard;
+    custom.hint_mix = kHintMix_WorldInfo;
+    custom.hint_paid_depth = 0;
+    Settings_CanonicalSerialize(&custom, after);
+    for (int i = 0; i < kSettingsCanonicalLen; i++) {
+      if (i == 28 || i == 29 || i == 30) continue;
+      if (before[i] != after[i]) {
+        fprintf(stderr,
+                "Settings_SelfCheck: hint policy disturbed canonical byte "
+                "[%d]\n",
+                i);
+        exit(2);
+      }
+    }
+    if ((before[28] & ~(uint8)(kHintTileCoverageAxis_Mask |
+                               kHintMixAxis_LowBit)) !=
+            (after[28] & ~(uint8)(kHintTileCoverageAxis_Mask |
+                                  kHintMixAxis_LowBit)) ||
+        (before[29] & ~(uint8)kHintMixAxis_HighBit) !=
+            (after[29] & ~(uint8)kHintMixAxis_HighBit) ||
+        (before[30] & ~(uint8)kHintPaidDepthAxis_Mask) !=
+            (after[30] & ~(uint8)kHintPaidDepthAxis_Mask) ||
+        Settings_CanonicalDeserialize(after, &round) != 0 ||
+        round.enemy_drop_checks != kEnemyDropChecks_Keys ||
+        round.souls_shuffle != kSoulsShuffle_Bosses || !round.npc_souls ||
+        round.grass_shuffle != kTerrainShuffle_All ||
+        round.rock_shuffle != kTerrainShuffle_Junk || !round.shopsanity ||
+        round.bonk_shuffle != kTerrainShuffle_All ||
+        round.key_rings != kKeyRings_Random || !round.skeleton_key ||
+        !round.whirlpool_shuffle ||
+        round.flute_shuffle != kFluteShuffle_Random ||
+        round.hint_tile_coverage != kHintTileCoverage_Standard ||
+        round.hint_mix != kHintMix_WorldInfo ||
+        round.hint_paid_depth != 0) {
+      fprintf(stderr,
+              "Settings_SelfCheck: shared hint-policy bits failed coexistence "
+              "round-trip\n");
+      exit(2);
+    }
+
+    // CSV normalization is deliberately deferred until the complete string is
+    // parsed, making Off independent of key order. The empty tuple is the same
+    // canonical Off representation.
+    static const char *const kOffOrders[] = {
+      "hints=off,hint_tiles=sparse,hint_mix=important,hint_paid=1",
+      "hint_paid=1,hint_mix=important,hint_tiles=sparse,hints=off",
+      "hint_tile_coverage=none,hint_mix=difficult,hint_paid_depth=0",
+    };
+    for (size_t i = 0; i < sizeof(kOffOrders) / sizeof(kOffOrders[0]); i++) {
+      RandoSettings parsed;
+      uint8 parsed_blob[kSettingsCanonicalLen];
+      Settings_SetDefaults(&parsed);
+      if (Settings_ParseCsv(kOffOrders[i], &parsed) != 0 ||
+          parsed.hints != kHintsMode_Off ||
+          parsed.hint_tile_coverage != kHintTileCoverage_Full ||
+          parsed.hint_mix != kHintMix_Variety ||
+          parsed.hint_paid_depth != 3) {
+        fprintf(stderr,
+                "Settings_SelfCheck: hint CSV Off normalization failed\n");
+        exit(2);
+      }
+      Settings_CanonicalSerialize(&parsed, parsed_blob);
+      RandoSettings expected_off;
+      uint8 expected_off_blob[kSettingsCanonicalLen];
+      Settings_SetDefaults(&expected_off);
+      expected_off.hints = kHintsMode_Off;
+      Settings_CanonicalSerialize(&expected_off, expected_off_blob);
+      if (!settings_byte_eq(parsed_blob, expected_off_blob,
+                            kSettingsCanonicalLen)) {
+        fprintf(stderr,
+                "Settings_SelfCheck: hint CSV Off canonical mismatch\n");
+        exit(2);
+      }
+    }
+
+    static const struct {
+      const char *csv;
+      uint8 hints;
+      uint8 coverage;
+      uint8 mix;
+      uint8 depth;
+    } kProfiles[] = {
+      { "hints=off", kHintsMode_Off, kHintTileCoverage_Full,
+        kHintMix_Variety, 3 },
+      { "hints=sparse", kHintsMode_Balanced, kHintTileCoverage_Sparse,
+        kHintMix_Variety, 1 },
+      { "hints=balanced", kHintsMode_Balanced, kHintTileCoverage_Full,
+        kHintMix_Variety, 3 },
+      { "hints=direct", kHintsMode_Balanced, kHintTileCoverage_Full,
+        kHintMix_Important, 3 },
+    };
+    for (size_t i = 0; i < sizeof(kProfiles) / sizeof(kProfiles[0]); i++) {
+      RandoSettings profile;
+      Settings_SetDefaults(&profile);
+      profile.hint_tile_coverage = kHintTileCoverage_None;
+      profile.hint_mix = kHintMix_WorldInfo;
+      profile.hint_paid_depth = 2;
+      if (Settings_ParseCsv(kProfiles[i].csv, &profile) != 0 ||
+          profile.hints != kProfiles[i].hints ||
+          profile.hint_tile_coverage != kProfiles[i].coverage ||
+          profile.hint_mix != kProfiles[i].mix ||
+          profile.hint_paid_depth != kProfiles[i].depth) {
+        fprintf(stderr,
+                "Settings_SelfCheck: hint profile mapping failed: %s\n",
+                kProfiles[i].csv);
+        exit(2);
+      }
+    }
+
+    static const char *const kProfileNames[] = {
+      "off", "sparse", "balanced", "direct", "custom",
+    };
+    static const char *const kProfileTitles[] = {
+      "Off", "Sparse", "Balanced", "Direct", "Custom",
+    };
+    for (int i = kHintProfile_Off; i <= kHintProfile_Direct; i++) {
+      RandoSettings applied;
+      Settings_SetDefaults(&applied);
+      applied.hint_tile_coverage = kHintTileCoverage_None;
+      applied.hint_mix = kHintMix_WorldInfo;
+      applied.hint_paid_depth = 2;
+      if (!Settings_ApplyHintProfile(&applied, (HintProfile)i) ||
+          Settings_GetHintProfile(&applied) != (HintProfile)i ||
+          strcmp(Settings_HintProfileName((HintProfile)i),
+                 kProfileNames[i]) != 0 ||
+          strcmp(Settings_HintProfileTitle((HintProfile)i),
+                 kProfileTitles[i]) != 0) {
+        fprintf(stderr,
+                "Settings_SelfCheck: centralized hint profile API failed "
+                "for %d\n",
+                i);
+        exit(2);
+      }
+    }
+    RandoSettings custom_profile, custom_before;
+    memset(&custom_profile, 0xa5, sizeof(custom_profile));
+    Settings_SetDefaults(&custom_profile);
+    custom_profile.hint_tile_coverage = kHintTileCoverage_Standard;
+    custom_profile.hint_mix = kHintMix_Difficult;
+    custom_profile.hint_paid_depth = 2;
+    custom_before = custom_profile;
+    if (Settings_GetHintProfile(&custom_profile) != kHintProfile_Custom ||
+        Settings_ApplyHintProfile(&custom_profile, kHintProfile_Custom) ||
+        memcmp(&custom_profile, &custom_before, sizeof(custom_profile)) != 0 ||
+        Settings_ApplyHintProfile(&custom_profile, (HintProfile)99) ||
+        memcmp(&custom_profile, &custom_before, sizeof(custom_profile)) != 0 ||
+        Settings_ApplyHintProfile(NULL, kHintProfile_Balanced) ||
+        Settings_GetHintProfile(NULL) != kHintProfile_Off ||
+        strcmp(Settings_HintProfileName(kHintProfile_Custom), "custom") != 0 ||
+        strcmp(Settings_HintProfileTitle(kHintProfile_Custom), "Custom") != 0 ||
+        strcmp(Settings_HintProfileName((HintProfile)99), "(unknown)") != 0 ||
+        strcmp(Settings_HintProfileTitle((HintProfile)99), "(Unknown)") != 0) {
+      fprintf(stderr,
+              "Settings_SelfCheck: Custom/invalid hint profile API contract "
+              "failed\n");
+      exit(2);
+    }
+
+    static const struct {
+      const char *csv;
+      uint8 coverage;
+    } kTileAliases[] = {
+      { "hint_tiles=few", kHintTileCoverage_Sparse },
+      { "hint_tiles=many", kHintTileCoverage_Standard },
+      { "hint_tiles=all", kHintTileCoverage_Full },
+    };
+    for (size_t i = 0;
+         i < sizeof(kTileAliases) / sizeof(kTileAliases[0]); i++) {
+      RandoSettings tiles;
+      Settings_SetDefaults(&tiles);
+      if (Settings_ParseCsv(kTileAliases[i].csv, &tiles) != 0 ||
+          tiles.hint_tile_coverage != kTileAliases[i].coverage) {
+        fprintf(stderr,
+                "Settings_SelfCheck: hint tile alias failed: %s\n",
+                kTileAliases[i].csv);
+        exit(2);
+      }
+    }
+
+    static const char *const kOverrideOrders[] = {
+      "hints=direct,hint_tiles=standard,hint_paid=2,hint_mix=difficult",
+      "hint_mix=difficult,hint_paid=2,hint_tiles=standard,hints=direct",
+    };
+    for (size_t i = 0;
+         i < sizeof(kOverrideOrders) / sizeof(kOverrideOrders[0]); i++) {
+      RandoSettings ordered;
+      Settings_SetDefaults(&ordered);
+      if (Settings_ParseCsv(kOverrideOrders[i], &ordered) != 0 ||
+          ordered.hints != kHintsMode_Balanced ||
+          ordered.hint_tile_coverage != kHintTileCoverage_Standard ||
+          ordered.hint_mix != kHintMix_Difficult ||
+          ordered.hint_paid_depth != 2) {
+        fprintf(stderr,
+                "Settings_SelfCheck: hint profile/component order drift: %s\n",
+                kOverrideOrders[i]);
+        exit(2);
+      }
+    }
+
+    RandoSettings parsed;
+    Settings_SetDefaults(&parsed);
+    if (Settings_ParseCsv("hint_tiles=standard,hint_mix=world-info,"
+                          "hint_paid=2",
+                          &parsed) != 0 ||
+        parsed.hint_tile_coverage != kHintTileCoverage_Standard ||
+        parsed.hint_mix != kHintMix_WorldInfo ||
+        parsed.hint_paid_depth != 2 ||
+        Settings_HintTileCount(&parsed) != 10 ||
+        Settings_EffectiveHintPaidDepth(&parsed) != 2) {
+      fprintf(stderr,
+              "Settings_SelfCheck: configurable hint CSV parse failed\n");
+      exit(2);
+    }
+    Settings_SetDefaults(&parsed);
+    if (Settings_ParseCsv("hint_tile_coverage=standard,hint_mix=world_info,"
+                          "hint_paid_depth=2",
+                          &parsed) != 0 ||
+        parsed.hint_tile_coverage != kHintTileCoverage_Standard ||
+        parsed.hint_mix != kHintMix_WorldInfo ||
+        parsed.hint_paid_depth != 2) {
+      fprintf(stderr,
+              "Settings_SelfCheck: long hint CSV aliases failed\n");
+      exit(2);
+    }
+
+    static const char *const kDuplicatePolicyKeys[] = {
+      "hint_tile_coverage=full,hint_tile_coverage=sparse",
+      "hint_tiles=full,hint_tile_coverage=sparse",
+      "hint_mix=variety,hint_mix=important",
+      "hint_paid_depth=3,hint_paid_depth=2",
+      "hint_paid=3,hint_paid_depth=2",
+      "hints=sparse,hints=direct",
+    };
+    for (size_t i = 0;
+         i < sizeof(kDuplicatePolicyKeys) / sizeof(kDuplicatePolicyKeys[0]);
+         i++) {
+      Settings_SetDefaults(&parsed);
+      if (Settings_ParseCsv(kDuplicatePolicyKeys[i], &parsed) == 0) {
+        fprintf(stderr,
+                "Settings_SelfCheck: duplicate hint policy key accepted\n");
+        exit(2);
+      }
+    }
+    static const char *const kBadPolicyValues[] = {
+      "hints=custom",
+      "hint_tiles=some",
+      "hint_tile_coverage=some",
+      "hint_mix=cryptic",
+      "hint_paid=4",
+      "hint_paid_depth=4",
+    };
+    for (size_t i = 0;
+         i < sizeof(kBadPolicyValues) / sizeof(kBadPolicyValues[0]); i++) {
+      Settings_SetDefaults(&parsed);
+      if (Settings_ParseCsv(kBadPolicyValues[i], &parsed) == 0) {
+        fprintf(stderr,
+                "Settings_SelfCheck: bad hint policy value accepted\n");
+        exit(2);
+      }
+    }
+
+    Settings_SetDefaults(&parsed);
+    parsed.hint_tile_coverage = (uint8)(kHintTileCoverage_Standard + 1);
+    if (Settings_Validate(&parsed)) {
+      fprintf(stderr,
+              "Settings_SelfCheck: invalid hint coverage passed validation\n");
+      exit(2);
+    }
+    Settings_SetDefaults(&parsed);
+    parsed.hint_mix = (uint8)(kHintMix_WorldInfo + 1);
+    if (Settings_Validate(&parsed)) {
+      fprintf(stderr,
+              "Settings_SelfCheck: invalid hint mix passed validation\n");
+      exit(2);
+    }
+    Settings_SetDefaults(&parsed);
+    parsed.hint_paid_depth = 4;
+    if (Settings_Validate(&parsed)) {
+      fprintf(stderr,
+              "Settings_SelfCheck: invalid hint paid depth passed validation\n");
+      exit(2);
+    }
+
+    // NPC reward disclosure is an independent, zero-default bool. It occupies
+    // only canonical [25] bit 7, round-trips in both states, survives every
+    // clue profile/normalization operation, and has one duplicate identity
+    // across all CLI spellings.
+    RandoSettings npc_default, npc_policy, npc_round;
+    uint8 npc_default_blob[kSettingsCanonicalLen];
+    uint8 npc_policy_blob[kSettingsCanonicalLen];
+    Settings_SetDefaults(&npc_default);
+    if (npc_default.hint_npc_reward_reveal != 0) {
+      fprintf(stderr,
+              "Settings_SelfCheck: NPC reward disclosure must default off\n");
+      exit(2);
+    }
+    Settings_CanonicalSerialize(&npc_default, npc_default_blob);
+    for (uint8 reveal = 0; reveal <= 1; reveal++) {
+      npc_policy = npc_default;
+      npc_policy.hint_npc_reward_reveal = reveal;
+      Settings_CanonicalSerialize(&npc_policy, npc_policy_blob);
+      for (int i = 0; i < kSettingsCanonicalLen; i++) {
+        uint8 expected = npc_default_blob[i];
+        if (i == 25 && reveal)
+          expected |= kHintNpcRewardRevealAxis_Enabled;
+        if (npc_policy_blob[i] != expected) {
+          fprintf(stderr,
+                  "Settings_SelfCheck: NPC reward disclosure changed "
+                  "canonical byte [%d] (%u: %02x != %02x)\n",
+                  i, reveal, npc_policy_blob[i], expected);
+          exit(2);
+        }
+      }
+      if (Settings_CanonicalDeserialize(npc_policy_blob, &npc_round) != 0 ||
+          npc_round.hint_npc_reward_reveal != reveal) {
+        fprintf(stderr,
+                "Settings_SelfCheck: NPC reward disclosure round-trip "
+                "failed for state %u\n",
+                reveal);
+        exit(2);
+      }
+    }
+
+    // Exercise coexistence with every neighboring [25] bit. Coupled and
+    // decoupled are mutually exclusive after normalization, so cover both
+    // legal packed forms.
+    npc_policy = npc_default;
+    npc_policy.shuffle_cave_entrances = 1;
+    npc_policy.shuffle_dungeon_entrances = 1;
+    npc_policy.coupled = 1;
+    npc_policy.cross_category = 1;
+    npc_policy.shuffle_ganons_tower_entrance = 1;
+    npc_policy.hint_npc_reward_reveal = 1;
+    Settings_CanonicalSerialize(&npc_policy, npc_policy_blob);
+    if (npc_policy_blob[25] != 0xaf ||
+        Settings_CanonicalDeserialize(npc_policy_blob, &npc_round) != 0 ||
+        !npc_round.shuffle_cave_entrances ||
+        !npc_round.shuffle_dungeon_entrances || !npc_round.coupled ||
+        !npc_round.cross_category || npc_round.decoupled ||
+        !npc_round.shuffle_ganons_tower_entrance ||
+        npc_round.dungeon_chains || !npc_round.hint_npc_reward_reveal) {
+      fprintf(stderr,
+              "Settings_SelfCheck: NPC reward disclosure failed [25] "
+              "coupled coexistence round-trip\n");
+      exit(2);
+    }
+    npc_policy.decoupled = 1;
+    Settings_CanonicalSerialize(&npc_policy, npc_policy_blob);
+    if (npc_policy_blob[25] != 0xbb ||
+        Settings_CanonicalDeserialize(npc_policy_blob, &npc_round) != 0 ||
+        npc_round.coupled || !npc_round.decoupled ||
+        !npc_round.hint_npc_reward_reveal) {
+      fprintf(stderr,
+              "Settings_SelfCheck: NPC reward disclosure failed [25] "
+              "decoupled coexistence round-trip\n");
+      exit(2);
+    }
+    npc_policy = npc_default;
+    npc_policy.dungeon_chains = 1;
+    npc_policy.hint_npc_reward_reveal = 1;
+    Settings_CanonicalSerialize(&npc_policy, npc_policy_blob);
+    if (npc_policy_blob[25] !=
+            (kEntranceAxis_DungeonChains |
+             kHintNpcRewardRevealAxis_Enabled) ||
+        Settings_CanonicalDeserialize(npc_policy_blob, &npc_round) != 0 ||
+        !npc_round.dungeon_chains || !npc_round.hint_npc_reward_reveal) {
+      fprintf(stderr,
+              "Settings_SelfCheck: NPC reward disclosure failed [25] "
+              "dungeon-chain coexistence round-trip\n");
+      exit(2);
+    }
+
+    for (int profile = kHintProfile_Off;
+         profile <= kHintProfile_Direct; profile++) {
+      Settings_SetDefaults(&npc_policy);
+      npc_policy.hint_npc_reward_reveal = 1;
+      if (!Settings_ApplyHintProfile(&npc_policy, (HintProfile)profile) ||
+          Settings_GetHintProfile(&npc_policy) != (HintProfile)profile ||
+          npc_policy.hint_npc_reward_reveal != 1) {
+        fprintf(stderr,
+                "Settings_SelfCheck: hint profile %d changed independent "
+                "NPC reward disclosure\n",
+                profile);
+        exit(2);
+      }
+    }
+    Settings_SetDefaults(&npc_policy);
+    npc_policy.hint_npc_reward_reveal = 1;
+    npc_policy.hints = kHintsMode_Off;
+    Settings_NormalizeHintPolicy(&npc_policy);
+    if (npc_policy.hint_npc_reward_reveal != 1 ||
+        Settings_GetHintProfile(&npc_policy) != kHintProfile_Off) {
+      fprintf(stderr,
+              "Settings_SelfCheck: Off normalization changed independent "
+              "NPC reward disclosure\n");
+      exit(2);
+    }
+
+    static const struct {
+      const char *csv;
+      uint8 expected;
+    } kNpcRewardAliases[] = {
+      { "hint_npc_reward_reveal=true", 1 },
+      { "hint_npc_rewards=true", 1 },
+      { "hint_vendor_items=true", 1 },
+      { "hint_npc_items=true", 1 },
+      { "hint_npc_reward_reveal=false", 0 },
+      { "hint_npc_rewards=false", 0 },
+      { "hint_vendor_items=false", 0 },
+      { "hint_npc_items=false", 0 },
+    };
+    for (size_t i = 0;
+         i < sizeof(kNpcRewardAliases) / sizeof(kNpcRewardAliases[0]); i++) {
+      Settings_SetDefaults(&npc_policy);
+      if (Settings_ParseCsv(kNpcRewardAliases[i].csv, &npc_policy) != 0 ||
+          npc_policy.hint_npc_reward_reveal !=
+              kNpcRewardAliases[i].expected) {
+        fprintf(stderr,
+                "Settings_SelfCheck: NPC reward disclosure alias failed: "
+                "%s\n",
+                kNpcRewardAliases[i].csv);
+        exit(2);
+      }
+    }
+    static const char *const kNpcRewardDuplicates[] = {
+      "hint_npc_reward_reveal=true,hint_npc_reward_reveal=false",
+      "hint_npc_reward_reveal=true,hint_npc_rewards=false",
+      "hint_npc_rewards=true,hint_npc_reward_reveal=false",
+      "hint_npc_rewards=true,hint_npc_rewards=false",
+      "hint_npc_rewards=true,hint_vendor_items=false",
+      "hint_vendor_items=true,hint_npc_rewards=false",
+      "hint_vendor_items=true,hint_npc_items=false",
+      "hint_npc_items=true,hint_vendor_items=false",
+      "hint_npc_items=true,hint_npc_rewards=false",
+    };
+    for (size_t i = 0;
+         i < sizeof(kNpcRewardDuplicates) / sizeof(kNpcRewardDuplicates[0]);
+         i++) {
+      Settings_SetDefaults(&npc_policy);
+      if (Settings_ParseCsv(kNpcRewardDuplicates[i], &npc_policy) == 0) {
+        fprintf(stderr,
+                "Settings_SelfCheck: duplicate NPC reward disclosure key "
+                "accepted\n");
+        exit(2);
+      }
+    }
+    Settings_SetDefaults(&npc_policy);
+    if (Settings_ParseCsv("hint_npc_reward_reveal=on", &npc_policy) == 0) {
+      fprintf(stderr,
+              "Settings_SelfCheck: invalid NPC reward disclosure bool "
+              "accepted\n");
+      exit(2);
+    }
+    Settings_SetDefaults(&npc_policy);
+    npc_policy.hint_npc_reward_reveal = 2;
+    if (Settings_Validate(&npc_policy)) {
+      fprintf(stderr,
+              "Settings_SelfCheck: invalid NPC reward disclosure bool "
+              "passed validation\n");
+      exit(2);
+    }
+  }
+
   // Key rings preserve the requested mode even while Vanilla/Retro semantics
-  // make them ineffective. Skeleton Key is independent and byte [30] refuses
-  // every unclaimed bit.
+  // make them ineffective. Skeleton Key is independent; configurable hints
+  // now consume the former [30] tail bits without disturbing either axis.
   {
     RandoSettings kr, round;
     uint8 blob[kSettingsCanonicalLen];
@@ -929,14 +1673,6 @@ void Settings_SelfCheck(void) {
       fprintf(stderr, "Settings_SelfCheck: Retro Generic Keys must disable key rings\n");
       exit(2);
     }
-    // add-rando-ow-warp-shuffle claimed [30] bits 3-5, so the
-    // undefined-bit probe relocates from bit 3 (0x08) to bit 6 (0x40).
-    blob[30] |= 0x40;
-    if (Settings_CanonicalDeserialize(blob, &round) == 0) {
-      fprintf(stderr, "Settings_SelfCheck: undefined canonical [30] bits must be refused\n");
-      exit(2);
-    }
-    blob[30] = (uint8)(blob[30] & ~0x40u);
     // Flute enum value 3 ([30] bits 4-5 both set) must be refused, not
     // aliased.
     blob[30] |= (uint8)kFluteShuffleAxis_Mask;
@@ -965,7 +1701,7 @@ void Settings_SelfCheck(void) {
 
   // Shopsanity occupies [29] bit 4 with no length change: a default blob is
   // bit-identical to the pre-shopsanity build, the enabled bit round-trips
-  // alongside the terrain axes, and [29] bits 5-7 stay refused.
+  // alongside the terrain, bonk, and hint-mix axes.
   {
     RandoSettings sh, round;
     uint8 blob[kSettingsCanonicalLen];
@@ -983,11 +1719,6 @@ void Settings_SelfCheck(void) {
         Settings_CanonicalDeserialize(blob, &round) != 0 ||
         round.shopsanity != 1 || round.grass_shuffle != kTerrainShuffle_All) {
       fprintf(stderr, "Settings_SelfCheck: shopsanity round-trip mismatch\n");
-      exit(2);
-    }
-    blob[29] |= 0x80;  // bit 7 = the last refused-undefined [29] bit
-    if (Settings_CanonicalDeserialize(blob, &round) == 0) {
-      fprintf(stderr, "Settings_SelfCheck: undefined canonical [29] bits must be refused\n");
       exit(2);
     }
     Settings_SetDefaults(&sh);
@@ -1931,15 +2662,6 @@ void Settings_SelfCheck(void) {
       fprintf(stderr, "Settings_SelfCheck: souls_shuffle round-trip mismatch\n");
       exit(2);
     }
-    // Undefined [28] bits 5-7 stay strict-rejected (bit 4 is npc_souls now).
-    uint8 cbad[kSettingsCanonicalLen];
-    memcpy(cbad, cs, kSettingsCanonicalLen);
-    cbad[28] |= 0x20;
-    RandoSettings rbad;
-    if (Settings_CanonicalDeserialize(cbad, &rbad) == 0) {
-      fprintf(stderr, "Settings_SelfCheck: undefined [28] bits must be refused\n");
-      exit(2);
-    }
     // add-npc-souls — [28] bit 4 pack/round-trip/CSV; independent of tiers.
     RandoSettings sn;
     Settings_SetDefaults(&sn);
@@ -2253,9 +2975,8 @@ void Settings_SelfCheck(void) {
   }
   {
     // FIX #5 — Settings_CanonicalDeserialize refuses out-of-range enum bytes
-    // (the byte paths previously copied them raw), while the undefined bits of
-    // the bit-packed flag bytes [25]-[27] stay PERMISSIVE (forward-compat
-    // contract — rejecting them would break reveal of pre-extension files).
+    // (the byte paths previously copied them raw). Packed bytes [25]-[27] are
+    // now fully allocated; their independent boolean bits decode normally.
     RandoSettings s_def, s_chk;
     uint8 blob[kSettingsCanonicalLen];
     Settings_SetDefaults(&s_def);
@@ -2272,15 +2993,12 @@ void Settings_SelfCheck(void) {
       exit(2);
     }
     Settings_CanonicalSerialize(&s_def, blob);
-    // add-rando-pot-sanity consumed the last bits of [26] (6-7) and [27] (bit 7)
-    // for pot_shuffle, so those are no longer undefined: setting them now encodes
-    // a pot_shuffle VALUE that Settings_Validate may reject (e.g. [27] bit7 alone
-    // = Subset=4, reserved). The remaining extension surface for the permissive
-    // forward-compat contract is [25] bits 6-7 (entrance axes use only 0-5); a
-    // pre-extension or foreign file with one of those set must still reveal.
-    blob[25] |= 0x80;  // genuinely-undefined bit — must stay permissive
-    if (Settings_CanonicalDeserialize(blob, &s_chk) != 0) {
-      fprintf(stderr, "Settings_SelfCheck: undefined flag bits must stay permissive\n");
+    blob[25] |= kHintNpcRewardRevealAxis_Enabled;
+    if (Settings_CanonicalDeserialize(blob, &s_chk) != 0 ||
+        !s_chk.hint_npc_reward_reveal) {
+      fprintf(stderr,
+              "Settings_SelfCheck: packed NPC reward disclosure bit did not "
+              "decode\n");
       exit(2);
     }
   }
@@ -2541,9 +3259,69 @@ static int parse_key_rings(const char *v, int vlen, uint8 *out) {
   return -1;
 }
 
+static int parse_hint_tile_coverage(const char *v, int vlen, uint8 *out) {
+  if (csv_str_eq(v, vlen, "full") || csv_str_eq(v, vlen, "all") ||
+      csv_str_eq(v, vlen, "15")) {
+    *out = kHintTileCoverage_Full;
+    return 0;
+  }
+  if (csv_str_eq(v, vlen, "none") || csv_str_eq(v, vlen, "0")) {
+    *out = kHintTileCoverage_None;
+    return 0;
+  }
+  if (csv_str_eq(v, vlen, "sparse") || csv_str_eq(v, vlen, "few") ||
+      csv_str_eq(v, vlen, "5")) {
+    *out = kHintTileCoverage_Sparse;
+    return 0;
+  }
+  if (csv_str_eq(v, vlen, "standard") || csv_str_eq(v, vlen, "many") ||
+      csv_str_eq(v, vlen, "10")) {
+    *out = kHintTileCoverage_Standard;
+    return 0;
+  }
+  return -1;
+}
+
+static int parse_hint_mix(const char *v, int vlen, uint8 *out) {
+  if (csv_str_eq(v, vlen, "variety") || csv_str_eq(v, vlen, "0")) {
+    *out = kHintMix_Variety;
+    return 0;
+  }
+  if (csv_str_eq(v, vlen, "important") ||
+      csv_str_eq(v, vlen, "important_items") ||
+      csv_str_eq(v, vlen, "1")) {
+    *out = kHintMix_Important;
+    return 0;
+  }
+  if (csv_str_eq(v, vlen, "difficult") ||
+      csv_str_eq(v, vlen, "difficult_checks") ||
+      csv_str_eq(v, vlen, "2")) {
+    *out = kHintMix_Difficult;
+    return 0;
+  }
+  if (csv_str_eq(v, vlen, "world_info") ||
+      csv_str_eq(v, vlen, "world-info") ||
+      csv_str_eq(v, vlen, "3")) {
+    *out = kHintMix_WorldInfo;
+    return 0;
+  }
+  return -1;
+}
+
+static int parse_hint_paid_depth(const char *v, int vlen, uint8 *out) {
+  uint32 depth;
+  if (parse_uint(v, vlen, &depth) != 0 || depth > 3) return -1;
+  *out = (uint8)depth;
+  return 0;
+}
+
 // Bitmap of keys seen — used to reject duplicate keys per spec.
 typedef struct {
   uint64 seen;
+  uint8 hint_profile;        // HintProfile; applied after every pair parses
+  uint8 hint_tile_override;  // HintTileCoverage
+  uint8 hint_mix_override;   // HintMix
+  uint8 hint_paid_override;  // actual depth 0..3
 } SeenKeys;
 
 #define KEY_BIT(name) (1ull << (name))
@@ -2569,8 +3347,12 @@ enum {
   KEY_pyramid_bow_upgrade,
   KEY_region_boss_hearts_in_pool,
   KEY_race_mode,
-  // Phase B Slice 5 §61 — hints axis (binary on/off).
+  // Hints axis (Off/Balanced; serialized values remain 0/1).
   KEY_hints,
+  KEY_hint_tile_coverage,
+  KEY_hint_mix,
+  KEY_hint_paid_depth,
+  KEY_hint_npc_rewards,
   // Phase B Slice 7 §63 / Slice 8 §64 — shuffle axes (binary on/off).
   KEY_boss_shuffle,
   KEY_drop_shuffle,
@@ -2919,25 +3701,51 @@ static int handle_kv(const char *key, int klen, const char *val, int vlen,
     MARK_SEEN(KEY_dungeon_chains);
     if (parse_bool(val, vlen, &s->dungeon_chains) != 0) goto bad_value;
   } else if (csv_str_eq(key, klen, "hints")) {
-    // Phase B Slice 5 §61 — hints axis. Binary on/off matching ALTTPR
-    // `spoil.Hints` semantics (`HintService.php:54` tests `=== 'on'`).
-    // For forward-compat we accept the proposal's tri-state aliases
-    // (`sahasrahla` / `full`) and collapse them to on; future binary
-    // extensions can split them apart without breaking existing
-    // share-strings since this field is NOT in canonical serialization
-    // yet (scaffold-only).
+    // Public profile base. Defer application until the entire CSV is parsed so
+    // component keys override this tuple independent of textual order. Retain
+    // all historical aliases for the exact Balanced/Off tuples.
     MARK_SEEN(KEY_hints);
     if (csv_str_eq(val, vlen, "off") || csv_str_eq(val, vlen, "0") ||
         csv_str_eq(val, vlen, "false") || csv_str_eq(val, vlen, "False") ||
         csv_str_eq(val, vlen, "none")) {
-      s->hints = kHintsMode_Off;
-    } else if (csv_str_eq(val, vlen, "on") || csv_str_eq(val, vlen, "1") ||
+      seen->hint_profile = kHintProfile_Off;
+    } else if (csv_str_eq(val, vlen, "sparse")) {
+      seen->hint_profile = kHintProfile_Sparse;
+    } else if (csv_str_eq(val, vlen, "balanced") ||
+               csv_str_eq(val, vlen, "on") || csv_str_eq(val, vlen, "1") ||
                csv_str_eq(val, vlen, "true") || csv_str_eq(val, vlen, "True") ||
                csv_str_eq(val, vlen, "sahasrahla") || csv_str_eq(val, vlen, "full")) {
-      s->hints = kHintsMode_On;
+      seen->hint_profile = kHintProfile_Balanced;
+    } else if (csv_str_eq(val, vlen, "direct")) {
+      seen->hint_profile = kHintProfile_Direct;
     } else {
+      // `custom` is derived by UIs from a non-profile tuple, never accepted as
+      // an independently stored or parsed value.
       goto bad_value;
     }
+  } else if (csv_str_eq(key, klen, "hint_tiles") ||
+             csv_str_eq(key, klen, "hint_tile_coverage")) {
+    MARK_SEEN(KEY_hint_tile_coverage);
+    if (parse_hint_tile_coverage(val, vlen, &seen->hint_tile_override) != 0)
+      goto bad_value;
+  } else if (csv_str_eq(key, klen, "hint_mix")) {
+    MARK_SEEN(KEY_hint_mix);
+    if (parse_hint_mix(val, vlen, &seen->hint_mix_override) != 0)
+      goto bad_value;
+  } else if (csv_str_eq(key, klen, "hint_paid") ||
+             csv_str_eq(key, klen, "hint_paid_depth")) {
+    MARK_SEEN(KEY_hint_paid_depth);
+    if (parse_hint_paid_depth(val, vlen, &seen->hint_paid_override) != 0)
+      goto bad_value;
+  } else if (csv_str_eq(key, klen, "hint_npc_reward_reveal") ||
+             csv_str_eq(key, klen, "hint_npc_rewards") ||
+             csv_str_eq(key, klen, "hint_vendor_items") ||
+             csv_str_eq(key, klen, "hint_npc_items")) {
+    // Independent pre-commit NPC reward disclosure. Every spelling is one
+    // canonical setting and therefore shares duplicate detection.
+    MARK_SEEN(KEY_hint_npc_rewards);
+    if (parse_bool(val, vlen, &s->hint_npc_reward_reveal) != 0)
+      goto bad_value;
   } else {
     fprintf(stderr, "Settings_ParseCsv: unknown key '%.*s'\n", klen, key);
     return -1;
@@ -3033,5 +3841,26 @@ int Settings_ParseCsv(const char *csv, RandoSettings *out) {
             out->pieces_required, out->pieces_placed);
     return -1;
   }
+
+  // Apply the profile base only after parsing every pair, then layer component
+  // overrides. This gives the same result for
+  // `hints=sparse,hint_mix=difficult` and the reversed order. Off deliberately
+  // wins over (and clears) component overrides.
+  bool has_profile = (seen.seen & KEY_BIT(KEY_hints)) != 0;
+  HintProfile profile = (HintProfile)seen.hint_profile;
+  bool off_profile = has_profile && profile == kHintProfile_Off;
+  if (has_profile && !Settings_ApplyHintProfile(out, profile))
+    return -1;  // parser accepted only the four applicable named profiles
+  if (!off_profile) {
+    if (seen.seen & KEY_BIT(KEY_hint_tile_coverage))
+      out->hint_tile_coverage = seen.hint_tile_override;
+    if (seen.seen & KEY_BIT(KEY_hint_mix))
+      out->hint_mix = seen.hint_mix_override;
+    if (seen.seen & KEY_BIT(KEY_hint_paid_depth))
+      out->hint_paid_depth = seen.hint_paid_override;
+  }
+
+  // Off and None+depth0 each have one canonical disabled representation.
+  Settings_NormalizeHintPolicy(out);
   return 0;
 }

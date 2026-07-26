@@ -31,6 +31,7 @@ extern "C" {
 #include "../rando_settings.h"   // RandoSettings, Settings_*
 #include "../rando_share.h"      // kShareStringBase32MaxLen, ShareString, Share_Encode
 #include "../rando_placement.h"  // RandoPlacementTable, RandoSpheres
+#include "../rando_hints.h"      // RandoHintPlan
 #include "../seed_shape.h"       // SeedShapeFilter / metrics
 
 typedef struct RandoWindowBridge {
@@ -69,7 +70,10 @@ typedef struct RandoWindowBridge {
   bool has_last_generated;
   bool last_generated_race_mode;
   RandoPlacementTable last_generated_placement;
+  bool last_generated_has_spheres;
   RandoSpheres last_generated_spheres;
+  bool last_generated_has_hint_plan;
+  RandoHintPlan last_generated_hint_plan;
   bool last_generated_has_medallion_assignment;
   uint8 last_generated_medallion_assignment[kRandoMedallionEntranceCount];
   // Snapshot of the settings/share/seed that produced the placement above, so the
@@ -100,11 +104,9 @@ extern RandoWindowBridge g_rando_window_bridge;
 // C bridge TU because rando_spoiler.h uses a C11 _Static_assert invalid in the
 // C++ window TU. `txt_path` may be NULL to skip the text companion (clipboard
 // path). Returns true on success. Caller (UI) is on the main thread; this
-// reads bridge snapshot state + writes the named files (no g_ram). It DOES
-// swap the shared hint globals for the write — Spoiler_Write consumes
-// Rando_GetHintString at write time, so the snapshot's hints are regenerated
-// (deterministic from settings+placement) before the write and the active
-// slot's hints are re-installed after (cleared when no slot is active).
+// reads bridge snapshot state + writes the named files (no g_ram). The
+// generation-time hint plan is retained by value, so export never swaps or
+// rebuilds active gameplay hint state.
 bool RandoWindowBridge_WriteSpoilerFiles(const char *json_path, const char *txt_path);
 
 // Lifecycle / derived state.
@@ -126,6 +128,7 @@ int RandoWindowBridge_ConsumeLoadRequest(void);
 void RandoWindowBridge_StoreGenerated(const RandoPlacementTable *table,
                                       const RandoSpheres *spheres,
                                       const uint8 *medallion_assignment,
+                                      const RandoHintPlan *hint_plan,
                                       bool race_mode);
 
 // Kind-toggle target management.

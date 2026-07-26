@@ -1019,6 +1019,9 @@
     <RandoCodegenInput Include="assets\rando\ow_quotient_allowlist.yaml" />
     <RandoCodegenInput Include="assets\rando\item_registry.yaml" />
     <RandoCodegenInput Include="assets\rando\location_registry.yaml" />
+    <RandoCodegenInput Include="assets\rando\hint_metadata.yaml" />
+    <RandoCodegenInput Include="assets\rando\hint_metadata.lock.json" />
+    <RandoCodegenInput Include="assets\rando\hint_registry_contract.json" />
     <RandoCodegenInput Include="assets\rando\icon_atlas.yaml" />
     <RandoCodegenInput Include="assets\rando\direct_grant_icons.yaml" />
     <RandoCodegenInput Include="assets\rando\logic.yaml" />
@@ -1027,6 +1030,7 @@
     <RandoCodegenInput Include="assets\rando\entrance_registry.yaml" />
     <RandoCodegenInput Include="assets\rando\door_predicates.gen.json" />
     <RandoCodegenInput Include="assets\rando\door_portals.yaml" />
+    <RandoCodegenInput Include="src\rando\rando_hints.c" />
     <RandoCodegenOptionalInput Include="assets\rando\chest_table.gen.bin" Condition="Exists('assets\rando\chest_table.gen.bin')" />
     <RandoCodegenOptionalInput Include="assets\rando\pots.gen.yaml" Condition="Exists('assets\rando\pots.gen.yaml')" />
     <RandoCodegenOptionalInput Include="assets\rando\pot_key_depth.gen.yaml" Condition="Exists('assets\rando\pot_key_depth.gen.yaml')" />
@@ -1045,6 +1049,7 @@
     <RandoCodegenOutput Include="src\rando\logic_data.c" />
     <RandoCodegenOutput Include="src\rando\location_ids.h" />
     <RandoCodegenOutput Include="src\rando\item_ids.h" />
+    <RandoCodegenOutput Include="src\rando\hint_metadata.h" />
     <RandoCodegenOutput Include="src\rando\chest_lookup.h" />
     <RandoCodegenOutput Include="src\rando\pot_lookup.h" />
     <RandoCodegenOutput Include="src\rando\terrain_lookup.h" />

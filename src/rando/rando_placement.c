@@ -1508,6 +1508,10 @@ static bool is_progression_item(uint16 item_id) {
   return false;
 }
 
+bool Rando_IsProgressionItem(uint16 item_id) {
+  return is_progression_item(item_id);
+}
+
 static bool predicate_is_vacuous_true(const uint8 *bc, uint16 len) {
   return len == 2 && bc != NULL && bc[0] == OP_AND && bc[1] == 0;
 }

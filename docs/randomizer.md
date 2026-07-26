@@ -144,6 +144,11 @@ axis via `item_pool`.
 | `instant_flute` | `true`, `false` | `true` (seed-burned QoL: flute pickups are immediately bird-woken; `false` restores the separate activation route) |
 | `region_boss_hearts_in_pool` (alias `region.bossHeartsInPool`) | `true`, `false` | Legacy/no-op. Accepted for old CSV/share compatibility, but canonicalized to `false`; boss-heart drops are always shuffled and the item-pool difficulty's boss-heart-container count always enters the item pool (10 Easy/Normal, 6 Hard, 2 Expert). Pin boss hearts with Customizer if desired. |
 | `race_mode` (alias `race`) | `true`, `false` | `false` (the `--race-mode` flag is the canonical way to set it; see [Race mode](#race-mode)) |
+| `hints` | Named profile `off`, `sparse`, `balanced`, or `direct`. Off aliases: `none`, `false`, `False`, `0`. Legacy Balanced aliases: `on`, `full`, `sahasrahla`, `true`, `True`, `1`. `custom` is a derived UI/spoiler label, not an accepted value. | `balanced` |
+| `hint_tiles` (alias `hint_tile_coverage`) | `none`, `sparse`, `standard`, `full` for 0/5/10/15 telepathic tiles; aliases `few`, `many`, `all`, and the numeric counts | `full` |
+| `hint_paid` (alias `hint_paid_depth`) | 0..3 exact clues per paid service | 3 |
+| `hint_mix` | `variety`, `important`, `difficult`, `world-info` (aliases `important_items`, `difficult_checks`, `world_info`, and 0..3) | `variety` |
+| `hint_npc_reward_reveal` | `true`, `false` | `false` (independent of the clue profile; person-mediated randomized rewards are disclosed before the player accepts or irreversibly chooses them; rich dialogue is Original/US only) |
 | `pieces_required`, `pieces_placed` | uint16 | (Triforce Hunt / Ganon Hunt only) |
 
 **Accessibility tiers** (ALTTPR three-way; all three guarantee the seed is
@@ -1096,7 +1101,8 @@ slots as vanilla. Sidecar layout:
   + a versioned canonical `RandoSettings` blob (absent for v1, 28-byte legacy
   prefix for v2/v3, 29 bytes for v4-v7, 30 for v8/v9, and current
   `kSettingsCanonicalLen` for v10+)
-  + (format_version ≥ 3) an 8-byte slot extension block}.
+  + a versioned extension block (absent before v3; 8 bytes in v3, growing
+  append-only to 278 bytes in current v14)}.
 - No 4th slot anywhere.
 
 Slot header records: `slot_kind`, `generator_version`, `settings_hash`,
@@ -1116,9 +1122,9 @@ format_version ≥ 3 slot extension block.
 bytes. Version 9 retained the 30-byte settings blob while adding enemy-registry
 identity to the extension block. Older supported bodies zero-extend each missing
 tail byte, so their newer settings default to `off`. The current reader explicitly
-refuses future versions and trailing bytes. Version-10 sidecars are unsupported by
-pre-v10 binaries; older readers did not promise a future-version refusal, so do
-not use an older binary to open or rewrite a v10 sidecar.
+refuses future versions and trailing bytes. Current v14 sidecars are unsupported
+by older binaries; older readers did not promise a future-version refusal, so do
+not use an older binary to open or rewrite a newer sidecar.
 
 This lets a reloaded slot reproduce the seed's full settings *and*
 recompute the prize/medallion shuffle assignments (from the share string's seed,
@@ -1129,8 +1135,9 @@ deserializer (`RandoSave_ReadFile` keys body layout on the file
 trackers **suppress** the reachability display rather than guess (a wrong
 `prize_shuffle` flag would mis-seed the shuffle stream). The blob size is coupled
 to the declared sidecar `format_version`; current writes are statically coupled
-to `kSettingsCanonicalLen`. The round-trip plus v1/v2/v3 compat cases are covered
-by `RandoSave_SelfCheck` (`--rando-selftest`).
+to `kSettingsCanonicalLen`. Exact current-layout round trips and supported
+legacy-format compatibility cases are covered by `RandoSave_SelfCheck`
+(`--rando-selftest`).
 
 **format_version 3**: each slot appends a fixed 8-byte extension block after
 the settings blob (the 80-byte slot header is fully claimed). Bytes 0-2 carry
@@ -1145,6 +1152,10 @@ present. Older v1/v2 slots have no block, read digest 0 / no feature snapshot,
 and keep the previous warn-only version-drift and live-feature behavior; a
 v2-compat load case is covered by `RandoSave_SelfCheck`.
 
+**format_versions 4–12** grow that extension append-only: pot, dungeon-chain,
+soul-ownership, terrain-registry, enemy-check-registry, bonk-registry, and
+overworld-warp identities occupy bytes 8–61.
+
 **format_version 13** (tracker-player-knowledge): the extension block grows to
 carry the slot's **topology-discovery state** — which hidden-identity dungeons
 you have entered, which shuffled cave interiors you have seen, which whirlpool
@@ -1157,6 +1168,13 @@ implies you were there), so an in-flight save never re-hides places you already
 visited; backfill never derives discovery from placement or settings, so it can
 under-reveal but never over-reveal. This is what keeps the trackers honest — see
 *Player-knowledge gating* under *Tracker windows*.
+
+**format_version 14** (Hints v2) appends bytes 238–277:
+`algorithm_version` (`u16` LE), text-schema version (`u16` LE), the 32-byte
+canonical plan digest, and three hint-discovery bytes; byte 277 is reserved and
+written zero. The full hint plan is reconstructed and digest-verified, not
+serialized. See `src/rando/rando_save.h` for the authoritative per-version
+offset table.
 
 Atomic-commit: write `<file>.tmp`, fflush, fsync (POSIX) / `_commit` (Windows),
 rename atomically. Save order: sidecar first, then `sram.dat`.
@@ -1233,35 +1251,301 @@ expensive placement regeneration.
 
 ## Hints
 
-Hints are **on by default** (`hints=on`; binary on/off, part of the canonical
-settings since `kGeneratorVersion` 14). They never affect placement or logic —
-hint text is generated *after* placement from a sub-RNG seeded by the placement
-digest, so the same `(settings, seed)` always yields byte-identical hints.
+Hints default to **Balanced**. Current generator version 160 carries
+configurable policy while keeping hints post-placement: they do not change
+placement, logic, or sphere results. The generator bump instead locks
+settings/hash identity, race-spoiler bytes, deterministic source assignment,
+and reconstructed live delivery. Current seeds use hint algorithm 2 / text
+schema 2; generator 157 is only the historical schema floor for those additive
+fields. The frozen algorithm-1/schema-1 pair is retained solely to reveal a
+genuine signed generator-156 race artifact. It is not a sidecar/snapshot
+compatibility format and is never silently used for a current seed.
 
-**Telepathic tiles (in-game).** Reading any of the 15 vanilla telepathic tiles
-surfaces a generated item-location hint instead of its vanilla flavor text. The
-messaging engine (`Text_LoadCharacterBuffer`) gives the hint system first refusal
-on the 15 vanilla tele-tile message IDs via `Rando_RenderHintMessage`; the
-substitution is gated on an active rando slot, so vanilla play (and the RAM
-compare) is unchanged. `hints=off` leaves the vanilla tile text in place.
+The four named profiles are shortcuts over three canonical policy fields:
 
-**Murahdahla.** On Triforce-Hunt / Ganon-Hunt goals an extra hint summarizes how
-many Triforce pieces are spread across how many regions. It is **spoiler-only
-today** — the in-game Murahdahla NPC is an ALTTPR asm-added sprite the fork has
-not ported, so there is no in-game surface for it yet.
+| Profile | Telepathic tiles | Exact clues per paid service | Mix |
+|---|---:|---:|---|
+| **Off** | 0 | 0 | not applicable |
+| **Sparse** | 5 | 1 | Variety |
+| **Balanced** | 15 | 3 | Variety |
+| **Direct** | 15 | 3 | Important Items |
+| **Custom** | 0, 5, 10, or 15 | 0..3 | any mix |
 
-**Fork-extension NPCs** (Storyteller + the Kakariko / Dark-World Fortune Tellers)
-route existing vanilla NPC dialogue through the hint generator for extra in-game
-hint locations. These are a fork addition (not in ALTTPR); spoiler-JSON keys for
-them are `fork_`-prefixed so the ALTTPR-equivalent core (15 tiles + Murahdahla)
-stays diff-clean. The Lake-Hylia Fortune Teller is not wired — it shares its room
-index with the Kakariko one, so it has no runtime discriminator.
+**Custom** is only a derived label: editing any component away from a named
+tuple displays Custom, and returning to an exact tuple restores its profile
+name. `hints=custom` is deliberately rejected. `hints=off` wins over component
+keys and clears them, independent of CSV order; an enabled tuple with both zero
+tiles and zero paid clues also canonicalizes to true Off. Otherwise, a named
+profile is applied as the base and explicit `hint_tiles`, `hint_paid`, and
+`hint_mix` keys override it after parsing regardless of their order. Duplicate
+or unknown keys/values remain errors.
 
-**Spoiler + race mode.** The JSON/text spoiler carries a `hints[]` array; under
-race mode it is suppressed inside the ZRSR until `RevealSpoiler`. Because the
-reveal stamp is over the full canonical JSON, the race-mode corpus entries
-(including a Triforce-Hunt variant that exercises the Murahdahla path) assert hint
-determinism: a drift in regenerated hint text fails the reveal round-trip.
+The three fields use six formerly strict-reserved bits in the existing 31-byte
+canonical settings blob; the all-zero encoding remains the historical
+Balanced tuple, while Off clears all six bits. Thus old Off/Balanced settings
+and share strings keep their exact bytes. A non-default configurable string is
+refused by a pre-change decoder instead of having its policy silently dropped.
+The independent `hint_npc_reward_reveal` boolean occupies canonical byte `[25]`
+bit 7. Its zero default likewise preserves historical settings bytes; enabling
+it changes the settings hash/share identity without changing clue-plan identity
+or placement.
+
+For example:
+
+```sh
+# Ten tiles, two clues from each paid service, emphasizing difficult checks
+./zelda3 --generate-seed \
+  --settings=hints=balanced,hint_tiles=standard,hint_paid=2,hint_mix=difficult \
+  --seed=0xDEADBEEFCAFEBABE \
+  --out-spoiler=./spoilers/hints-custom.json
+```
+
+### NPC reward previews
+
+`hint_npc_reward_reveal=true` is a separate disclosure option, not a fifth clue
+profile. It remains effective with `hints=off`; selecting Off, Sparse, Balanced,
+or Direct does not overwrite it. It never creates a semantic hint fact, consumes
+a telepathic/paid clue, marks journal discovery, or enters the hint-plan digest.
+Race mode also honors the selected value.
+
+When enabled, every owned person-mediated randomized reward is identified before
+the player pays, accepts, trades, or makes an irreversible choice:
+
+- the paid Bottle Merchant, King Zora, Blacksmith, Chest Game, and Digging Game;
+- Sahasrahla, the Potion Shop trade, Magic Bat, Hobo, Old Man, Catfish, Purple
+  Chest, Stumpy, and the next Fairy gift;
+- a shopsanity clerk summary of the shop's currently unchecked item checks and
+  their seed-derived prices; and
+- a Take-Any clerk summary of the currently live take-once choices.
+
+The preview is presentation-only. Viewing or declining it does not spend
+rupees, grant an item, mark a check, advance a transaction, or change clue
+discovery. Missing placement/context data, already-checked rewards, stale slot
+state, or text that cannot be encoded completely fails closed to the existing
+truthful generic/vanilla flow. Fixed NPC flows use source-exclusive dialogue
+IDs verified by a call-site audit. Shared clerk IDs are additionally qualified
+by the live shop or Take-Any room/entrance context. Their summaries are rebuilt
+from the active slot and do not advertise a previously collected placement.
+
+Existing exact reward text shown after acceptance remains unconditional. Turning
+previews off therefore restores only the pre-commit disclosure; it does not
+restore false vanilla item claims or remove the already-correct post-acceptance
+confirmation.
+
+Rich randomized-item dialogue is implemented only for the Original/US message
+grammar and font. The native and in-game controls disclose that limitation.
+German and French dialogue remains byte-identical instead of showing a clipped
+or partially translated English reward name; spoilers still report the
+canonical boolean.
+
+The hint mix controls which existing, truth-guarded semantic facts are
+emphasized:
+
+| Mix | Emphasis |
+|---|---|
+| **Variety** | Balanced priority items, major items, difficult locations, active goal/settings, positive region value, useful items, and limited flavor. |
+| **Important Items** | Priority and major-item locations, with useful exact-item backfill. |
+| **Difficult Checks** | High-friction locations first, then exact major/useful-item support. |
+| **World Info** | Active goal/settings and positive region-value information, with a smaller exact-item/location component. |
+
+Each seed owns one immutable, versioned semantic plan. Algorithm 2 first builds
+the maximal 15-tile/three-per-service deck for the selected mix, orders the tile
+facts with a deterministic prefix-balanced schedule, and pairs them with a
+seed-ranked order of physical tiles. It then retains the requested 5/10/15 tile
+prefix and each paid queue's requested 1/2/3 prefix (or neither at zero).
+Consequently, within one seed and mix, 5-tile source/fact pairs are a subset of
+10, which are a subset of 15; paid depth 1 is a prefix of 2, which is a prefix
+of 3. Reducing coverage or depth cannot reroll a clue that remains available.
+Fact ids are compacted only after pruning, and the existing 24-fact/discovery
+capacity is never exceeded.
+
+Variety deliberately preserves the frozen 1/1 maximal fact composition,
+rendered text, and paid queues. Algorithm 2 may assign its tile facts to a
+different deterministic physical-tile order so its lower coverage tiers have
+useful, unbiased prefixes. A full Balanced maximal plan has 18 primaries and
+six exact paid reserves:
+
+- two priority-item, four major-item, three high-friction, up to three
+  goal/active-setting, up to two positive region-value, three useful, and at
+  most one flavor primary, followed by deterministic major-then-useful
+  backfill;
+- 15 primaries assigned to the telepathic tiles;
+- one exact primary head plus up to two exact reserves for each of Storyteller,
+  Fortune Light, and Fortune Dark (maximum 24 delivery facts).
+
+Plan construction is read-only and main-thread-only, but it consumes the live
+effective entrance-region overlay in addition to its explicit arguments.
+Generation and activation build while that overlay is installed; native
+spoiler export retains the generation-time plan instead of rebuilding it after
+the overlay has been cleared.
+
+Small customizer pools safely underfill, so requested policy and actual delivery
+topology can differ. The builder never duplicates a fact,
+silently drops a Left/Right/sub-spot qualifier, truncates into a false claim, or
+fabricates filler. Generated registry checks use compact but exact room/screen
+coordinates when their descriptive name will not fit one three-row message.
+Contributor-facing classification and naming live in the single registry-tied
+[`assets/rando/hint_metadata.yaml`](../assets/rando/hint_metadata.yaml) source:
+useful/major/priority/junk eligibility, semantic diversity families, item and
+dungeon names, compact location aliases, and high-friction locations. Normal
+`rando_logic_gen.py` codegen emits the private `hint_metadata.h` runtime table
+and fails on unknown references, unclassified items, lossy alias collisions, or
+non-unique final exact-text identities. `check_hint_metadata.py`, the codegen
+wiring guard, and `Hints_SelfCheck` pin that contract.
+`hint_registry_contract.json` approves the complete shipped merged-registry
+provenance: 6,364 locations and 251 regions, including stable identity, naming,
+region/type, source, and family-count fingerprints. Full local codegen must
+match that exact superset and refuses missing/partial artifact families. A
+public assetless build is allowed only at the exact 324-location/40-region base;
+it binds compatibility to the approved full-superset fingerprints while
+emitting only the base tables. Any in-between artifact set fails closed.
+
+The approved `hint_metadata.lock.json` has two compatibility axes. Its algorithm
+fingerprint locks classification, diversity, high-friction selection, and
+registry-selection inputs to `algorithm_version` and
+`kRandoHintPlanAlgorithmVersion`; its text fingerprint locks item/region names,
+location aliases, naming algorithms, and registry text to `text_schema_version`
+and `kRandoHintTextSchemaVersion`. The complete merged-registry policy object is
+included in both fingerprints, so changing shipped registry provenance advances
+both axes. Other metadata changes must advance each affected matching
+YAML/runtime version before refreshing the lock, or normal codegen fails. The
+Git diff guard conservatively requires both axes to advance for intertwined
+runtime, hint-codegen, or authoritative metadata/approval changes.
+
+**Delivery and discovery.** Only the retained telepathic sources carry a plan
+fact; a tile discovers its fact only after the complete message buffer is
+installed. The paid queues advance transactionally:
+Storyteller variants share one 20-rupee queue; Kakariko and Lake Hylia share the
+Light Fortune queue because their room has no discriminator; Dark Fortune has
+an independent queue. Selection skips an undiscovered exact target that is
+already checked. Prepare fully encodes and latches one fact, payment follows the
+NPC's existing price/receipt order, and Commit marks that same fact discovered.
+Declines, insufficient funds, render failure, or a stale plan do not advance it.
+For current 2/2 plans, when paid depth is zero—or a service's retained queue is
+exhausted—the localized pre-choice dialogue says that no clue is available,
+identifies the service as healing-only, and displays its actual price. Accepting
+still follows the existing charge/heal flow but discovers no fact and repeats
+no earlier clue. This disclosure preserves the original/US, German, and French
+choice grammar; frozen 1/1 replay retains its original payment/dialogue bytes.
+
+**Configuration and journal UI.** The native **Hints** tab has two explicit
+inner surfaces. **Next seed setup** edits only pending generation settings and
+offers the four named profile actions plus tile, paid-depth, and mix controls;
+the old duplicate editable Balanced checkbox is absent from General.
+**Active-slot journal** remains bound only to the loaded slot's certified plan
+and discovery state, so pending settings edits cannot change what it displays.
+The in-game seed screen likewise has a compact `HINTS <profile>` row; Left/Right
+cycles named profiles and A opens the Tiles/Paid/Mix/Reset detail page. General
+seed presets preserve the entire hint policy, including Custom tuples.
+
+The active-slot journal is discovered-only by default, including in race mode.
+Rows show their source and a derived `Resolved` marker once the exact target is
+checked. Non-race players can explicitly confirm **View all seed hints —
+placement spoilers**; this viewer is read-only and session-local. Race mode
+never offers the full viewer.
+
+**Persistence.** Sidecar format 14 extends each slot extension from 238 to 278
+bytes. Extension offsets `@238..@239` store the little-endian algorithm
+version, `@240..@241` the little-endian text-schema version, `@242..@273` the
+canonical 32-byte plan digest, and `@274..@276` the 24 discovery bits; `@277`
+is reserved and serialized as zero. Snapshot-tail type 11 carries the same
+identity and discovery in its exact 41-byte payload described under
+[save / snapshot compatibility](#save--snapshot-compatibility-across-bumps).
+The configurable policy is recovered from the slot's canonical settings; it
+adds no separate policy bytes to the sidecar or snapshot. Canonical settings
+remain 31 bytes, v2 share strings remain 76 characters, sidecar format 14
+remains 278 extension bytes, and snapshot-tail type 11 remains exactly 41
+bytes. The plan, text, assignments, resolved markers, queue cursors, and
+in-flight presentation are reconstructed or derived. Activation rebuilds after
+all accepted settings and logic overlays are installed, dispatching only the
+current exact 2/2 pair, then verifies the digest before applying discovery.
+Pre-v14, missing, crossed, unknown, malformed, or mismatched identity disables
+only hints and uses neutral owned-surface text; it never falls back to another
+builder. Normal saves stage the vanilla SRAM slot, durably write the paired
+sidecar first, and install/write both SRAM copies only after that update
+succeeds.
+
+Generator 160's race reveal has one deliberately narrow non-current exception:
+once the runtime is at or beyond the historical configurable-policy floor, a
+genuine generator-156 ZRSR artifact may rebuild with the frozen 1/1 pair. The
+header and share-string versions must agree, all six configurable-policy bits
+and the NPC reward-preview bit must retain their generator-156 zero values, and
+reveal reproduces the pre-configurable JSON/text field set before checking the
+recorded stamp. Every other non-current generator, including 157, remains
+refused. The exception remains explicit across later generator bumps, while a
+signed-commit generator-156 ZRSR fixture guards the successful reveal plus
+CRC-correct wrong-version, policy-bit, and preview-bit refusal paths.
+
+**Text and compatibility surfaces.** Rich fact delivery and randomized
+vanilla-dialogue redirects are original/US only. German and French surfaces use
+localized neutral text, preserve their command/choice grammar, and never
+discover or advance an English fact. The native journal and spoilers may still
+show the canonical semantic English text. Confirmed vanilla NPC/sign claims
+that become false after randomization remain live placement redirects but do
+not consume one of the 24 facts. Murahdahla is likewise separate: on
+Triforce-Hunt / Ganon-Hunt it emits a spoiler-only region summary, outside fact
+counts, discovery, assignments, and the plan digest.
+
+**Spoilers and diagnostics.** JSON preserves the compatibility fields
+`npc`, `dialogue_id`, and `text`, and additively includes plan
+algorithm/schema/digest, normalized policy, actual delivery topology, fact kind,
+template, exact target, source, and paid-queue metadata. Policy fields report
+the requested normalized profile/tile count/paid depth/mix; topology fields
+report the actual retained tile sources, paid services, and paid facts after
+safe underfill. Current-schema JSON/text also reports the independent
+`hint_npc_reward_reveal` boolean; generation-156 compatibility output omits it
+to preserve the certified legacy stamp. Discovery, checked/resolved state, and
+presentation latches are excluded from spoiler/race stamps. Race mode suppresses
+the spoiler in ZRSR until the normal reveal flow. The F12 policy is intentionally
+unchanged:
+`dump_hints.txt` is an unrestricted developer spoiler diagnostic that reports
+the full plan, assignments, queues, targets, discovery, pending selection, and
+digest even for a race slot.
+
+**Focused gameplay sign-off.** Automated validation does not replace either
+still-required owner playtest: the Hints v2 base and this configurable follow-up
+retain separate closeout gates. Before archiving them, exercise:
+
+- the same seed at 5/10/15 tiles, including an overworld and a dungeon tile,
+  confirming nested physical-source/fact pairs, useful category balance, no
+  dead selected tile, discovery, and the derived Resolved transition after
+  collecting an exact target;
+- all four mixes plus Off, Sparse, Balanced, Direct, and a derived Custom tuple
+  through both native and in-game setup surfaces, confirming that pending
+  edits never alter the active-slot journal;
+- depth 1/2/3 purchases from Storyteller, shared Kakariko/Lake Fortune Light,
+  and isolated Fortune Dark, with a save/reload or snapshot between purchases,
+  then each exhausted service (normal charge/heal, no discovery);
+- paid depth zero in original/US, German, and French, including exact
+  price/healing disclosure, decline, insufficient funds, and accepted healing
+  with no discovery;
+- decline, insufficient-funds, Stumpy choice/reward, and Bumper-sign flows;
+- Off plus one unavailable-plan slot in original/US, German, and French;
+- current 2/2 sidecar plus warm/cold snapshot fixtures, alongside the signed
+  generator-156 1/1 race-reveal fixture that pins its exact old deck/text; and
+- non-race full-view confirmation versus a discovered-only race journal with no
+  full-view action (F12 is intentionally spoiler-bearing in both).
+
+The exact hint JSON shape is:
+
+- `hint_plan`: `null` only when the caller has no randomizer plan, otherwise an
+  object with `algorithm_version`, `text_schema_version`, lowercase 64-hex
+  `digest`, `fact_count`, `primary_count`, `reserve_count`, normalized
+  `profile`, `tile_count`, `paid_depth`, and `mix`, plus actual
+  `source_count`, `tile_source_count`, `paid_source_count`, and
+  `paid_fact_count`.
+- Each delivery row in `hints[]`: required compatibility fields `npc`,
+  `dialogue_id`, and `text`; required semantic fields `fact_id`, `fact_kind`,
+  `fact_kind_id`, `precision`, `template`, `template_id`,
+  `template_parameter`, `primary`, `source`, `source_id`, and `source_kind`;
+  exactly one `tile_index` or `queue_index` when assigned; and optional
+  `location_id`, `item_id`, and `region_id` only when that typed target exists.
+- The separate Murahdahla row has only `npc`, `dialogue_id`, `text`, and
+  `"compatibility": "murahdahla"`; it has no fact id, assignment, or discovery
+  bit. With Hints Off, `hint_plan` carries the current certified 2/2 empty
+  identity with profile `off`, tile/paid/topology counts zero, and mix
+  `not-applicable`; `hints[]` is empty, and the text spoiler prints the plan
+  header with zero fact counts but no delivery rows.
 
 ## Cosmetics
 
@@ -1824,13 +2108,20 @@ concurrent build or a sibling agent's sweep.
   chain origin/terminal session state for digest-gated graph reconstruction
   after clearing stale runtime redirects, and the masked Seed QoL
   `recommended_features0` snapshot so manual per-slot gameplay-feature opt-ins
-  survive snapshot replay as well as normal sidecar slot loads.
+  survive snapshot replay as well as normal sidecar slot loads. Hints v2 adds
+  TLV type `11`, whose payload is exactly 41 bytes: byte `0` format `1`; bytes
+  `1..2` little-endian algorithm version; bytes `3..4` little-endian text-schema
+  version; bytes `5..36` the 32-byte plan digest; and bytes `37..40` a
+  little-endian discovery word whose top eight bits must be zero. It is accepted
+  only with the same snapshot's valid type-1 randomizer state and is applied
+  after runtime overlays reinstall; missing, duplicate, malformed, unsupported,
+  or mismatched type 11 disables only hints.
 - **Suppressed race-mode files** (`<spoiler>.json` ZRSR format):
-  `Rando_RevealSpoiler` enforces version match — a v=N file
-  produced against the runtime's current v=N+k binary returns
-  `kRandoReveal_VersionMismatch` (code 5). The race admin must
-  reveal on the same generator version the seed was produced
-  against.
+  `Rando_RevealSpoiler` enforces version match except for the explicit signed
+  generator-156 hint-1/1 predecessor path described above. Every other
+  non-current file, including generator 157, returns
+  `kRandoReveal_VersionMismatch` (code 5); normal race administration reveals
+  with the same generator version that produced the seed.
 
 ### Bump case studies (recent)
 
@@ -1864,6 +2155,8 @@ Current `kGeneratorVersion` is in `src/rando/rando.h` (search for `#define kGene
 | 140→141 | **Merged randomizer audit corrections** — rebind Inverted Link's House pots, repair terrain graph gates, cap Wild enemy-key depths, single-count door-oracle key stock, free-grant non-itemized Dungeon drops, tighten settings validation, and add the associated runtime/persistence/replay fixes and coverage rows. | Digest movement is scoped to the corrected feature families (notably Inverted pots, terrain, enemy keys, and Dungeon-key compositions); the v141 corpus records both repaired rows and new audit coverage. |
 | 141→142 | **Dungeon Key Rings and Skeleton Key** — append 13 family-specific ring items plus one logic-neutral Skeleton Key, add requested/effective ring settings in canonical byte `[30]`, collapse selected base/pot/enemy key copies before junk padding, make every logic/door count ring-aware, and add derived runtime ownership plus the small-key-only Skeleton bypass. | The zero default keeps feature-Off placement tables identical, but every settings hash/v1 identity changes because the canonical SHA input grows 30→31 bytes. New Random/All/Skeleton corpus rows pin the active behavior. |
 | 142→143 | **Standard-escape guard-soul gate** — Zelda's Cell and the rescue event require the Soldier soul when enemies-tier soul shuffle is effective; neither killing a runtime guard nor owning the Hyrule Castle Key Ring substitutes for the soul. | Only enemies-tier soul seeds can move. Tracker and placement reachability now use the same inventory predicate; door shuffle still lowers enemies-tier souls per the existing effective-setting rule. |
+| 155→156 *(unreleased Hints feature line)* | **Hints v2** — replace the one-shot text pool with a versioned 24-fact semantic plan, transactional paid queues, discovered-only journal, sidecar/snapshot identity, and additive spoiler metadata. This signed feature-line build produced the frozen race fixture; it was not a mainline sidecar/snapshot release. | Placement and sphere digests remain byte-identical because hints are post-placement. The feature-line bump locks race-spoiler bytes and the frozen 1/1 reveal contract. |
+| 156→157 *(unreleased configurable feature line)* | **Configurable Hints schema floor** — define 0/5/10/15 tile coverage, paid depth 0..3, four content mixes, named profiles, nested algorithm-2 selection, setup UI, and variable spoiler policy/topology. Generator 157 is retained as a decoding/version-policy boundary, not as a supported non-current reveal target. | Hints remain post-placement. The feature-line version identifies the six newly defined canonical policy bits and algorithm/text pair 2/2; the actual integrated landing is the 159→160 row below. |
 | 14→15 | Slice 3a #52 — 7 new item-registry IDs for Retro shop consumables | Pool composition unchanged at default settings; Retro entries shift if pool difficulty changes |
 | 15→16 | Cluster-audit H1 fix — `PlacementTable_ComputeDigest` 256→512 entry cap | 3 Retro corpus entries get new digests (the truncation was silently dropping 9 slots from the hash) |
 | 16→17 | Slice 3a #53 part 2 — `LOCTYPE_Shop` identity-pinned per ALTTPR `Randomizer.php:737-750` | Retro placement changes; 3 Retro entries regenerated |
@@ -1887,6 +2180,7 @@ Current `kGeneratorVersion` is in `src/rando/rando.h` (search for `#define kGene
 | 112→113 | **Dungeon chains** (`dungeon_chains=true`) — an experimental one-directional structure axis routes each main dungeon door through zero or more pool dungeons to a terminal pool boss, with every pool dungeon and boss used once. The axis occupies canonical byte `[25]` bit6, persists chain layout identity in sidecar v5 and snapshot TLVs (`chains_attempt` + `chains_digest24`, plus origin/terminal session state), and normalizes off under entrance shuffle, door shuffle, boss shuffle, non-Open/Standard worlds, or non-NoGlitches logic. | Existing 136 corpus entries byte-identical; five chain-on entries added (`chains-open-ganon`, `chains-standard-fast-ganon`, `chains-prize-open-fast-ganon`, `chains-forced-keys-items`, `chains-hunt-none`); branch corpus 141/141 green. |
 
 | 155→157 | **Player-knowledge tracker gating** (`tracker-player-knowledge`) — the live tracker flood becomes knowledge-limited (`Logic_ComputeReachabilityMasked`; the full-knowledge entry is renamed `Logic_ComputeReachabilityFullKnowledge` and reserved for generation/selftests), backed by per-slot discovery state in sidecar v13 + a snapshot TLV. Display/runtime only — the mask is an explicit parameter no generation path passes. | **All 243 corpus placement digests 0-changed** — only the manifest `generator_version` re-stamps. The bump satisfies the mechanical §13.6 source gate (`src/rando/**` changed), not a placement change; the regen against the v155 baseline *is* the proof the mask never reaches the placer. Version 156 is skipped: concurrent in-flight `main` work claimed it, so this branch leapfrogs to avoid a same-version collision at merge. |
+| 159→160 | **Hints v2, configurable hint policy, and NPC reward previews** (`enhance-rando-hints-v2`, `add-configurable-hint-options`, `add-rando-npc-reward-previews`) — deterministic hint-plan identity, selectable tile/paid/mix policy, journal/race surfaces, and optional vendor/reward dialogue previews are integrated under the current 2/2 schema. Sidecar v14 appends the 40-byte hint identity/discovery block (238→278 bytes), and snapshot TLV type 11 carries its exact 41-byte replay payload. | Display, spoiler, and runtime presentation only: placement, logic, and sphere construction are unchanged. **All 243 corpus placement and sphere digests are 0-changed**; only the manifest `generator_version` re-stamps to 160. |
 
 The pattern: predicate changes that affect only one region (12→13's
 EP gate) hit a subset of seeds; layout-only changes with default-zero

@@ -88,10 +88,18 @@
 // Cold replay validates the identities a snapshot's settings make
 // load-bearing before applying settings-derived state.
 //
+// Hints v2 snapshots append a certified plan identity/discovery TLV:
+//   type=11, payload format[1] + algorithm[2] LE + text schema[2] LE +
+//   plan digest[32] + discovery[4] LE = exactly 41 bytes. Bits 24..31 of
+//   discovery are reserved and ignored.
+//
 // Multi-byte fields are emitted/consumed via explicit LE byte helpers (no
 // host-endianness reliance) — per the same discipline as rando_save.c.
 
 #include "rando_snapshot_tail.h"
+#include "rando_hints.h"    // Hints v2 plan identity/discovery import/export
+#include "item_ids.h"       // current-v14 hint replay self-check fixture
+#include "location_ids.h"   // current-v14 hint replay self-check fixture
 #include "rando_placement.h"
 #include "rando.h"          // snapshot cold-replay helpers + ownership externs
 #include "souls.h"          // add-enemy-souls (soul ownership TLV)
@@ -136,6 +144,111 @@ static uint16 get_u16le_bytes(const uint8 in[2]) {
 static uint32 get_u32le_bytes(const uint8 in[4]) {
   return (uint32)in[0] | ((uint32)in[1] << 8)
        | ((uint32)in[2] << 16) | ((uint32)in[3] << 24);
+}
+
+_Static_assert(kRandoSnapshotTail_HintStatePayloadSize ==
+                   1u + 2u + 2u + kRandoHintPlanDigestBytes +
+                       kRandoHintDiscoveryBytes,
+               "Hints v2 snapshot payload size drift");
+
+static void encode_hint_state_payload(
+    const RandoHintPersistedState *state,
+    uint8 out[kRandoSnapshotTail_HintStatePayloadSize]) {
+  memset(out, 0, kRandoSnapshotTail_HintStatePayloadSize);
+  out[0] = kRandoSnapshotTail_HintStateFormat;
+  put_u16le_bytes(out + 1, state->algorithm_version);
+  put_u16le_bytes(out + 3, state->text_schema_version);
+  memcpy(out + 5, state->plan_digest, kRandoHintPlanDigestBytes);
+  // Discovery is a little-endian bitset. Current facts occupy bits 0..23;
+  // byte 3 is reserved and must stay zero on every write.
+  memcpy(out + 37, state->discovered, 3);
+  out[40] = 0;
+}
+
+static bool decode_hint_state_payload(
+    const uint8 payload[kRandoSnapshotTail_HintStatePayloadSize],
+    RandoHintPersistedState *out) {
+  if (payload == NULL || out == NULL ||
+      payload[0] != kRandoSnapshotTail_HintStateFormat)
+    return false;
+  memset(out, 0, sizeof(*out));
+  out->algorithm_version = get_u16le_bytes(payload + 1);
+  out->text_schema_version = get_u16le_bytes(payload + 3);
+  memcpy(out->plan_digest, payload + 5, kRandoHintPlanDigestBytes);
+  memcpy(out->discovered, payload + 37, 3);
+  // Mask reserved bits 24..31 from untrusted snapshots.
+  out->discovered[3] = 0;
+  return true;
+}
+
+typedef struct RandoSnapshotPendingHintState {
+  bool seen;
+  bool valid;
+  bool invalid;
+  RandoHintPersistedState state;
+} RandoSnapshotPendingHintState;
+
+typedef struct RandoSnapshotHintAssignmentView {
+  uint8 fact_count;
+  uint8 assigned[kRandoHintPlanMaxFacts];
+  uint8 npc[kRandoHintPlanMaxFacts];
+  uint8 queue_index[kRandoHintPlanMaxFacts];
+} RandoSnapshotHintAssignmentView;
+
+static bool hint_persisted_state_equal(const RandoHintPersistedState *a,
+                                       const RandoHintPersistedState *b) {
+  return a->algorithm_version == b->algorithm_version &&
+         a->text_schema_version == b->text_schema_version &&
+         memcmp(a->plan_digest, b->plan_digest,
+                kRandoHintPlanDigestBytes) == 0 &&
+         memcmp(a->discovered, b->discovered,
+                kRandoHintDiscoveryBytes) == 0;
+}
+
+static bool capture_hint_assignment_view(
+    RandoSnapshotHintAssignmentView *out) {
+  if (out == NULL || Rando_GetHintPlanStatus() != kRandoHintPlanStatus_Ready)
+    return false;
+  memset(out, 0, sizeof(*out));
+  out->fact_count = Rando_GetHintFactCount();
+  if (out->fact_count > kRandoHintPlanMaxFacts) return false;
+  for (uint8 fact_id = 0; fact_id < out->fact_count; fact_id++) {
+    RandoHintNpc npc = kRandoHintNpc_None;
+    uint8 queue_index = 0;
+    if (!Rando_GetHintFactAssignment(fact_id, &npc, &queue_index)) continue;
+    out->assigned[fact_id] = 1;
+    out->npc[fact_id] = (uint8)npc;
+    out->queue_index[fact_id] = queue_index;
+  }
+  return true;
+}
+
+static void pending_hint_state_reset(RandoSnapshotPendingHintState *pending) {
+  memset(pending, 0, sizeof(*pending));
+}
+
+static void pending_hint_state_consume(
+    RandoSnapshotPendingHintState *pending, bool accepted_rando_state,
+    const uint8 payload[kRandoSnapshotTail_HintStatePayloadSize],
+    uint32 length) {
+  // Orphaned type-11 records never become candidates for a later type-1.
+  if (!accepted_rando_state) return;
+  // Exactly one record is allowed in an accepted identity scope. Once invalid,
+  // no later duplicate can repair or replace it.
+  if (pending->seen) {
+    pending->valid = false;
+    pending->invalid = true;
+    return;
+  }
+  pending->seen = true;
+  if (length != kRandoSnapshotTail_HintStatePayloadSize ||
+      !decode_hint_state_payload(payload, &pending->state)) {
+    pending->valid = false;
+    pending->invalid = true;
+    memset(&pending->state, 0, sizeof(pending->state));
+    return;
+  }
+  pending->valid = true;
 }
 
 // ---------------------------------------------------------------------------
@@ -568,6 +681,24 @@ bool RandoSnapshotTail_Save(FILE *f) {
     if (fwrite(uhdr, 1, sizeof(uhdr), f) != sizeof(uhdr)) return false;
     if (fwrite(up, 1, sizeof(up), f) != sizeof(up)) return false;
   }
+  // Hints v2 immutable plan identity plus mutable discovery (type 11).
+  // Export succeeds only for a certified live plan (including the canonical
+  // Hints-Off empty plan). Missing/mismatched/legacy hint state emits no TLV,
+  // so a replay cannot mistake an unavailable deck for a current one.
+  {
+    RandoHintPersistedState hint_state;
+    if (Rando_HintsExportPersistedState(&hint_state)) {
+      uint8 hp[kRandoSnapshotTail_HintStatePayloadSize];
+      uint8 hhdr[16];
+      encode_hint_state_payload(&hint_state, hp);
+      memcpy(hhdr, kRandoSnapshotTail_Magic, kRandoSnapshotTail_MagicLen);
+      put_u32le_bytes(hhdr + 8, kRandoSnapshotTail_Type_HintState);
+      put_u32le_bytes(hhdr + 12,
+                      kRandoSnapshotTail_HintStatePayloadSize);
+      if (fwrite(hhdr, 1, sizeof(hhdr), f) != sizeof(hhdr)) return false;
+      if (fwrite(hp, 1, sizeof(hp), f) != sizeof(hp)) return false;
+    }
+  }
   return true;
 }
 
@@ -589,6 +720,11 @@ static RandoPlacementTable g_tail_table;
 int RandoSnapshotTail_Load(FILE *f) {
   Rando_ClearDeferredPotConfirmation();
   if (f == NULL) return 0;
+  // LoadSnesState restores g_ram but not the process-global hint plan,
+  // discovery, or paid presentation state. Clear them before looking at the
+  // tail so EOF/no-magic/unknown-only/legacy tails cannot inherit another
+  // seed's deck. A valid type-11 record is rebuilt at FINISH_LOAD below.
+  Rando_ClearHints();
   int recognized = 0;
   bool pending_door_layout = false;
   bool pending_chain_layout = false;
@@ -622,6 +758,8 @@ int RandoSnapshotTail_Load(FILE *f) {
   uint16 bonk_registry_count = 0;
   bool pending_settings_header_clear = false;
   bool accepted_rando_state = false;
+  RandoSnapshotPendingHintState pending_hint;
+  pending_hint_state_reset(&pending_hint);
 
 #define FINISH_LOAD() do { \
     if (pending_settings_header_clear) { \
@@ -665,6 +803,22 @@ int RandoSnapshotTail_Load(FILE *f) {
       /* record has landed, so cold replay converges on the same         */ \
       /* activation-order state a fresh activation produces.             */ \
       Rando_ReinstallActiveSlotLogicOverlays(); \
+      /* Hint selection may consume restored spheres/assignments/layouts. */ \
+      /* Import only one well-formed type-11 identity and rebuild after   */ \
+      /* the authoritative overlay reinstall. Missing/malformed/duplicate */ \
+      /* metadata routes through the builder's non-destructive unavailable */ \
+      /* state; it never falls back to a current deck.                    */ \
+      if (pending_hint.seen && pending_hint.valid &&                    \
+          !pending_hint.invalid)                                       \
+        Rando_HintsImportPersistedState(&pending_hint.state);           \
+      else                                                              \
+        Rando_HintsImportPersistedState(NULL);                          \
+      {                                                                 \
+        const RandoSettings *hint_settings = Rando_GetActiveSettings(); \
+        const RandoPlacementTable *hint_placements = Placement_GetActive(); \
+        if (hint_settings != NULL && hint_placements != NULL)           \
+          (void)Rando_RebuildHints(hint_settings, hint_placements, NULL); \
+      }                                                                 \
     } \
     return recognized; \
   } while (0)
@@ -694,6 +848,10 @@ int RandoSnapshotTail_Load(FILE *f) {
 
     if (type == kRandoSnapshotTail_Type_RandoState) {
       accepted_rando_state = false;
+      // A new type-1 record starts a new identity scope even if it later
+      // proves malformed. No type-11 record from an earlier state may bind to
+      // it, and a later valid type-1 starts clean.
+      pending_hint_state_reset(&pending_hint);
       // Payload schema: gen_version[2] + settings_hash[16] + share_string[32]
       //               + placement_table_size[2] + placement_table[...]
       // Minimum length = 2 + 16 + 32 + 2 = 52 (empty table is legal).
@@ -822,6 +980,27 @@ int RandoSnapshotTail_Load(FILE *f) {
       Rando_ClearSnapshotDoorReplayRestore();
       Rando_ClearSnapshotChainsReplayRestore();
       recognized++;
+      continue;
+    }
+
+    if (type == kRandoSnapshotTail_Type_HintState) {
+      // Payload format 1 is EXACTLY 41 bytes. Read/skip the complete claimed
+      // payload before interpreting it so malformed records cannot desync the
+      // following TLV chain.
+      uint8 hp[kRandoSnapshotTail_HintStatePayloadSize];
+      memset(hp, 0, sizeof(hp));
+      uint32 copy =
+          length < kRandoSnapshotTail_HintStatePayloadSize
+              ? length
+              : kRandoSnapshotTail_HintStatePayloadSize;
+      if (copy > 0 && fread(hp, 1, copy, f) != copy) FINISH_LOAD();
+      if (length > copy &&
+          fseek(f, (long)(length - copy), SEEK_CUR) != 0)
+        FINISH_LOAD();
+      recognized++;
+
+      pending_hint_state_consume(&pending_hint, accepted_rando_state, hp,
+                                 length);
       continue;
     }
 
@@ -1303,6 +1482,69 @@ static uint64 snapshot_selfcheck_fold_entrance_logic_state(void) {
 }
 
 void RandoSnapshotTail_SelfCheck(void) {
+  // Hints v2 type-11 payload codec: exact offsets, little-endian versions,
+  // digest bytes, and reserved discovery-bit masking.
+  {
+    RandoHintPersistedState src, dst;
+    uint8 payload[kRandoSnapshotTail_HintStatePayloadSize];
+    memset(&src, 0, sizeof(src));
+    src.algorithm_version = 0x1234u;
+    src.text_schema_version = 0x5678u;
+    for (uint8 i = 0; i < kRandoHintPlanDigestBytes; i++)
+      src.plan_digest[i] = (uint8)(0x40u + i);
+    src.discovered[0] = 0xA5u;
+    src.discovered[1] = 0x5Au;
+    src.discovered[2] = 0xC3u;
+    src.discovered[3] = 0xFFu;  // reserved, writer/reader must mask it
+    encode_hint_state_payload(&src, payload);
+    if (payload[0] != kRandoSnapshotTail_HintStateFormat ||
+        get_u16le_bytes(payload + 1) != 0x1234u ||
+        get_u16le_bytes(payload + 3) != 0x5678u)
+      selfcheck_die("type-11: format/version offsets");
+    for (uint8 i = 0; i < kRandoHintPlanDigestBytes; i++) {
+      if (payload[5 + i] != (uint8)(0x40u + i))
+        selfcheck_die("type-11: digest offset");
+    }
+    if (payload[37] != 0xA5u || payload[38] != 0x5Au ||
+        payload[39] != 0xC3u || payload[40] != 0)
+      selfcheck_die("type-11: discovery offset/reserved mask");
+    if (!decode_hint_state_payload(payload, &dst) ||
+        dst.algorithm_version != src.algorithm_version ||
+        dst.text_schema_version != src.text_schema_version ||
+        memcmp(dst.plan_digest, src.plan_digest,
+               kRandoHintPlanDigestBytes) != 0 ||
+        memcmp(dst.discovered, src.discovered, 3) != 0 ||
+        dst.discovered[3] != 0)
+      selfcheck_die("type-11: payload round-trip");
+    payload[0] = 2u;
+    if (decode_hint_state_payload(payload, &dst))
+      selfcheck_die("type-11: unknown payload format accepted");
+    payload[0] = kRandoSnapshotTail_HintStateFormat;
+    {
+      RandoSnapshotPendingHintState pending;
+      pending_hint_state_reset(&pending);
+      pending_hint_state_consume(&pending, false, payload, sizeof(payload));
+      if (pending.seen || pending.valid || pending.invalid)
+        selfcheck_die("type-11: orphan record entered pending scope");
+      pending_hint_state_consume(&pending, true, payload, sizeof(payload));
+      if (!pending.seen || !pending.valid || pending.invalid)
+        selfcheck_die("type-11: valid record not accepted");
+      pending_hint_state_consume(&pending, true, payload, sizeof(payload));
+      if (pending.valid || !pending.invalid)
+        selfcheck_die("type-11: duplicate record did not fail hints closed");
+      pending_hint_state_reset(&pending);
+      pending_hint_state_consume(&pending, true, payload,
+                                 sizeof(payload) - 1u);
+      if (!pending.seen || pending.valid || !pending.invalid)
+        selfcheck_die("type-11: wrong-length record did not fail closed");
+      pending_hint_state_reset(&pending);
+      payload[0] = 2u;
+      pending_hint_state_consume(&pending, true, payload, sizeof(payload));
+      if (!pending.seen || pending.valid || !pending.invalid)
+        selfcheck_die("type-11: unknown format did not fail closed");
+    }
+  }
+
   // Build a synthetic placement table.
   static RandoPlacement entries[4];
   static RandoPlacementTable t;
@@ -1324,6 +1566,18 @@ void RandoSnapshotTail_SelfCheck(void) {
   for (int i = 0; i < 32; i++) share_string[i] = (uint8)(0x10 + i);
   Rando_SetSnapshotContext(0xCAFE, settings_hash, share_string);
 
+  // Install the certified Hints-Off empty plan. Off is still a current,
+  // versioned identity and must emit type 11 (not look like legacy/missing
+  // metadata).
+  RandoSettings hint_off_settings;
+  Settings_SetDefaults(&hint_off_settings);
+  hint_off_settings.hints = kHintsMode_Off;
+  if (!Rando_GenerateHints(&hint_off_settings, &t, NULL))
+    selfcheck_die("type-11: build/install canonical Off plan");
+  RandoHintPersistedState saved_hint_state;
+  if (!Rando_HintsExportPersistedState(&saved_hint_state))
+    selfcheck_die("type-11: Off plan did not export certified identity");
+
   // Seed a couple of checked-bitmap bits so the type-3 round-trip is exercised
   // (the selfcheck runs at startup before any real pickup, so the bitmap is 0).
   g_rando_checked_bitmap[0] = 0x05;
@@ -1334,14 +1588,49 @@ void RandoSnapshotTail_SelfCheck(void) {
   if (f == NULL) selfcheck_die("tmpfile() returned NULL");
   if (!RandoSnapshotTail_Save(f)) selfcheck_die("Save returned false");
 
+  // Byte-inspect the actual emitted record, not only the codec helper.
+  {
+    uint8 expected[kRandoSnapshotTail_HintStatePayloadSize];
+    encode_hint_state_payload(&saved_hint_state, expected);
+    bool found = false;
+    fseek(f, 0, SEEK_SET);
+    for (;;) {
+      uint8 hdr[16];
+      if (fread(hdr, 1, sizeof(hdr), f) != sizeof(hdr)) break;
+      if (memcmp(hdr, kRandoSnapshotTail_Magic,
+                 kRandoSnapshotTail_MagicLen) != 0)
+        break;
+      uint32 type = get_u32le_bytes(hdr + 8);
+      uint32 length = get_u32le_bytes(hdr + 12);
+      if (type == kRandoSnapshotTail_Type_HintState) {
+        uint8 payload[kRandoSnapshotTail_HintStatePayloadSize];
+        if (length != sizeof(payload) ||
+            fread(payload, 1, sizeof(payload), f) != sizeof(payload) ||
+            memcmp(payload, expected, sizeof(payload)) != 0)
+          selfcheck_die("type-11: emitted payload bytes");
+        found = true;
+        break;
+      }
+      if (fseek(f, (long)length, SEEK_CUR) != 0) break;
+    }
+    if (!found) selfcheck_die("type-11: emitted record not found");
+  }
+
   // Clear state so the reader is what reinstalls it (incl. the checked bitmap).
   Placement_Install(NULL);
   Rando_ClearSnapshotContext();
+  Rando_ClearHints();
   memset(g_rando_checked_bitmap, 0, kRandoCheckedBitmapBytes);
 
   fseek(f, 0, SEEK_SET);
   int n = RandoSnapshotTail_Load(f);
-  if (n != 3) selfcheck_die("Load consumed != 3 recognized TLVs (RandoState + CheckedBitmap + Discovery)");
+  if (n != 4)
+    selfcheck_die("Load consumed != 4 recognized TLVs (RandoState + CheckedBitmap + Discovery + HintState)");
+  {
+    RandoHintPersistedState should_be_unavailable;
+    if (Rando_HintsExportPersistedState(&should_be_unavailable))
+      selfcheck_die("type-11: inactive replay inherited pre-load plan");
+  }
   if (g_rando_checked_bitmap[0] != 0x05 || g_rando_checked_bitmap[10] != 0x80)
     selfcheck_die("checked bitmap not restored from type-3 TLV");
   memset(g_rando_checked_bitmap, 0, kRandoCheckedBitmapBytes);  // restore startup state
@@ -1859,22 +2148,86 @@ void RandoSnapshotTail_SelfCheck(void) {
       active_slot.header.settings_ext_present = 1;
       active_slot.header.world_state = active_settings.world_state;
       active_slot.header.goal = active_settings.goal;
+      active_slot.header.hints_setting = active_settings.hints;
       active_slot.header.entrance_axes =
           kEntranceAxis_ShuffleCaves | kEntranceAxis_ShuffleDungeons;
-      active_slot.placements[0].location_id = 0;
-      active_slot.placements[0].item_id = 0x0A11;
-      active_slot.placement_count = 1;
-      active_slot.header.placement_table_size = 2;
+      static const RandoPlacement active_hint_fixture[] = {
+        {LOC_Library, ITEM_Boots},
+        {LOC_Sick_Kid, ITEM_Hookshot},
+        {LOC_King_Zora, ITEM_Flippers},
+        {LOC_Bumper_Cave, ITEM_MoonPearl},
+        {LOC_Sahasrahla, ITEM_Bow},
+        {LOC_Kakariko_Well_Top, ITEM_Hammer},
+        {LOC_Mushroom, ITEM_Lamp},
+        {LOC_Zora_s_Ledge, ITEM_BookOfMudora},
+      };
+      active_slot.placement_count =
+          (uint16)(sizeof(active_hint_fixture) /
+                   sizeof(active_hint_fixture[0]));
+      memcpy(active_slot.placements, active_hint_fixture,
+             sizeof(active_hint_fixture));
+      active_slot.header.placement_table_size =
+          (uint16)((LOC_Bumper_Cave + 1u) * 2u);
       Settings_CanonicalSerialize(&active_settings, active_slot.settings_canonical);
+      uint8 active_settings_hash[32];
+      Settings_ComputeHash(&active_settings, active_settings_hash);
+      memcpy(active_slot.header.settings_hash, active_settings_hash,
+             sizeof(active_slot.header.settings_hash));
       ShareString active_ss;
       memset(&active_ss, 0, sizeof(active_ss));
       active_ss.version = (uint8)kGeneratorVersion;
+      memcpy(active_ss.settings_hash, active_settings_hash,
+             sizeof(active_ss.settings_hash));
       active_ss.seed_u64 = 0x5EEDF00DCAFE1234ull;
       Share_PackBinary(&active_ss, active_slot.header.share_string);
 
+      // First activate without v14 metadata solely to install the exact
+      // generation inputs (placement + entrance/runtime overlays). Build one
+      // caller-owned current plan from those accepted inputs, stamp its
+      // identity into the synthetic sidecar, then reactivate from a clean slot
+      // boundary. The second activation is the production Import+strict-
+      // Rebuild path under test, not a direct Rando_GenerateHints shortcut.
       Rando_ActivateSidecarSlot(&active_slot);
       if (!Rando_HasActiveSettings())
         selfcheck_die("no-type-2: synthetic active slot did not recover settings");
+      RandoHintPlan certified_hint_plan;
+      if (!Rando_BuildHintPlan(
+              &active_settings, Placement_GetActive(), NULL,
+              kRandoHintPlanAlgorithmVersion, kRandoHintTextSchemaVersion,
+              &certified_hint_plan))
+        selfcheck_die("type-11 v14: generation-time plan build failed");
+      RandoHintPersistedState certified_hint_identity;
+      if (!Rando_HintPlanExportPersistedState(
+              &certified_hint_plan, &certified_hint_identity))
+        selfcheck_die("type-11 v14: plan identity export failed");
+      active_slot.header.hint_state = certified_hint_identity;
+      Rando_DeactivateSlot();
+      Rando_ActivateSidecarSlot(&active_slot);
+      if (!Rando_HasActiveSettings() ||
+          Rando_GetHintPlanStatus() != kRandoHintPlanStatus_Ready)
+        selfcheck_die("type-11 v14: certified sidecar activation failed");
+
+      RandoHintPersistedState activated_hint_state;
+      RandoSnapshotHintAssignmentView certified_assignments;
+      if (!Rando_HintsExportPersistedState(&activated_hint_state) ||
+          !hint_persisted_state_equal(&activated_hint_state,
+                                      &certified_hint_identity) ||
+          !capture_hint_assignment_view(&certified_assignments) ||
+          certified_assignments.fact_count < 2)
+        selfcheck_die("type-11 v14: activation identity/assignments mismatch");
+
+      // Persist one committed paid discovery, then save. A second live
+      // discovery made after the snapshot becomes the warm-replay poison:
+      // replay must replace it with the snapshot mask rather than unioning
+      // process-global state.
+      if (!Rando_HintsPreparePaid(kRandoHintPaidSource_Storyteller) ||
+          !Rando_HintsCommitPaid(kRandoHintPaidSource_Storyteller))
+        selfcheck_die("type-11 v14: first paid discovery failed");
+      RandoHintPersistedState snapshot_hint_state;
+      if (!Rando_HintsExportPersistedState(&snapshot_hint_state) ||
+          Rando_GetHintDiscoveredCount() == 0)
+        selfcheck_die("type-11 v14: discovered state export failed");
+
       Rando_ReinstallActiveSlotLogicOverlays();
       uint64 active_entrance_digest = snapshot_selfcheck_fold_entrance_logic_state();
       Rando_ClearEntranceRegionOverrides();
@@ -1891,6 +2244,14 @@ void RandoSnapshotTail_SelfCheck(void) {
       if (fcur == NULL) selfcheck_die("type-2 active entrance: tmpfile() returned NULL");
       if (!RandoSnapshotTail_Save(fcur))
         selfcheck_die("type-2 active entrance: Save returned false");
+      if (!Rando_HintsPreparePaid(kRandoHintPaidSource_FortuneLight) ||
+          !Rando_HintsCommitPaid(kRandoHintPaidSource_FortuneLight))
+        selfcheck_die("type-11 v14: warm-replay poison discovery failed");
+      RandoHintPersistedState poisoned_hint_state;
+      if (!Rando_HintsExportPersistedState(&poisoned_hint_state) ||
+          hint_persisted_state_equal(&poisoned_hint_state,
+                                     &snapshot_hint_state))
+        selfcheck_die("type-11 v14: poison did not change live discovery");
       Rando_ClearEntranceRegionOverrides();
       Rando_ClearEntranceEdgeOverrides();
       Placement_Install(NULL);
@@ -1898,17 +2259,53 @@ void RandoSnapshotTail_SelfCheck(void) {
       g_rando_slot_active = 1;
       fseek(fcur, 0, SEEK_SET);
       int ncur = RandoSnapshotTail_Load(fcur);
-      // 6 TLVs: activation installed the entrance context, so the save also
-      // carries the type-9 EntranceLayout TLV (cold-replay layout identity).
-      if (ncur != 7)
-        selfcheck_die("type-2 active entrance should parse state + bitmap + discovery + pot registry + settings + entrance layout + souls");
+      // 8 TLVs: activation installed the entrance context and a certified
+      // current hint plan, so type 9, discovery type 10, and hint type 11
+      // accompany the base records.
+      if (ncur != 8)
+        selfcheck_die("type-2 active entrance should parse state + bitmap + discovery + pot registry + settings + entrance layout + souls + hints");
       if (!Rando_HasActiveSettings())
         selfcheck_die("type-2 active entrance should restore settings");
+      RandoHintPersistedState warm_hint_state;
+      RandoSnapshotHintAssignmentView warm_assignments;
+      if (!Rando_HintsExportPersistedState(&warm_hint_state) ||
+          !hint_persisted_state_equal(&warm_hint_state,
+                                      &snapshot_hint_state) ||
+          !capture_hint_assignment_view(&warm_assignments) ||
+          memcmp(&warm_assignments, &certified_assignments,
+                 sizeof(warm_assignments)) != 0)
+        selfcheck_die("type-11 v14: warm replay identity/assignment/discovery mismatch");
       Rando_ClearEntranceRegionOverrides();
       Rando_ClearEntranceEdgeOverrides();
       Rando_ReinstallActiveSlotLogicOverlays();
       if (snapshot_selfcheck_fold_entrance_logic_state() != active_entrance_digest)
         selfcheck_die("type-2 active entrance should preserve same-slot header");
+
+      // Fresh-process equivalent: discard every process-global active-slot
+      // input, retain only the raw snapshot's active bit, and replay the same
+      // type-1/settings/layout/type-11 chain. The rebuilt plan must match the
+      // generation-time identity and assignments byte-for-byte, including the
+      // snapshot discovery mask.
+      Rando_DeactivateSlot();
+      Placement_Install(NULL);
+      Rando_ClearSnapshotContext();
+      g_rando_slot_active = 1;  // raw g_ram snapshot state
+      g_wanted_zelda_features1 |= kFeatures1_RandomizerActive;
+      enhanced_features1 |= kFeatures1_RandomizerActive;
+      fseek(fcur, 0, SEEK_SET);
+      int ncold_hint = RandoSnapshotTail_Load(fcur);
+      if (ncold_hint != 8 || !Rando_IsActive() ||
+          !Rando_HasActiveSettings())
+        selfcheck_die("type-11 v14: cold replay did not restore active state");
+      RandoHintPersistedState cold_hint_state;
+      RandoSnapshotHintAssignmentView cold_assignments;
+      if (!Rando_HintsExportPersistedState(&cold_hint_state) ||
+          !hint_persisted_state_equal(&cold_hint_state,
+                                      &snapshot_hint_state) ||
+          !capture_hint_assignment_view(&cold_assignments) ||
+          memcmp(&cold_assignments, &certified_assignments,
+                 sizeof(cold_assignments)) != 0)
+        selfcheck_die("type-11 v14: cold replay identity/assignment/discovery mismatch");
       fclose(fcur);
 
       // Composed entrance+warp COLD replay must land in activation-order
@@ -1972,6 +2369,8 @@ void RandoSnapshotTail_SelfCheck(void) {
       Rando_ClearSnapshotContext();
       Rando_SetSnapshotContext((uint16)kGeneratorVersion, settings_hash, share_string);
       Rando_SetSnapshotSettingsContext(NULL, 0, 0, 0);
+      // This arm deliberately models a pre-type-2/pre-type-11 snapshot.
+      Rando_ClearHints();
       FILE *fno = tmpfile();
       if (fno == NULL) selfcheck_die("no-type-2 active-settings: tmpfile() returned NULL");
       if (!RandoSnapshotTail_Save(fno))

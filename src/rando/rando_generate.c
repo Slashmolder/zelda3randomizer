@@ -23,7 +23,7 @@
 #include "rando.h"            // kGeneratorVersion
 #include "rando_save.h"       // RandoSidecarSlot, kSlotKind_Randomizer, Rando_WriteSidecarSlot, ...
 #include "rando_spoiler.h"    // RandoSpoiler, Spoiler_ResolvePath, Spoiler_Write
-#include "rando_hints.h"      // Rando_GenerateHints (populate hints[] before spoiler write)
+#include "rando_hints.h"      // caller-owned RandoHintPlan build + persisted identity
 #include "shuffle_doors.h"    // door-shuffle generation (add-rando-door-shuffle)
 #include "shuffle_chains.h"   // dungeon-chain layout generation
 #include "shuffle_ow_warp.h"  // add-rando-ow-warp-shuffle (per-seed warp layout)
@@ -922,6 +922,34 @@ bool Rando_GenerateSlotWithShapeFilter(const RandoSettings *settings, uint64 see
   memset(raw_binary, 0, sizeof(raw_binary));
   Share_PackBinary(&ss, raw_binary);
 
+  // Hints are a post-placement product. Build exactly one immutable plan while
+  // every accepted logic overlay is still installed, after the final placement
+  // and sphere assignment are known. The same value feeds the spoiler, the
+  // sidecar identity, and (when requested) the native-window snapshot.
+  if (!spheres_computed) {
+    bool spheres_ok = Logic_ComputeSpheres(settings, &table, &spheres);
+    (void)spheres_ok;
+    spheres_computed = true;
+  }
+  RandoHintPlan hint_plan;
+  if (!Rando_BuildHintPlan(settings, &table, &spheres,
+                           kRandoHintPlanAlgorithmVersion,
+                           kRandoHintTextSchemaVersion, &hint_plan)) {
+    if (err != NULL) snprintf(err, err_cap, "hint plan build failed");
+    Rando_ClearGenerationLogicOverlays();
+    free(entries);
+    return false;
+  }
+  RandoHintPersistedState hint_state;
+  if (!Rando_HintPlanExportPersistedState(&hint_plan, &hint_state)) {
+    if (err != NULL) snprintf(err, err_cap, "hint plan identity export failed");
+    Rando_ClearGenerationLogicOverlays();
+    free(entries);
+    return false;
+  }
+
+  bool goal_completable = Goal_IsCompletable(settings, seed_u64, &table);
+
   // Compute spoiler path + write spoiler files.
   char spoiler_json_path[512];
   char spoiler_txt_path[512];
@@ -929,20 +957,7 @@ bool Rando_GenerateSlotWithShapeFilter(const RandoSettings *settings, uint64 see
                               sizeof(spoiler_json_path));
   int m = Spoiler_ResolvePath(share_string, ".txt", spoiler_txt_path,
                               sizeof(spoiler_txt_path));
-  bool goal_completable = false;
   if (n > 0 && m > 0) {
-    if (!spheres_computed) {
-      bool spheres_ok = Logic_ComputeSpheres(settings, &table, &spheres);
-      (void)spheres_ok;
-      spheres_computed = true;
-    }
-    // Phase B Slice 5 §3 (ported from main's in-game generate fix) — populate
-    // per-NPC hint texts into g_hint_table so the spoiler's hints[] array is
-    // non-empty when hints=on. The CLI --generate-seed path does this before its
-    // Spoiler_Write; this shared playable-slot path (in-game screen + native
-    // window) must too, or the spoiler emits an empty hints[] despite "hints": 1.
-    // No-op when hints == Off.
-    Rando_GenerateHints(settings, &table, &spheres);
     RandoSpoiler spoiler;
     memset(&spoiler, 0, sizeof(spoiler));
     spoiler.share_string = share_string;
@@ -951,6 +966,7 @@ bool Rando_GenerateSlotWithShapeFilter(const RandoSettings *settings, uint64 see
     spoiler.settings = settings;
     spoiler.placements = &table;
     spoiler.spheres = &spheres;
+    spoiler.hint_plan = &hint_plan;
     uint8 medallion_assignment[kRandoMedallionEntranceCount];
     if (copy_active_medallion_assignment(medallion_assignment))
       spoiler.medallion_assignment = medallion_assignment;
@@ -969,8 +985,7 @@ bool Rando_GenerateSlotWithShapeFilter(const RandoSettings *settings, uint64 see
     spoiler.boss_assignment = settings->boss_shuffle ? boss_assignment : NULL;
     spoiler.drop_map = settings->drop_shuffle ? drop_map : NULL;
     spoiler.drop_used_fallback = drop_used_fallback;
-    spoiler.goal_completable = Goal_IsCompletable(settings, seed_u64, &table);
-    goal_completable = spoiler.goal_completable;
+    spoiler.goal_completable = goal_completable;
     {
       const PlacementStats *st = Placement_GetLastStats();
       spoiler.forward_fill_fallback_count = st->forward_fill_fallback_count;
@@ -1002,6 +1017,7 @@ bool Rando_GenerateSlotWithShapeFilter(const RandoSettings *settings, uint64 see
   slot.header.settings_ext_present = 1;
   slot.header.hints_setting = settings->hints;
   slot.header.goal = settings->goal;
+  slot.header.hint_state = hint_state;
   // Carry world_state too (@68). Without this the slot header keeps the memset
   // 0 = kWorldState_Open, so a Standard/Inverted/Retro seed loads as Open at
   // runtime: for Standard that makes Rando_SuppressHyruleCastleEscape() true and
@@ -1105,8 +1121,12 @@ bool Rando_GenerateSlotWithShapeFilter(const RandoSettings *settings, uint64 see
   // post-escape start state) via the shared, self-tested helper above. The
   // rando-specific runtime bookkeeping (starting-inventory injection, etc.)
   // happens at game-start time via Rando_TryGrantStartingInventory.
-  uint8 *target_sram = g_zenv.sram + slot_index * 0x500;
-  Rando_InitNewSlotSram(target_sram, settings->world_state);
+  // Keep the new vanilla slot image private until its paired sidecar has
+  // durably accepted the same bytes. A sidecar failure must not leave a
+  // half-generated slot in global SRAM that a later unrelated write can
+  // accidentally publish.
+  uint8 staged_target_sram[0x500];
+  Rando_InitNewSlotSram(staged_target_sram, settings->world_state);
 
   // Swordless (ALTTPR InitialSram::setSwordlessCurtains, initsramtable.asm:21,23):
   // pre-open the sword-cut curtains that would otherwise wall off the Agahnim
@@ -1116,19 +1136,21 @@ bool Rando_GenerateSlotWithShapeFilter(const RandoSettings *settings, uint64 see
   // Baked at generation, so only fresh swordless slots get it (same caveat as the
   // other start-state bytes). PLAYTEST-PENDING: confirm both curtains render open.
   if (settings->mode_weapons == kModeWeapons_Swordless) {
-    target_sram[0x61] |= 0x80;  // Agahnim Tower altar curtain pre-opened
-    target_sram[0x93] |= 0x80;  // Skull Woods back-entry curtain pre-opened
+    staged_target_sram[0x61] |= 0x80;  // Agahnim Tower altar curtain pre-opened
+    staged_target_sram[0x93] |= 0x80;  // Skull Woods back-entry curtain pre-opened
   }
 
-  Intro_FixCksum(target_sram);
+  Intro_FixCksum(staged_target_sram);
 
-  if (!Rando_WriteSidecarSlot(slot_index, &slot, target_sram, 0x500)) {
+  if (!Rando_WriteSidecarSlot(slot_index, &slot, staged_target_sram, 0x500)) {
     if (err != NULL)
       snprintf(err, err_cap, "sidecar write failed for slot %u", (unsigned)slot_index);
     free(entries);
     return false;
   }
   // Commit the vanilla SRAM image too (sidecar first by spec; then sram.dat).
+  memcpy(g_zenv.sram + slot_index * 0x500, staged_target_sram,
+         sizeof(staged_target_sram));
   ZeldaWriteSram();
 
   // Apply recommended-features panel choices (if user toggled). Per spec
@@ -1157,6 +1179,10 @@ bool Rando_GenerateSlotWithShapeFilter(const RandoSettings *settings, uint64 see
     out->shape_attempts_used = shape_attempts_used;
     out->shape_search_limit = shape_search_limit;
     out->shape_metrics = shape_metrics;
+    out->has_spheres = true;
+    out->spheres = spheres;
+    out->has_hint_plan = true;
+    out->hint_plan = hint_plan;
     if (table.count > 0) {
       RandoPlacement *copy =
           (RandoPlacement *)malloc(sizeof(RandoPlacement) * table.count);

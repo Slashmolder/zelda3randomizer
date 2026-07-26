@@ -43,8 +43,8 @@
 //      grant transactions); corpus regenerated on the merged behavior.
 // 155: 154 union + add-rando-ow-warp-shuffle (flute/whirlpool axes + OW
 //      screen-component substrate) — reconciled on the feature merge.
-// 156: reserved by concurrent in-flight main work (uncommitted at branch
-//      time; leapfrogged to avoid a same-version collision on merge).
+// 156: reserved by concurrent Hints v2 work; main leapfrogged it to avoid a
+//      same-version collision while that branch remained in flight.
 // 157: tracker-player-knowledge — knowledge-limited live reachability +
 //      discovery persistence. Placement is corpus-byte-identical to 155
 //      (243/243 digests unchanged; display/runtime only) — the bump
@@ -60,7 +60,11 @@
 //      warped_pond_of_wishing declared DarkWorld_NorthWest for a door at the
 //      Pyramid (DarkWorld_NorthEast). Both are SOURCE regions for entrance
 //      shuffle's region rebinding, so only cave-entrance-shuffle seeds move.
-#define kGeneratorVersion 159u  // cave-interior region drift fix
+// 160: Hints v2 plus configurable delivery and NPC reward previews — versioned
+//      semantic plan/digest, transactional paid queues, discovery journal,
+//      certified sidecar/snapshot replay, semantic mixes, and additive spoiler
+//      schema. Placement and sphere digests remain unchanged from 159.
+#define kGeneratorVersion 160u
 // The share-string binary layout packs version into 1 byte
 // (rando_share.h: ShareString.version is uint8). Compile-time enforce
 // kGeneratorVersion ≤ 255 so silent truncation can't ship.
@@ -774,8 +778,9 @@ void Rando_DumpShopCheckDebug(void);
 // cave (= ALTTPR PreviousOverworldDoor = overworld row-index lx + 1). 0 means
 // "this entrance is not an active take-any" — read by the host-room shopkeeper
 // prep/dispatch to disambiguate from a normal visit to the shared host room.
-// Transient (per cave visit), reset on every overworld entrance.
-extern uint8 g_rando_takeany_door_id;
+// Transient (per cave visit), reset on every overworld entrance. Backed by
+// kRam_RandoTakeAnyDoor so StateRecorder snapshots restore the exact source
+// cave together with the shared host room.
 
 // Dungeon entrance-shuffle coupling. The overworld entry hook
 // sets g_rando_entrance_exit_room (via Rando_EntranceCoupledExitRoom) when a
@@ -1142,7 +1147,12 @@ void Rando_PopulateSlotBitmap(struct RandoSidecarSlot *out_slot);
 // placement table from the last write), overwrites checked_bitmap from
 // the in-memory session, and writes back. No-op when no rando slot is
 // active or `slot_index` is out of range.
-void Rando_OnGameSave(int slot_index, const uint8 *paired_sram_slot, uint32 paired_sram_slot_size);
+// Returns true when vanilla SRAM may be committed. An active randomizer save
+// returns false if its paired sidecar update could not be durably written.
+bool Rando_OnGameSave(int slot_index, const uint8 *paired_sram_slot,
+                      uint32 paired_sram_slot_size);
+// Deterministic persistence self-check for the sidecar-first save gate.
+void Rando_GameSaveFailureSelfCheck(void);
 
 // ---------------------------------------------------------------------------
 // §6.6 boss-kill dispatch helpers. The boss-kill code path in dungeon.c
@@ -1234,14 +1244,9 @@ void Rando_ClearSnapshotColdReplayRestore(void);
 void Rando_ClearSnapshotSettingsReplayRestore(void);
 void Rando_ClearSnapshotReplayHeader(void);
 
-// Regenerate the hint table for the CURRENTLY-ACTIVE slot, replaying exactly
-// the activation-time hint block — including the v1/no-blob fallbacks
-// (header-ext hints_setting/goal, default hints-on for the oldest slots),
-// which Rando_GetActiveSettings() cannot express (it returns NULL there even
-// though activation regenerated hints). Call after any out-of-band
-// Rando_GenerateHints clobber (e.g. the native window's spoiler export) to
-// restore the active seed's in-game telepathic-tile / fortune-teller hints.
-// Clears the table (vanilla text) when no slot is active.
+// Rebuild the CURRENTLY-ACTIVE slot's certified plan from the hint identity
+// most recently imported from sidecar/snapshot state. Missing or mismatched
+// identity fails hints closed; this function never generates a replacement.
 void Rando_RegenerateActiveSlotHints(void);
 
 // Sibling of the above — reinstall the LOGIC-side overlays

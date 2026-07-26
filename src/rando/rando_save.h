@@ -11,13 +11,15 @@
 //
 // Atomic-commit protocol (per design.md D12): write .tmp, fflush,
 // fsync/_commit, rename, fsync containing dir. Save order: sidecar first,
-// then sram.dat (a crash between writes leaves sram.dat matching the prior
-// sidecar — the safer of two recovery branches).
+// then sram.dat. A crash between those durable replacements leaves the new
+// sidecar checksum paired with the old SRAM bytes, which the existing drift
+// detector reports instead of silently accepting mismatched state.
 
 #ifndef ZELDA3_RANDO_SAVE_H_
 #define ZELDA3_RANDO_SAVE_H_
 
 #include "../types.h"
+#include "rando_hints.h"     // RandoHintPersistedState (v14 extension)
 #include "rando_placement.h"
 #include "rando_settings.h"  // kSettingsCanonicalLen (persisted settings blob)
 
@@ -55,13 +57,13 @@
 //       absent.
 //   5 — extends the per-slot extension block to carry the dungeon-chain layout
 //       identity {present, attempt, digest24}. v1-v4 files read these fields as
-//       absent. New writes are always v5.
+//       absent. Version 5 introduced these fields.
 //   7 — add-npc-souls widens the soul-ownership bitfield 8->12 bytes
 //       (@33-36 carry soul_flags[8..11]); v6 files read the tail as zero.
 //   8 — add-rando-grass-rock-shuffle: widens the settings blob 29->30 bytes
 //       (canonical byte [29] = terrain axes; older blobs zero-extend to Off)
 //       and extends the ext block with the terrain registry identity
-//       (@37-43, mirroring the v4 pot guard). New writes are always v8.
+//       (@37-43, mirroring the v4 pot guard). Version 8 introduced them.
 //   9 — extends the ext block with the enemy-check registry identity
 //       (@44-50, same guard shape as pot/terrain). Pre-v9 files zero-extend
 //       to present=0, and activation fails CLOSED for dungeon/all-tier
@@ -83,7 +85,11 @@
 //      files read all-zero discovery; the loader then backfills dungeon/cave
 //      bits from checked-location state (Rando_BackfillDiscoveryFromChecked —
 //      checked implies having been there, so backfill never over-reveals).
-#define kRandoSidecar_FileFormatVersion 13
+// 14 — appends the Hints v2 immutable-plan identity plus mutable discovery
+//      (@238-277), after the complete v13 topology-discovery block. Pre-v14
+//      files read zero versions/digest/discovery, which
+//      disables only Hints v2 rather than guessing a current plan.
+#define kRandoSidecar_FileFormatVersion 14
 #define kRandoSidecar_SlotCount         3       // mirrors sram.dat's 3-slot layout
 #define kRandoSidecar_FileHeaderSize    16
 #define kRandoSidecar_SlotHeaderSize    80
@@ -142,7 +148,14 @@
 //            knowledge phase — (kDoorTbl_DoorCount+7)/8 bytes; zero on write)
 //   @232-237 reserved[6]
 #define kRandoSidecar_SlotExtV13Size    238
-#define kRandoSidecar_SlotExtCurrentSize kRandoSidecar_SlotExtV13Size
+// format_version >= 14 (enhance-rando-hints-v2): certified immutable plan
+// identity plus mutable 24-bit discovery state.
+//   @238-239 hint algorithm version (u16 LE; 0 = metadata absent)
+//   @240-241 hint text-schema version (u16 LE)
+//   @242-273 canonical hint-plan SHA-256 digest
+//   @274-277 discovered fact bits (u32 LE; bits 24..31 reserved/zero)
+#define kRandoSidecar_SlotExtV14Size    278
+#define kRandoSidecar_SlotExtCurrentSize kRandoSidecar_SlotExtV14Size
 
 // Per randomizer-save spec § Slot header: 3-value discriminator.
 // Empty=0 is the all-zeroes default, distinguishable from an explicit
@@ -172,7 +185,8 @@ typedef enum {
 //                                             bit 0 = undelivered Mushroom,
 //                                             bit 1 = Powder obtained)
 //   @65 settings_ext_present (u8)            (Phase B hints; 1 = @66/@67 meaningful, 0 = unset)
-//   @66 hints_setting (u8)                   (Phase B hints; RandoHintsMode: 0=off 1=on)
+//   @66 hints_setting (u8)                   (legacy Phase B hints; 0=off,
+//                                             1=balanced)
 //   @67 goal (u8)                            (Phase B hints; Goal enum, rando_settings.h)
 //   @68 world_state (u8)                      (Phase B Inverted runtime; WorldState enum,
 //                                              rando_settings.h. Only meaningful when
@@ -209,17 +223,13 @@ typedef enum {
 //   @76 reserved[4]                            (forward-compat; zero on write)
 //   Total = 80 bytes.
 //
-// === Phase B hints (Slice 5): settings extension in the reserved tail ===
-// The hint generator (rando_hints.c::Rando_GenerateHints) reads exactly two
-// axes from RandoSettings: `hints` (off/on) and `goal`. To regenerate hints
-// at slot-load WITHOUT enlarging the slot (the on-disk size is coupled to the
-// ZRSR file size + corpus-runner constants via kSettingsCanonicalLen — see
-// [[canonical-size-coupling]]), those two bytes are carried ADDITIVELY in the
-// previously-zero reserved tail. @64 (mushroom_held) is unchanged; the ext
-// starts at @65. Existing field offsets and the 80-byte slot size are
-// unchanged; old binaries reading a new file see @65-67 as "reserved" and
-// ignore them. settings_ext_present == 0 (older slot, or a writer that does
-// not populate it) makes the loader fall back to "hints on".
+// === Legacy hints/settings extension in the reserved tail ===
+// @65-67 preserve the historical settings_present/hints/goal compatibility
+// fields and their stable offsets. Hints v2 does NOT synthesize a plan from
+// these bytes: current slots reconstruct from the full canonical settings plus
+// the v14 algorithm/schema/digest identity below. A pre-v14 slot or absent
+// identity remains playable with hints unavailable rather than silently
+// gaining a current deck.
 //
 // Per spec: the on-disk embedded placement table is a FLAT uint16[] indexed
 // by location_id (length = placement_table_size / 2). Each slot holds the
@@ -243,11 +253,11 @@ typedef struct RandoSlotHeader {
   // link_item_mushroom byte currently shows Mushroom. See Rando_MushroomHeld /
   // Rando_PowderOwned / Witch_AcceptShroom.
   uint8 mushroom_held;
-  // Phase B hints settings extension (serialized into reserved bytes @65-67;
-  // see the layout note above). settings_ext_present == 0 means "not written"
-  // and the loader applies the hints-on default.
+  // Legacy hint settings extension (serialized into reserved bytes @65-67).
+  // Retained for layout/backward compatibility; Hints v2 never treats it as a
+  // substitute for certified v14 plan identity.
   uint8 settings_ext_present;   // @65
-  uint8 hints_setting;          // @66 (RandoHintsMode: 0=off 1=on)
+  uint8 hints_setting;          // @66 (RandoHintsMode: 0=off, 1=balanced)
   uint8 goal;                   // @67 (Goal enum, rando_settings.h)
   // Phase B Inverted runtime: the seed's world_state, carried additively at
   // @69... no — at @68 (first reserved byte after the hints ext). Only
@@ -389,6 +399,11 @@ typedef struct RandoSlotHeader {
   uint8 discovered_whirlpools;   // v13 ext block @64
   uint8 discovered_caves[8];     // v13 ext block @66-73
   uint8 discovered_exits[8];     // v13 ext block @74-81
+  // Hints v2 immutable plan identity plus mutable discovery. The full plan,
+  // rendered text, paid queue cursor, resolved state, and in-flight paid
+  // transaction are reconstructed/derived and are never serialized.
+  // algorithm_version == 0 means metadata is absent (pre-v14/legacy).
+  RandoHintPersistedState hint_state;  // v14 ext block @238-277
 } RandoSlotHeader;
 
 // Bitmap covers placement_table_size / 2 locations.
@@ -445,12 +460,12 @@ typedef struct RandoSidecarSlot {
 // ---------------------------------------------------------------------------
 
 // Compute the on-disk byte size of one slot given its placement_table_size,
-// for the CURRENT format (version 5). placement_table_size is in BYTES (= 2 ×
+// for the CURRENT format. placement_table_size is in BYTES (= 2 ×
 // location count). Total = 80 (header) + placement_table_size +
 // ((placement_table_size/2 + 7) >> 3) bitmap + kSettingsCanonicalLen (settings
 // blob) + kRandoSidecar_SlotExtCurrentSize (extension block). v1 files omit the
-// blob and the ext block, v2 files omit the ext block, and v2/v3 files carry a
-// legacy 28-byte settings blob; v3/v4 files also use smaller extensions.
+// blob and the ext block, v2 files omit the ext block, and older versions carry
+// the version-specific settings/extension widths declared above.
 // RandoSave_ReadFile handles those older layouts internally based on the file's
 // format_version.
 uint32 RandoSave_SlotOnDiskSize(uint16 placement_table_size);

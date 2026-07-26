@@ -45,6 +45,7 @@ SOURCES		:=  $(SRC_DIR) $(SRC_DIR)/snes $(SRC_DIR)/rando $(SRC_DIR)/third_party/
 # Rando codegen pre-step (tasks.md §3.5/§3.6/§6.3/§9.4b;
 # direct_grant_icons.h is Phase B Slice 9 — add-rando-confirmation-icons).
 # Regenerates src/rando/logic_data.c, src/rando/location_ids.h, src/rando/item_ids.h,
+# src/rando/hint_metadata.h,
 # src/rando/chest_lookup.h, src/rando/pot_lookup.h,
 # src/rando/terrain_lookup.h,
 # src/rando/bonk_lookup.h,
@@ -55,7 +56,7 @@ SOURCES		:=  $(SRC_DIR) $(SRC_DIR)/snes $(SRC_DIR)/rando $(SRC_DIR)/third_party/
 # below so logic_data.c is picked up by CFILES. The Switch build is a manual
 # gate (tasks.md §12.3b); contributors invoke
 # `cd src/platform/switch && python ../../../assets/rando_logic_gen.py && make`.
-RANDO_CODEGEN_OUTPUTS := $(SRC_DIR)/rando/logic_data.c $(SRC_DIR)/rando/location_ids.h $(SRC_DIR)/rando/item_ids.h $(SRC_DIR)/rando/chest_lookup.h $(SRC_DIR)/rando/pot_lookup.h $(SRC_DIR)/rando/terrain_lookup.h $(SRC_DIR)/rando/bonk_lookup.h $(SRC_DIR)/rando/enemy_drop_lookup.h $(SRC_DIR)/rando/enemy_check_lookup.h $(SRC_DIR)/rando/pot_nonpot_drop_counts.h $(SRC_DIR)/rando/icon_atlas.h $(SRC_DIR)/rando/direct_grant_icons.h
+RANDO_CODEGEN_OUTPUTS := $(SRC_DIR)/rando/logic_data.c $(SRC_DIR)/rando/location_ids.h $(SRC_DIR)/rando/item_ids.h $(SRC_DIR)/rando/hint_metadata.h $(SRC_DIR)/rando/chest_lookup.h $(SRC_DIR)/rando/pot_lookup.h $(SRC_DIR)/rando/terrain_lookup.h $(SRC_DIR)/rando/bonk_lookup.h $(SRC_DIR)/rando/enemy_drop_lookup.h $(SRC_DIR)/rando/enemy_check_lookup.h $(SRC_DIR)/rando/pot_nonpot_drop_counts.h $(SRC_DIR)/rando/icon_atlas.h $(SRC_DIR)/rando/direct_grant_icons.h
 
 # Recurse into assets/rando/ so logic_parts/**/*.yaml (incl. inverted/**) are
 # prerequisites — a non-recursive *.yaml glob misses the subtree and would ship
@@ -68,7 +69,7 @@ RANDO_CODEGEN_OUTPUTS := $(SRC_DIR)/rando/logic_data.c $(SRC_DIR)/rando/location
 # the missing file disappears from the find output, so only an unconditional
 # codegen run can emit the assetless empty tables.
 .PHONY: rando-codegen-force
-$(RANDO_CODEGEN_OUTPUTS): rando-codegen-force $(shell find $(SRC_DIR)/../assets/rando -name '*.yaml') $(SRC_DIR)/../assets/rando/door_predicates.gen.json $(SRC_DIR)/../assets/rando_logic_gen.py $(SRC_DIR)/../assets/chest_data.py
+$(RANDO_CODEGEN_OUTPUTS): rando-codegen-force $(shell find $(SRC_DIR)/../assets/rando -name '*.yaml') $(SRC_DIR)/../assets/rando/hint_metadata.lock.json $(SRC_DIR)/../assets/rando/hint_registry_contract.json $(SRC_DIR)/../assets/rando/door_predicates.gen.json $(SRC_DIR)/../assets/rando_logic_gen.py $(SRC_DIR)/../assets/chest_data.py $(SRC_DIR)/rando/rando_hints.c
 	@echo "Regenerating rando codegen for Switch build"
 	python $(SRC_DIR)/../assets/rando_logic_gen.py
 

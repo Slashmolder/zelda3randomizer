@@ -81,6 +81,7 @@ extern "C" void Cheats_SelfCheck(void) {
 
 // ---------------------------------------------------------------------------
 extern "C" void Panels_RenderSmokeCheck(void) {
+  RandoHints_SelfCheck();
   ImGuiContext *ctx = ImGui::CreateContext();
   ImGuiIO &io = ImGui::GetIO();
   io.IniFilename = nullptr;

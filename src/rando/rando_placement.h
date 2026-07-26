@@ -56,6 +56,11 @@ void Crystals_Resolve(const RandoSettings *settings, uint64 seed_u64,
 uint16 BuildItemPool(const RandoSettings *settings, uint64 seed_u64,
                      uint16 *out_items, uint16 capacity);
 
+// Authoritative placement/reachability classifier. Hint selection uses this
+// instead of maintaining a second progression-item list that could drift from
+// assumed fill.
+bool Rando_IsProgressionItem(uint16 item_id);
+
 // Fail-fast validation for settings combinations that the placement pipeline
 // cannot honestly build. BuildItemPool keeps equivalent guards for low-level
 // callers and selftests; generation paths call this first to avoid retry-loop

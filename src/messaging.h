@@ -27,6 +27,7 @@ void Module_Messaging_6();
 void OverworldMap_SetupHdma();
 const uint8 *GetLightOverworldTilemap();
 void SaveGameFile();
+void SaveGameFile_StagingSelfCheck(void);
 void TransferMode7Characters();
 void Module0E_Interface();
 void Module_Messaging_0();

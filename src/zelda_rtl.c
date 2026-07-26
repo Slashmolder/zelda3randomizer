@@ -608,19 +608,6 @@ void StateRecorder_Load(StateRecorder *sr, FILE *f, bool replay_mode) {
   // key bytes can incorrectly reuse the pre-restore reachability result.
   Rando_BumpReachabilityCounter();
 
-  // The snapshot reinstalls the placement table (above) but NOT the hint table:
-  // g_hint_table is a module-static in rando_hints.c, not part of g_ram and not
-  // serialized into the snapshot. Left alone it would hold the PREVIOUS seed's
-  // hints — so after a Ctrl+F1/F-key snapshot restore (or --replay) the
-  // telepathic tiles / fortune tellers would surface hints pointing at the wrong
-  // items (or, on a fresh-process load, zero-init garbage). Clear it so those
-  // surfaces fail safe to vanilla text. (Regenerating the slot's actual hints
-  // here — like Rando_ActivateSidecarSlot does — would need the settings, which
-  // the snapshot doesn't carry; the slot/select-file load path remains the way
-  // to get live hints. This snapshot/replay path is the edge case.) No-op when
-  // no rando slot is active.
-  Rando_ClearHints();
-
   // Same class of fix for the receive-item slot-owner cache (a load_gfx.c
   // static, not in g_ram): the restore just replaced the slot's BUFFER
   // contents wholesale, so a surviving owner value would make

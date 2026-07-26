@@ -16,6 +16,7 @@
 #include "rando_settings.h"
 #include "rando_share.h"     // kShareStringBase32MaxLen
 #include "rando_placement.h"  // RandoPlacementTable
+#include "rando_hints.h"      // RandoHintPlan
 #include "seed_shape.h"       // SeedShapeFilter / metrics
 #include "shuffle_chains.h"   // DungeonChainsLayout
 #include "shuffle_entrance.h"  // kEntranceMaxInteriors
@@ -109,6 +110,10 @@ typedef struct RandoGenerateResult {
   uint32 shape_attempts_used;
   int shape_search_limit;
   SeedShapeMetrics shape_metrics;
+  bool has_spheres;
+  RandoSpheres spheres;
+  bool has_hint_plan;
+  RandoHintPlan hint_plan;
   RandoPlacementTable placement;  // OWNED malloc'd copy when requested (caller frees); {0} otherwise
 } RandoGenerateResult;
 

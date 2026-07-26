@@ -399,22 +399,75 @@ const uint8 *GetLightOverworldTilemap() {
   return kLightOverworldTilemap;
 }
 
-void SaveGameFile() {  // 80894a
-  int slot_index = (srm_var1 >> 1) - 1;
-  int offs = slot_index * 0x500;
-  memcpy(g_zenv.sram + offs, save_dung_info, 0x500);
-  memcpy(g_zenv.sram + offs + 0xf00, save_dung_info, 0x500);
+static uint16 SaveGameFile_BuildStagedSlot(uint8 staged[0x500]) {
+  memcpy(staged, save_dung_info, 0x500);
   uint16 t = 0x5a5a;
   for (int i = 0; i < 0x4fe; i += 2)
-    t -= *(uint16 *)((char *)save_dung_info + i);
-  word_7EF4FE = t;
-  WORD(g_zenv.sram[offs + 0x4fe]) = t;
-  WORD(g_zenv.sram[offs + 0x4fe + 0xf00]) = t;
-  ZeldaWriteSram();
-  // Phase B Slice 1 — persist the in-memory checked-location bitmap to
-  // the sidecar slot so trackers survive save/reload. No-op when the
-  // active slot isn't a randomizer slot.
-  Rando_OnGameSave(slot_index, g_zenv.sram + offs, 0x500);
+    t -= WORD(staged[i]);
+  WORD(staged[0x4fe]) = t;
+  return t;
+}
+
+// Install the staged vanilla slot in both SRAM copies only after the randomizer
+// sidecar has durably accepted the exact same bytes. A failed sidecar write
+// must not leave mutated global SRAM that a later unrelated ZeldaWriteSram call
+// could accidentally persist.
+static bool SaveGameFile_InstallStagedSlot(
+    int slot_index, const uint8 staged[0x500], uint16 checksum,
+    bool sidecar_saved) {
+  if (!sidecar_saved || slot_index < 0 || slot_index >= 3) return false;
+  int offs = slot_index * 0x500;
+  memcpy(g_zenv.sram + offs, staged, 0x500);
+  memcpy(g_zenv.sram + offs + 0xf00, staged, 0x500);
+  word_7EF4FE = checksum;
+  return true;
+}
+
+void SaveGameFile() {  // 80894a
+  int slot_index = (srm_var1 >> 1) - 1;
+  uint8 staged[0x500];
+  uint16 checksum = SaveGameFile_BuildStagedSlot(staged);
+  // Persist discovery and the other randomizer state to the sidecar first. The
+  // sidecar checksum covers `staged`; only a successful write makes those bytes
+  // eligible to replace either global SRAM copy.
+  bool sidecar_saved =
+      Rando_OnGameSave(slot_index, staged, (uint32)sizeof(staged));
+  if (SaveGameFile_InstallStagedSlot(slot_index, staged, checksum,
+                                    sidecar_saved))
+    ZeldaWriteSram();
+  else
+    fprintf(stderr,
+            "Rando: sidecar save failed; paired SRAM write suppressed\n");
+}
+
+void SaveGameFile_StagingSelfCheck(void) {
+  // Headless self-tests run before the normal frontend allocates cartridge
+  // SRAM. Exercise the install gate against a private full paired-SRAM image
+  // and restore the environment pointer afterward.
+  uint8 scratch_sram[0x1400];
+  uint8 *saved_sram = g_zenv.sram;
+  uint8 primary_before[0x500], backup_before[0x500], staged[0x500];
+  uint16 checksum_before = word_7EF4FE;
+  for (size_t i = 0; i < sizeof(scratch_sram); i++)
+    scratch_sram[i] = (uint8)(i * 17u + 3u);
+  g_zenv.sram = scratch_sram;
+  memcpy(primary_before, g_zenv.sram, sizeof(primary_before));
+  memcpy(backup_before, g_zenv.sram + 0xf00, sizeof(backup_before));
+  memset(staged, 0xA5, sizeof(staged));
+  WORD(staged[0x4fe]) = 0x1357;
+
+  if (SaveGameFile_InstallStagedSlot(0, staged, 0x1357, false) ||
+      memcmp(primary_before, g_zenv.sram, sizeof(primary_before)) != 0 ||
+      memcmp(backup_before, g_zenv.sram + 0xf00,
+             sizeof(backup_before)) != 0 ||
+      word_7EF4FE != checksum_before) {
+    fprintf(stderr,
+            "[SaveGameFile_StagingSelfCheck] FAIL: failed sidecar mutated "
+            "global SRAM/checksum\n");
+    abort();
+  }
+  g_zenv.sram = saved_sram;
+  fprintf(stderr, "[SaveGameFile_StagingSelfCheck] OK\n");
 }
 
 void TransferMode7Characters() {  // 80e399
@@ -2544,10 +2597,11 @@ void Text_LoadCharacterBuffer() {  // 8ec4e2
     src += TEXTCMD_MULTIBYTE(cmd);
   }
   *dst = 0x7f;
-  // Interactive randomizer hints need the decoded US command buffer so their
-  // replacement can retain a live Choose command. Stumpy/Flute Boy (0xE5) is
-  // the only current surface; failed gates leave the vanilla prompt byte-for-
-  // byte intact. The resolver/encoder remains owned by the hint subsystem.
+  // Interactive randomizer hints need the decoded command buffer so their
+  // replacement can retain a live Choose command. This covers Stumpy/Flute Boy
+  // and current-schema paid-service no-clue framing; failed gates leave the
+  // vanilla prompt byte-for-byte intact. The resolver/encoder remains owned by
+  // the hint subsystem.
   Rando_RewriteInteractiveHintMessage(dialogue_message_index,
                                       messaging_text_buffer);
   // add-rando-inverted-dark-chapel-spawn: for an Inverted slot, rename the

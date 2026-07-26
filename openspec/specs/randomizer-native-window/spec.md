@@ -363,17 +363,97 @@ The settings window SHALL include a tab that displays the spoiler/placement of t
 
 ### Requirement: Hints viewer respects race-mode suppression
 
-The settings window's read-only Hints tab lists every hint for the active slot, and hints can name item/location information. This viewer dumps all hints at once (unlike in-game telepathic tiles, which the player is meant to discover by playing), so when the active slot's settings have `race_mode = true` (`Rando_GetActiveSettings()->race_mode`) it SHALL NOT render hint text. Unlike the spoiler viewer (hidden entirely), the Hints tab SHALL remain visible but suppress its spoiling content: it shows the hint count and a race-mode indicator, but no hint strings. The panel SHALL NOT surface a reveal call-to-action — the spoiler is intentionally unavailable during a race. (After the race, the hints remain recoverable out-of-band via the reveal flow: `Rando_RevealSpoiler` regenerates the full JSON spoiler, including the `hints[]` array, with `race_mode` cleared.)
+The native Hints panel SHALL be a read-only discovered-hint journal for the
+active validated `HintPlan`. Its default view SHALL list only delivery facts
+whose discovery bits are set. Each row SHALL show the source at which the fact
+was discovered, the canonical complete human-readable text produced by the
+active plan/text schema, and a
+resolved marker when an exact fact's target location is checked. Resolved state
+SHALL be derived live from the checked-location bitmap rather than persisted as
+separate journal state.
+
+The journal text SHALL be `RandoHintFact.text`; the compact verified
+three-row `RandoHintFact.game_text` form remains an in-game delivery rendering
+and is not required to replace the fuller journal wording.
+
+Outside race mode, the panel MAY offer an explicit
+**View all seed hints — placement spoilers** action. The action SHALL require a
+clear confirmation before showing undiscovered facts and SHALL be session-local.
+Opening, confirming, closing, filtering, or rendering the full view SHALL NOT
+set discovery bits, move a paid queue, mark a location checked, change the
+active plan/digest, or mutate other gameplay state.
+
+In race mode the panel SHALL show discovered facts only and SHALL NOT render,
+enable, or advertise the full-deck action. It SHALL not expose undiscovered
+fact text, targets, assignment order, paid reserve order, or hidden plan state
+through normal UI. This restriction SHALL remain tied to the active slot's
+persisted race identity, not the pending settings editor.
+
+If no randomizer slot is active, no facts are discovered, or plan identity
+validation failed, the panel SHALL show the corresponding honest empty or
+unavailable state. It SHALL NOT display stale facts from a prior slot.
+
+F12 is outside this UI requirement. It is an intentional developer diagnostic
+and MAY contain the full spoiler-bearing plan in race mode.
+
+#### Scenario: Discovered facts appear in the journal
+- **WHEN** the player successfully reads one assigned tile and buys one paid
+  fact
+- **THEN** the default panel lists exactly those discovered facts with their
+  discovery sources and active-schema text
+
+#### Scenario: Undiscovered facts stay hidden by default
+- **WHEN** a valid plan has additional undiscovered tile or reserve facts
+- **THEN** they do not appear in the default journal outside or inside race mode
+
+#### Scenario: Exact fact becomes resolved
+- **WHEN** an exact discovered fact targets a location that later becomes
+  checked
+- **THEN** its journal row gains the resolved marker without changing discovery
+  or persisted plan identity
+
+#### Scenario: Full viewer requires non-race confirmation
+- **WHEN** a non-race player selects View all seed hints
+- **THEN** the panel warns that it reveals placement spoilers and shows the full
+  deck only after explicit confirmation
+
+#### Scenario: Full viewer is read-only
+- **WHEN** the confirmed non-race full viewer renders every primary and reserve
+  fact
+- **THEN** discovery, queue selection, checked state, plan digest, and gameplay
+  state remain byte-identical before and after
+
+#### Scenario: Race mode exposes discovered facts only
+- **WHEN** the active slot is race mode
+- **THEN** discovered journal rows remain visible but the full-view action and
+  every undiscovered fact/target/order are absent
+
+#### Scenario: Pending race toggle does not change active journal policy
+- **WHEN** the user edits the pending `race_mode` checkbox while another slot is
+  active
+- **THEN** the Hints panel continues to follow the active slot's persisted race
+  identity
+
+#### Scenario: Failed plan identity shows no stale deck
+- **WHEN** sidecar or snapshot activation disables hints for unsupported or
+  mismatched identity
+- **THEN** the panel reports hints unavailable and shows neither the prior
+  slot's journal nor a reconstructed current-version deck
+
+#### Scenario: Empty discovery is honest
+- **WHEN** a valid Balanced plan is active but no delivery fact is discovered
+- **THEN** the default journal reports that no hints have been discovered yet,
+  rather than claiming the seed has no hint plan
 
 #### Scenario: Hint text hidden in race mode
-
-- **WHEN** the active slot was generated with `race_mode = true` and the user opens the Hints tab
-- **THEN** the tab shows the hint count with a "(race mode)" indicator and a note that hint text is hidden so it cannot spoil item locations, and renders no hint string
+- **WHEN** the active slot is race mode and has undiscovered facts
+- **THEN** those undiscovered fact strings, targets, and order remain hidden;
+  only facts already discovered through gameplay appear in the journal
 
 #### Scenario: Hint text shown outside race mode
-
-- **WHEN** the active slot's `race_mode = false`
-- **THEN** the Hints tab renders each NPC's hint string in full
+- **WHEN** the active slot is not race mode
+- **THEN** discovered facts appear in the default journal and the full deck is
+  shown only after the explicit placement-spoiler confirmation
 
 ### Requirement: PC kind-toggle on file-select opens the native window
 
@@ -556,4 +636,92 @@ Tracker occupies roughly a sixth of the display.
 - **WHEN** any tracker or settings window string is rendered with the default
   font
 - **THEN** every character resolves to a real glyph (no "?" substitutions)
+
+### Requirement: Hints tab owns pending generation policy
+
+The native Randomizer window SHALL place Hints in its normal tab order
+immediately after General. The Hints tab SHALL expose two explicitly labeled
+inner surfaces:
+
+- Next seed setup, which reads/writes only bridge-owned pending settings; and
+- Active-slot journal, which reads only active slot plan, discovery, checked
+  state, and persisted race identity.
+
+Next seed setup SHALL provide atomic Off/Sparse/Balanced/Direct profile actions,
+tile coverage, paid depth, hint mix, the derived profile label, and an exact
+maximum-delivery summary. It SHALL state that paid clues are always exact and
+that paid depth zero offers no clue but retains the disclosed priced healing
+service.
+
+General SHALL no longer own an editable Balanced-hints checkbox. It MAY show a
+read-only derived summary and navigation affordance, but every native policy
+mutation SHALL use the Hints setup surface and the authoritative settings API.
+
+The active journal SHALL retain the Hints v2 discovered-only default,
+resolved-state derivation, failed-plan unavailable state, non-race confirmed
+full viewer, and race discovered-only restriction. Pending hint/race edits
+SHALL NOT alter active journal visibility, policy, facts, or disclosure.
+F12 diagnostics SHALL remain separately spoiler-bearing and unrestricted.
+
+#### Scenario: Hints setup edits only pending settings
+- **WHEN** the player changes an enabled active slot's pending policy to Sparse
+- **THEN** the next-seed tuple/hash/share update while the active plan,
+  discovery, paid queues, and journal remain unchanged
+
+#### Scenario: Derived profile updates from components
+- **WHEN** the player starts at Balanced and selects ten tiles
+- **THEN** the setup surface displays Custom and its exact capacity summary
+  without inventing a serialized Custom value
+
+#### Scenario: Named profile writes a complete tuple
+- **WHEN** Direct is selected
+- **THEN** enabled, 15 tiles, paid depth 3, and Important mix are written
+  atomically through the shared settings API
+
+#### Scenario: Paid-zero disclosure appears before generation
+- **WHEN** pending paid depth is zero
+- **THEN** the setup surface says no paid clue is delivered and accepting those
+  services still charges the shown price for healing
+
+#### Scenario: General has no duplicate editor
+- **WHEN** the Randomizer General tab is rendered
+- **THEN** it contains no independently editable hint checkbox/control capable
+  of diverging from the Hints tab
+
+#### Scenario: Active journal is policy-owned by its slot
+- **WHEN** an active race slot exists while pending hints/race settings are
+  edited
+- **THEN** the journal remains bound to the active slot and exposes only its
+  discovered rows
+
+#### Scenario: Non-race full view remains deliberate
+- **WHEN** an active non-race configurable slot is inspected
+- **THEN** undiscovered facts remain hidden until the existing separately
+  confirmed read-only full-view action is used
+
+### Requirement: Independent native NPC reward-preview control
+
+The native Hints tab SHALL label the semantic selector “Clue profile” and SHALL
+offer an independent “NPC reward previews” boolean in the pending next-seed
+surface. The preview control SHALL remain enabled when clue profile is Off and
+SHALL state that rich dialogue is Original/US only.
+
+The active-slot surface SHALL report the loaded slot's certified preview value
+separately from pending settings. Editing pending settings SHALL NOT alter the
+active value, active dialogue, clue journal, or clue plan.
+
+#### Scenario: Preview can be enabled with clues Off
+- **WHEN** the pending clue profile is Off
+- **THEN** the preview checkbox remains editable and enabling it does not enable
+  any clue delivery
+
+#### Scenario: Pending and active values remain separate
+- **WHEN** an active slot has previews Off and pending next-seed settings are
+  changed to On
+- **THEN** the active status remains Off until a slot carrying the new settings
+  is generated and loaded
+
+#### Scenario: Named profile action preserves preview
+- **WHEN** previews are On and the player clicks any named clue profile
+- **THEN** the preview checkbox remains On
 

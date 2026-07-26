@@ -1,4 +1,4 @@
-// rando_spoiler.h — JSON + text spoiler writer (tasks.md §5.1-§5.2). Stub.
+// rando_spoiler.h — JSON + text spoiler writer (tasks.md §5.1-§5.2).
 //
 // Stable field names per the spec: share_string, generator_version, settings,
 // placements[], sphere_data[], goal_completable, generation_wall_clock_ms,
@@ -8,6 +8,7 @@
 #define ZELDA3_RANDO_SPOILER_H_
 
 #include "../types.h"
+#include "rando_hints.h"
 #include "rando_placement.h"
 #include "rando_settings.h"  // kSettingsCanonicalLen for the _Static_assert below
 
@@ -20,6 +21,10 @@ typedef struct RandoSpoiler {
   const RandoSettings *settings;
   const RandoPlacementTable *placements;
   const RandoSpheres *spheres;       // optional; NULL omits sphere_data
+  // Immutable generation-time hint plan. Spoiler writers consume only this
+  // caller-owned value and never consult or mutate the active gameplay plan.
+  // NULL is accepted for non-randomizer/legacy callers and emits no hint rows.
+  const RandoHintPlan *hint_plan;
   // Actual MM/TR medallion requirements for this seed. The placement table
   // carries legacy Medallion config rows, but those are not item checks and
   // may be vanilla-pinned; spoiler text should use this assignment instead.

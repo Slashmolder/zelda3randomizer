@@ -11,6 +11,8 @@
 #include "features.h"
 #include "zelda_rtl.h"
 #include "rando/rando.h"
+#include "rando/rando_dialogue.h"
+#include "rando/rando_hints.h"
 #include "rando/item_ids.h"
 #include "rando/location_ids.h"
 #include "rando/souls.h"           // add-npc-souls trigger gates
@@ -75,6 +77,11 @@ static bool Sprite_KingZoraShouldChargeAtPickup(uint8 payment_marker,
          result == kRandoGrantResult_Accepted;
 }
 
+static bool Sprite_WitchNeedsRewardPreview(bool preview_available,
+                                           bool preview_seen) {
+  return preview_available && !preview_seen;
+}
+
 static uint16 StandingPoH_Location(int k);
 
 static RandoGrantPresentation Sprite_MagicBatPresentationForPlan(
@@ -135,7 +142,10 @@ bool SpriteMain_GrantPresentationSelfCheck(void) {
              kKingZoraReward_PaymentPending,
              kRandoGrantResult_AlreadyChecked) &&
          !Sprite_KingZoraShouldChargeAtPickup(
-             0, kRandoGrantResult_Accepted);
+             0, kRandoGrantResult_Accepted) &&
+         Sprite_WitchNeedsRewardPreview(true, false) &&
+         !Sprite_WitchNeedsRewardPreview(true, true) &&
+         !Sprite_WitchNeedsRewardPreview(false, false);
 }
 
 // Common immediate item-source transaction. A missing/inactive placement keeps
@@ -1188,6 +1198,8 @@ void FortuneTeller_LightOrDarkWorld(int k, bool dark_world) {
 
   switch (sprite_ai_state[k]) {
   case 0:  // WaitForInquiry
+    Rando_HintsCancelPaid(dark_world ? kRandoHintPaidSource_FortuneDark
+                                     : kRandoHintPaidSource_FortuneLight);
     sprite_graphics[k] = 0;
     sprite_A[k] = (j = (GetRandomNumber() & 3)) << 1;
     if (link_rupees_goal < kFortuneTeller_Prices[j])
@@ -1198,25 +1210,35 @@ void FortuneTeller_LightOrDarkWorld(int k, bool dark_world) {
   case 1: // NotEnoughRupees
     Sprite_ShowSolicitedMessage(k, 0xf2);
     break;
-  case 2:  // AskIfPlayerWantsReading
+  case 2: {  // AskIfPlayerWantsReading
+    RandoHintPaidSource source =
+        dark_world ? kRandoHintPaidSource_FortuneDark
+                   : kRandoHintPaidSource_FortuneLight;
+    Rando_HintsSetPaidPromptContext(
+        source, kFortuneTeller_Prices[sprite_A[k] >> 1]);
     if (Sprite_ShowSolicitedMessage(k, 0xf3) & 0x100) {
       sprite_delay_main[k] = 255;
       flag_is_link_immobilized = 1;
       sprite_ai_state[k]=3;
     }
     break;
+  }
   case 3: // ReactToPlayerResponse
     if (!choice_in_multiselect_box) {
       if (!sprite_delay_main[k])
         sprite_ai_state[k]++;
       sprite_graphics[k] = frame_counter >> 4 & 1;
     } else {
+      Rando_HintsCancelPaid(dark_world ? kRandoHintPaidSource_FortuneDark
+                                       : kRandoHintPaidSource_FortuneLight);
       Sprite_ShowMessageUnconditional(0xf5);
       sprite_ai_state[k] = 2;
       flag_is_link_immobilized = 0;
     }
     break;
   case 4: // FortuneTeller_PerformPseudoScience
+    Rando_HintsPreparePaid(dark_world ? kRandoHintPaidSource_FortuneDark
+                                      : kRandoHintPaidSource_FortuneLight);
     FortuneTeller_PerformPseudoScience(k);
     break;
   case 5:  // ShowCostMessage
@@ -1228,12 +1250,23 @@ void FortuneTeller_LightOrDarkWorld(int k, bool dark_world) {
     Sprite_ShowMessageUnconditional(0xf4);
     sprite_ai_state[k]++;
     break;
-  case 6:  // DeductPayment
-    link_rupees_goal -= kFortuneTeller_Prices[sprite_A[k]>>1];
+  case 6: {  // DeductPayment
+    uint16 price = kFortuneTeller_Prices[sprite_A[k] >> 1];
+    RandoHintPaidSource source =
+        dark_world ? kRandoHintPaidSource_FortuneDark
+                   : kRandoHintPaidSource_FortuneLight;
+    link_rupees_goal -= price;
+    // The receipt already displayed the price, but a slot/snapshot transition
+    // can invalidate the prepared plan before this state runs. Never retain a
+    // charge when that exact prepared fact cannot commit.
+    if (!Rando_HintsCommitPaid(source))
+      link_rupees_goal += price;
     sprite_ai_state[k]++;
     link_hearts_filler = 160;
     flag_is_link_immobilized = 0;
+    Rando_HintsCancelPaid(source);
     break;
+  }
   case 7:
     break;
   }
@@ -6261,14 +6294,34 @@ void Sprite_Witch(int k) {  // 85e3fb
       // contact when the player holds an undelivered Mushroom — without the
       // vanilla "Mushroom must be the selected item" requirement, which can't
       // be satisfied while Powder occupies the HUD slot.
-      if (save_dung_info[0x109] & 0x80)
+      if (save_dung_info[0x109] & 0x80) {
+        sprite_B[k] = 0;
         Sprite_ShowSolicitedMessage(k, 0x4b);        // already traded
-      else if (!Rando_MushroomHeld())
+      } else if (!Rando_MushroomHeld()) {
+        sprite_B[k] = 0;
         Sprite_ShowSolicitedMessage(k, 0x4a);        // come back with a mushroom
-      else if (Sprite_CheckDamageToLink_same_layer(k))
-        Witch_AcceptShroom(k);
-      else
-        Sprite_ShowSolicitedMessage(k, 0x4c);        // bring it over here
+      } else {
+        const bool preview_available =
+            Rando_CanPreviewNpcReward(LOC_Potion_Shop);
+        if (Sprite_CheckDamageToLink_same_layer(k)) {
+          if (Sprite_WitchNeedsRewardPreview(
+                  preview_available, sprite_B[k] != 0)) {
+            // The rando contact path normally consumes the Mushroom
+            // immediately. Insert one unavoidable, no-choice information box
+            // first; after it closes, the next contact frame commits through
+            // the unchanged transaction.
+            sprite_B[k] = 1;
+            Sprite_ShowMessageUnconditional(0x4c);
+          } else {
+            sprite_B[k] = 0;
+            Witch_AcceptShroom(k);
+          }
+        } else {
+          int shown = Sprite_ShowSolicitedMessage(k, 0x4c);
+          if (preview_available && (shown & 0x100))
+            sprite_B[k] = 1;
+        }
+      }
       break;
     }
     if (link_item_mushroom == 0) {
@@ -6302,6 +6355,7 @@ void Sprite_Witch(int k) {  // 85e3fb
 
 void Witch_AcceptShroom(int k) {  // 85e4cf
   bool rando = (enhanced_features1 & kFeatures1_RandomizerActive) != 0;
+  sprite_B[k] = 0;  // clear the rando pre-commit preview latch
   // Under rando the possession flag is the source of truth for the trade;
   // clear it so the Witch won't re-prompt. The Potion Shop check is granted
   // later at the Magic Powder dispatch (LOC_Potion_Shop).
@@ -10625,6 +10679,7 @@ void Sprite_28_DarkWorldHintNPC(int k) {  // 86ad6f
         Sprite_ShowMessageUnconditional(0xff);
         sprite_ai_state[k] = 2;
       } else {
+        Rando_HintsCancelPaid(kRandoHintPaidSource_Storyteller);
         Sprite_ShowMessageUnconditional(0x100);
         sprite_ai_state[k] = 0;
       }
@@ -10640,6 +10695,7 @@ void Sprite_28_DarkWorldHintNPC(int k) {  // 86ad6f
         Sprite_ShowMessageUnconditional(0x101);
         sprite_ai_state[k] = 2;
       } else {
+        Rando_HintsCancelPaid(kRandoHintPaidSource_Storyteller);
         Sprite_ShowMessageUnconditional(0x100);
         sprite_ai_state[k] = 0;
       }
@@ -10655,6 +10711,7 @@ void Sprite_28_DarkWorldHintNPC(int k) {  // 86ad6f
         Sprite_ShowMessageUnconditional(0x102);
         sprite_ai_state[k] = 2;
       } else {
+        Rando_HintsCancelPaid(kRandoHintPaidSource_Storyteller);
         Sprite_ShowMessageUnconditional(0x100);
         sprite_ai_state[k] = 0;
       }
@@ -10684,6 +10741,7 @@ void Sprite_28_DarkWorldHintNPC(int k) {  // 86ad6f
         Sprite_ShowMessageUnconditional(0x103);
         sprite_ai_state[k] = 2;
       } else {
+        Rando_HintsCancelPaid(kRandoHintPaidSource_Storyteller);
         Sprite_ShowMessageUnconditional(0x100);
         sprite_ai_state[k] = 0;
       }
@@ -10695,6 +10753,7 @@ void Sprite_28_DarkWorldHintNPC(int k) {  // 86ad6f
 }
 
 void DarkWorldHintNPC_Idle(int k) {  // 86ada7
+  Rando_HintsSetPaidPromptContext(kRandoHintPaidSource_Storyteller, 20);
   if (Sprite_ShowSolicitedMessage(k, 0xfe) & 0x100)
     sprite_ai_state[k] = 1;
 }
@@ -10702,12 +10761,20 @@ void DarkWorldHintNPC_Idle(int k) {  // 86ada7
 void DarkWorldHintNPC_RestoreHealth(int k) {  // 86adb5
   link_hearts_filler = 0xa0;
   sprite_ai_state[k] = 0;
+  Rando_HintsCancelPaid(kRandoHintPaidSource_Storyteller);
 }
 
 bool DarkWorldHintNPC_HandlePayment() {  // 86aeab
   if (link_rupees_goal < 20)
     return false;
+  if (!Rando_HintsPreparePaid(kRandoHintPaidSource_Storyteller))
+    return false;
   link_rupees_goal -= 20;
+  if (!Rando_HintsCommitPaid(kRandoHintPaidSource_Storyteller)) {
+    link_rupees_goal += 20;
+    Rando_HintsCancelPaid(kRandoHintPaidSource_Storyteller);
+    return false;
+  }
   return true;
 }
 

@@ -247,6 +247,8 @@ def source_steps(kind: str, base_sha: str | None, head_sha: str | None) -> list[
         ("ancilla slot-ordering guard", script("check_ancilla_slot_ordering.py") + ["--selftest"]),
         ("workflow/runner validation contract", script("check_validation_contract.py")),
         ("codegen wiring", script("check_codegen_wiring.py")),
+        ("hint metadata drift guard", script("check_hint_metadata.py")),
+        ("hint compatibility version policy", script("check_hint_version_policy.py")),
         ("corpus version sync", script("check_corpus_version_sync.py")),
         ("placer determinism source guard", script("check_placer_determinism.py", "--source-only")),
     ]
@@ -338,6 +340,10 @@ def runtime_common(runner: Runner, binary: Path, object_dir: Path,
     runner.run("all randomizer self-tests", [str(binary), "--rando-selftest"], env=env)
     runner.run("dedicated grant self-test alias",
                [str(binary), "--rando-grant-check"], env=env)
+    runner.run("hint spoiler contract",
+               script("check_hint_spoiler.py", "--binary", str(binary)))
+    runner.run("legacy hint race-reveal contract",
+               script("check_hint_legacy_reveal.py", "--binary", str(binary)))
     runner.run("logic microbenchmark",
                [str(binary), "--rando-bench-logic", "--bench-iters=5000"], env=env)
     runner.run("door self-test", [str(binary), "--door-selftest"], env=env)

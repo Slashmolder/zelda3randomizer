@@ -56,7 +56,11 @@
 //                                         shop the player is standing in
 //                                         resolvable, matching ALTTPR's own
 //                                         RAM-resident PreviousOverworldDoor.
-//   0x66e-0x66f reserved                 (2 bytes forward-compat headroom)
+//   0x66e       kRam_RandoTakeAnyDoor    (1 byte) — source overworld door for
+//                                         the current redirected Take-Any host
+//                                         room. Snapshot-owned because the host
+//                                         entrance itself is shared by many caves.
+//   0x66f       reserved                 (1 byte forward-compat headroom)
 //   0x670+      spotlight_* (DO NOT USE — see the `spotlight_*` declarations in variables.h)
 //
 // Verified clean in audit.md §0.7 (Phase 0 deliverable).
@@ -76,13 +80,14 @@ enum {
   kRam_EnemyShuffleLiveKey = 0x66a,
   kRam_EnemyShuffleLiveContext = 0x66c,
   kRam_RandoOverworldDoor = 0x66d,
+  kRam_RandoTakeAnyDoor = 0x66e,
 
   // Inclusive ownership bounds for randomizer-only WRAM. Keep these explicit:
   // the headless initialization + vanilla-snapshot guard and its independent parser use
   // them as the contract for every byte that must remain untouched in vanilla
   // snapshots, including padding inside multi-byte cells.
   kRam_RandoOwnedBegin = 0x659,
-  kRam_RandoOwnedEnd = 0x66d,
+  kRam_RandoOwnedEnd = 0x66e,
 };
 
 enum {
@@ -209,6 +214,7 @@ enum {
 #define g_rando_starting_inventory_granted (*(uint8*)(g_ram+0x65e))
 #define g_rando_triforce_piece_count (*(uint8*)(g_ram+0x65f))
 #define g_rando_swordless (*(uint8*)(g_ram+0x661))
+#define g_rando_takeany_door_id (*(uint8*)(g_ram+kRam_RandoTakeAnyDoor))
 #define msu_curr_sample (*(uint32*)(g_ram+0x650))
 #define msu_volume (*(uint8*)(g_ram+0x654))
 #define msu_track (*(uint8*)(g_ram+0x655))

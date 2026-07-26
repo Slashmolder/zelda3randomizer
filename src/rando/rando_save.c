@@ -4,9 +4,10 @@
 // little-endian helpers. Compiler padding / struct layout is NOT relied upon
 // for the on-disk format.
 //
-// Phase A0 status: serialization + round-trip read/write tested via
-// RandoSave_SelfCheck. The atomic-commit protocol (fsync, dir-fsync) is
-// stubbed — Phase A1 adds the per-OS calls.
+// Serialization, round-trip IO, and durable replacement are covered by
+// RandoSave_SelfCheck. Normal paired game saves stage both SRAM copies, write
+// and flush the sidecar first, then install the staged SRAM image so a sidecar
+// failure cannot publish a mismatched game save.
 
 // Windows headers must come BEFORE "../types.h" because types.h defines
 // BYTE / WORD / DWORD as function-style macros that conflict with the same
@@ -35,6 +36,12 @@
 // ZRSR _Static_assert (rando_spoiler.h). See [[canonical-size-coupling]].
 _Static_assert(sizeof(((RandoSidecarSlot *)0)->settings_canonical) == kSettingsCanonicalLen,
                "RandoSidecarSlot.settings_canonical size must equal kSettingsCanonicalLen");
+_Static_assert(sizeof(((RandoSlotHeader *)0)->hint_state.plan_digest) ==
+                   kRandoHintPlanDigestBytes,
+               "sidecar hint digest width must match Hints v2");
+_Static_assert(sizeof(((RandoSlotHeader *)0)->hint_state.discovered) ==
+                   kRandoHintDiscoveryBytes,
+               "sidecar hint discovery width must match Hints v2");
 
 // Atomic-commit protocol (tasks.md §8.2 / design.md D12).
 // POSIX: fsync the file descriptor, then rename, then fsync the containing dir.
@@ -118,6 +125,7 @@ static uint32 settings_blob_len_versioned(uint16 format_version) {
 }
 
 static uint32 slot_ext_len_versioned(uint16 format_version) {
+  if (format_version >= 14) return kRandoSidecar_SlotExtV14Size;
   if (format_version >= 13) return kRandoSidecar_SlotExtV13Size;
   if (format_version >= 12) return kRandoSidecar_SlotExtV12Size;
   if (format_version >= 11) return kRandoSidecar_SlotExtV11Size;
@@ -147,12 +155,10 @@ static uint32 slot_on_disk_size_versioned_ext(uint16 placement_table_size,
   return total;
 }
 
-// Format-version-aware slot size: v1 = base, v2 adds the legacy settings blob,
-// v3 adds the 8-byte extension after the legacy settings blob. v4 widens the
-// settings blob to current and widens the extension to 16 bytes. v5 widens the
-// extension to 24 bytes. Any future version >= 5 is sized as current by the
-// caller's contract (RandoSave_ReadFile refuses files it can't slot-walk — a
-// larger future layout fails the next slot's magic check).
+// Format-version-aware slot size. settings_blob_len_versioned and
+// slot_ext_len_versioned select every supported physical width; ReadFile
+// refuses a version newer than kRandoSidecar_FileFormatVersion before it tries
+// to walk slots.
 static uint32 slot_on_disk_size_versioned(uint16 placement_table_size,
                                           uint16 format_version) {
   uint32 total = slot_on_disk_size_versioned_ext(
@@ -189,7 +195,7 @@ static uint32 try_deserialize_zero_empty_slot(const uint8 *buf, uint32 remaining
   return 0;
 }
 
-// Public size is the CURRENT format (version 5): base + settings blob + ext.
+// Public size is the CURRENT format: base + settings blob + extension.
 uint32 RandoSave_SlotOnDiskSize(uint16 placement_table_size) {
   return slot_on_disk_size_versioned(placement_table_size,
                                      kRandoSidecar_FileFormatVersion);
@@ -246,10 +252,10 @@ static uint32 serialize_slot_header(const RandoSlotHeader *h, uint8 *buf) {
   buf[63] = h->flags;
   // @64 mushroom_held (rando Mushroom/Powder ownership bitfield).
   buf[64] = h->mushroom_held;
-  // @65-67 Phase B hints settings extension (additive; previously zero). The
-  // generator only reads `hints` and `goal` from RandoSettings, so those two
-  // axes are all the reserved tail needs to carry to regenerate hints at slot
-  // load. @68-79 still zero on write.
+  // @65-67 legacy Phase B hints settings extension (additive; previously
+  // zero). Retained for sidecar layout compatibility. Hints v2 reconstructs
+  // exclusively from the full canonical settings blob plus certified v14 plan
+  // identity; these bytes are not a substitute for either.
   buf[65] = h->settings_ext_present;
   buf[66] = h->hints_setting;
   buf[67] = h->goal;
@@ -304,9 +310,9 @@ static uint32 deserialize_slot_header(const uint8 *buf, uint32 buf_size, RandoSl
   out->placement_table_size = get_u16le(buf + 61);
   out->flags = buf[63];
   out->mushroom_held = buf[64];
-  // Phase B hints settings extension (@65-67). A file written before this
-  // field existed has zero here -> settings_ext_present == 0 -> the loader
-  // (Rando_ActivateSidecarSlot) applies the hints-on default.
+  // Legacy Phase B hints settings extension (@65-67). A file written before
+  // this field existed has zero here. Hints v2 treats every pre-v14 body as
+  // missing certified plan metadata and fails only rich hints closed.
   out->settings_ext_present = buf[65];
   out->hints_setting = buf[66];
   out->goal = buf[67];
@@ -462,15 +468,22 @@ uint32 RandoSave_SerializeSlot(const RandoSidecarSlot *slot, uint8 *buf, uint32 
   p[64] = slot->header.discovered_whirlpools;
   memcpy(p + 66, slot->header.discovered_caves, sizeof(slot->header.discovered_caves));
   memcpy(p + 74, slot->header.discovered_exits, sizeof(slot->header.discovered_exits));
+  // format_version 14: Hints v2 plan identity plus mutable discovery, appended
+  // after the complete v13 topology-discovery block. Discovery is a 24-bit
+  // fact mask; byte @277 is reserved and MUST remain
+  // zero even if an in-memory caller accidentally sets it.
+  put_u16le(p + 238, slot->header.hint_state.algorithm_version);
+  put_u16le(p + 240, slot->header.hint_state.text_schema_version);
+  memcpy(p + 242, slot->header.hint_state.plan_digest,
+         kRandoHintPlanDigestBytes);
+  memcpy(p + 274, slot->header.hint_state.discovered, 3);
+  p[277] = 0;
   return size;
 }
 
 // Version-aware slot deserialize. `format_version` is the FILE's declared
-// version: v1 has no trailing settings blob, v2 adds the legacy 28-byte blob,
-// v3 adds the 8-byte extension block after that legacy blob, v4 widens the blob
-// to current and the extension to 16 bytes, v5 adds a 24-byte extension, and v6
-// (add-enemy-souls) adds the current 33-byte extension. RandoSave_ReadFile
-// passes the file's value.
+// version; the helpers above select its exact settings and extension widths.
+// RandoSave_ReadFile passes the file's validated value.
 static uint32 deserialize_slot_versioned_ext(const uint8 *buf, uint32 buf_size,
                                              RandoSidecarSlot *out,
                                              uint16 format_version,
@@ -638,6 +651,19 @@ static uint32 deserialize_slot_versioned_ext(const uint8 *buf, uint32 buf_size,
       memset(out->header.discovered_caves, 0, sizeof(out->header.discovered_caves));
       memset(out->header.discovered_exits, 0, sizeof(out->header.discovered_exits));
     }
+    if (format_version >= 14 && ext_len >= kRandoSidecar_SlotExtV14Size) {
+      out->header.hint_state.algorithm_version = get_u16le(p + 238);
+      out->header.hint_state.text_schema_version = get_u16le(p + 240);
+      memcpy(out->header.hint_state.plan_digest, p + 242,
+             kRandoHintPlanDigestBytes);
+      memcpy(out->header.hint_state.discovered, p + 274, 3);
+      // Bits 24..31 are reserved and never become gameplay discovery.
+      out->header.hint_state.discovered[3] = 0;
+    } else {
+      // A pre-v14 slot has no certified plan identity. Zero versions mean
+      // "metadata absent"; activation disables Hints v2 without guessing.
+      memset(&out->header.hint_state, 0, sizeof(out->header.hint_state));
+    }
   } else {
     // v1/v2 files physically lack the block — digest 0 = "absent", which keeps
     // the legacy warn-only entrance version-drift behavior for old slots.
@@ -665,6 +691,7 @@ static uint32 deserialize_slot_versioned_ext(const uint8 *buf, uint32 buf_size,
     out->header.discovered_whirlpools = 0;
     memset(out->header.discovered_caves, 0, sizeof(out->header.discovered_caves));
     memset(out->header.discovered_exits, 0, sizeof(out->header.discovered_exits));
+    memset(&out->header.hint_state, 0, sizeof(out->header.hint_state));
   }
   return total;
 }
@@ -853,8 +880,8 @@ static bool deserialize_file_buffer(const uint8 *buf, uint32 fsize,
   // Key the body layout on the file's declared format_version so older
   // sidecars still load correctly: v1 slots lack the settings blob, v2 slots
   // lack an extension block, v2/v3 slots carry the legacy 28-byte settings
-  // prefix, v3 slots use the old 8-byte extension, v4 slots use the 16-byte
-  // extension, and v5 slots use the current 24-byte extension. Early v4
+  // prefix, and each later supported version uses its declared extension
+  // width. Early v4
   // development files declared format 4 but still used that 8-byte extension,
   // so try the canonical size first and then the legacy physical v4 size.
   uint32 ext_candidates[2] = {
@@ -1079,7 +1106,7 @@ void RandoSave_SelfCheck(void) {
   src.header.mushroom_held = 0x01;
   // Phase B hints settings extension round-trip coverage.
   src.header.settings_ext_present = 1;
-  src.header.hints_setting = 1;   // kHintsMode_On
+  src.header.hints_setting = 1;   // kHintsMode_Balanced
   src.header.goal = 4;            // kGoal_TriforceHunt
   src.header.world_state = 2;     // kWorldState_Inverted
   src.header.flute_shovel_owned = 0x05;  // shovel + flute-active (distinct from mushroom 0x01)
@@ -1118,6 +1145,17 @@ void RandoSave_SelfCheck(void) {
   // add-rando-ow-warp-shuffle layout identity round-trip (v12 ext @58-61).
   src.header.ow_attempt = 0x05;
   src.header.ow_digest24 = 0xABCDEFu;
+  // Hints v2 plan identity/discovery round-trip (v14 ext @238-277). Set the
+  // reserved discovery byte nonzero deliberately: the serializer/reader must
+  // mask bits 24..31 rather than treating them as gameplay state.
+  src.header.hint_state.algorithm_version = 0x1234u;
+  src.header.hint_state.text_schema_version = 0x5678u;
+  for (uint8 i = 0; i < kRandoHintPlanDigestBytes; i++)
+    src.header.hint_state.plan_digest[i] = (uint8)(0x80u + i);
+  src.header.hint_state.discovered[0] = 0xA5u;
+  src.header.hint_state.discovered[1] = 0x5Au;
+  src.header.hint_state.discovered[2] = 0xC3u;
+  src.header.hint_state.discovered[3] = 0xFFu;  // reserved, must serialize as 0
   // add-enemy-souls soul-ownership round-trip coverage (v6 extension block).
   src.header.souls_present = 1;
   for (int i = 0; i < 12; i++) src.header.soul_flags[i] = (uint8)(0x81 + i);
@@ -1139,7 +1177,7 @@ void RandoSave_SelfCheck(void) {
   src.placement_count = 5;
   src.checked_bitmap[0] = 0x05;  // checked Key Ring (loc 0) + Skeleton Key (loc 2)
 
-  uint8 buf[512];  // v13 ext (238B) puts the fixture slot at ~394 bytes
+  uint8 buf[512];  // v14 ext (278B) puts the fixture slot at ~434 bytes
   uint32 wrote = RandoSave_SerializeSlot(&src, buf, sizeof(buf));
   if (wrote == 0) selfcheck_die("serialize returned 0");
   if (wrote != RandoSave_SlotOnDiskSize(src.header.placement_table_size)) {
@@ -1208,6 +1246,16 @@ void RandoSave_SelfCheck(void) {
       if (buf[ext + i] != 0)
         selfcheck_die("v13 ext reserved door/tail bytes not zero");
     }
+    if (get_u16le(buf + ext + 238) != 0x1234u ||
+        get_u16le(buf + ext + 240) != 0x5678u)
+      selfcheck_die("Hints v2 versions not at expected v14 ext offsets");
+    for (uint8 i = 0; i < kRandoHintPlanDigestBytes; i++) {
+      if (buf[ext + 242 + i] != (uint8)(0x80u + i))
+        selfcheck_die("Hints v2 digest not at expected v14 ext offset");
+    }
+    if (buf[ext + 274] != 0xA5u || buf[ext + 275] != 0x5Au ||
+        buf[ext + 276] != 0xC3u || buf[ext + 277] != 0)
+      selfcheck_die("Hints v2 discovery mask/layout wrong at v14 ext offset");
   }
   // Phase C entrance shuffle: entrance_axes @71, entrance_attempt @72.
   if (buf[71] != 0x05) selfcheck_die("entrance_axes at @71 wrong");
@@ -1243,6 +1291,17 @@ void RandoSave_SelfCheck(void) {
       memcmp(dst.header.discovered_exits, src.header.discovered_exits,
              sizeof(src.header.discovered_exits)) != 0)
     selfcheck_die("discovery state round-trip (v13 ext)");
+  if (dst.header.hint_state.algorithm_version !=
+          src.header.hint_state.algorithm_version ||
+      dst.header.hint_state.text_schema_version !=
+          src.header.hint_state.text_schema_version ||
+      memcmp(dst.header.hint_state.plan_digest,
+             src.header.hint_state.plan_digest,
+             kRandoHintPlanDigestBytes) != 0 ||
+      memcmp(dst.header.hint_state.discovered,
+             src.header.hint_state.discovered, 3) != 0 ||
+      dst.header.hint_state.discovered[3] != 0)
+    selfcheck_die("Hints v2 identity/discovery round-trip (v14 ext)");
   if (dst.header.slot_kind != src.header.slot_kind) selfcheck_die("slot_kind round-trip");
   if (dst.header.generator_version != src.header.generator_version) selfcheck_die("gen_version round-trip");
   if (memcmp(dst.header.settings_hash, src.header.settings_hash, 16) != 0) selfcheck_die("settings_hash round-trip");
@@ -1432,12 +1491,82 @@ void RandoSave_SelfCheck(void) {
     }
   }
 
+  // format_version 13 compatibility: retain main's complete topology-discovery
+  // block while zeroing the not-yet-present Hints v2 identity/discovery.
+  {
+    uint8 current[512], v13buf[512];
+    uint32 current_used = RandoSave_SerializeSlot(&src, current, sizeof(current));
+    if (current_used == 0) selfcheck_die("v13 compat: serialize current slot");
+    uint32 base = slot_on_disk_size_base(src.header.placement_table_size);
+    uint32 v13_total = base + kSettingsCanonicalLen +
+                       kRandoSidecar_SlotExtV13Size;
+    memcpy(v13buf, current, v13_total);
+    RandoSidecarSlot v13dst;
+    uint32 v13_used =
+        deserialize_slot_versioned(v13buf, v13_total, &v13dst, 13);
+    if (v13_used != v13_total)
+      selfcheck_die("v13 compat: used != v13 total");
+    if (v13dst.header.discovered_dungeons !=
+            src.header.discovered_dungeons ||
+        v13dst.header.discovered_whirlpools !=
+            src.header.discovered_whirlpools ||
+        memcmp(v13dst.header.discovered_caves,
+               src.header.discovered_caves,
+               sizeof(src.header.discovered_caves)) != 0 ||
+        memcmp(v13dst.header.discovered_exits,
+               src.header.discovered_exits,
+               sizeof(src.header.discovered_exits)) != 0)
+      selfcheck_die("v13 compat: topology discovery lost");
+    {
+      const uint8 *hint_bytes = (const uint8 *)&v13dst.header.hint_state;
+      for (size_t i = 0; i < sizeof(v13dst.header.hint_state); i++) {
+        if (hint_bytes[i] != 0)
+          selfcheck_die("v13 compat: Hints v2 metadata must be absent/zero");
+      }
+    }
+  }
+
+  // format_version 12 compatibility: the slot ends immediately after the OW
+  // warp identity at extension byte 61. It must retain every v12 field while
+  // zeroing both the v13 topology discovery and absent Hints v2 metadata.
+  {
+    uint8 current[512], v12buf[512];
+    uint32 current_used = RandoSave_SerializeSlot(&src, current, sizeof(current));
+    if (current_used == 0) selfcheck_die("v12 compat: serialize current slot");
+    uint32 base = slot_on_disk_size_base(src.header.placement_table_size);
+    uint32 v12_total = base + kSettingsCanonicalLen +
+                       kRandoSidecar_SlotExtV12Size;
+    memcpy(v12buf, current, v12_total);
+    RandoSidecarSlot v12dst;
+    uint32 v12_used =
+        deserialize_slot_versioned(v12buf, v12_total, &v12dst, 12);
+    if (v12_used != v12_total)
+      selfcheck_die("v12 compat: used != v12 total");
+    if (v12dst.header.ow_attempt != src.header.ow_attempt ||
+        v12dst.header.ow_digest24 != src.header.ow_digest24)
+      selfcheck_die("v12 compat: OW warp identity lost");
+    if (v12dst.header.discovered_dungeons != 0 ||
+        v12dst.header.discovered_whirlpools != 0 ||
+        !all_zero_bytes(v12dst.header.discovered_caves,
+                        sizeof(v12dst.header.discovered_caves)) ||
+        !all_zero_bytes(v12dst.header.discovered_exits,
+                        sizeof(v12dst.header.discovered_exits)))
+      selfcheck_die("v12 compat: topology discovery must be absent/zero");
+    {
+      const uint8 *hint_bytes = (const uint8 *)&v12dst.header.hint_state;
+      for (size_t i = 0; i < sizeof(v12dst.header.hint_state); i++) {
+        if (hint_bytes[i] != 0)
+          selfcheck_die("v12 compat: Hints v2 metadata must be absent/zero");
+      }
+    }
+  }
+
   // format_version 9 compatibility: the audit-era slot has a 30-byte
   // canonical settings blob followed by the 51-byte enemy-registry extension.
   // The appended key-rings byte must zero-extend to Off while every v9
   // extension field remains intact.
   {
-    uint8 current[512], v9buf[256];  // current holds a v13-size serialize
+    uint8 current[512], v9buf[256];  // current holds a v14-size serialize
     uint32 current_used = RandoSave_SerializeSlot(&src, current, sizeof(current));
     if (current_used == 0) selfcheck_die("v9 compat: serialize current slot");
     uint32 base = slot_on_disk_size_base(src.header.placement_table_size);

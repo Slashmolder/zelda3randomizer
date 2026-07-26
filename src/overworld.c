@@ -3896,6 +3896,7 @@ uint16 Overworld_ToolAndTileInteraction(uint16 x, uint16 y) {  // 9bbd82
         index_of_interacting_tile = yv;
         yv = (attr == 0x72a) ? 0xdc8 : 0xdc7;
         uint32 result;
+        uint8 terrain_result;
 check_secret:
         // add-rando-grass-rock-shuffle: hook the bush-cut / thick-grass-cut
         // consume (yv 0xdc5/0xdc7/0xdc8). The shovel/dig path (yv==0xdc9) is a
@@ -3903,7 +3904,7 @@ check_secret:
         // the placed item was granted; skip RevealSecret and set the 0xFF
         // no-spawn sentinel (a ZERO would trigger the outdoor random-secret
         // substitution) so nothing spawns and yv keeps its cut-tile value.
-        uint8 terrain_result = yv == 0xdc9 ? kRandoTerrain_Vanilla :
+        terrain_result = yv == 0xdc9 ? kRandoTerrain_Vanilla :
             Rando_TerrainRevealHook(overworld_screen_index, pos);
         if (terrain_result == kRandoTerrain_Retry)
           return attr;

@@ -33,7 +33,7 @@
 #include "bonk_lookup.h"     // (area, block) -> LOC_*; add-rando-bonk-sanity
 #include "enemy_check_lookup.h"  // kRandoEnemyCheckRegistryDigest/Count (activation guard)
 #include "direct_grant_icons.h"  // kDirectGrantIcons[] (Phase B Slice 9)
-#include "rando_hints.h"  // Rando_ClearHints (Phase B Slice 5)
+#include "rando_hints.h"  // Hints v2 lifecycle/persistence
 #include "rando_dialogue.h"  // randomized reward-aware NPC text
 #include "shuffle_entrance.h"  // Phase C entrance shuffle (overlay + self-check)
 #include "shuffle_ow_warp.h"   // add-rando-ow-warp-shuffle (layout + self-check)
@@ -2075,7 +2075,6 @@ static void Rando_ShopPriceSelfCheck(void) {
 // offset). See add-rando-retro-takeany/design.md §3.
 #define kRandoTakeAnyCaveCount 31
 #define kRandoTakeAnyLocBase   266
-uint8 g_rando_takeany_door_id;  // transient; set by Overworld_UseEntrance
 // Phase C Stage 2 — dungeon entrance-shuffle coupling. Set at the overworld entry
 // hook when a SHUFFLED dungeon door is entered; the dungeon-exit room-keyed search
 // uses it instead of the loaded dungeon's room so the player returns to the SOURCE
@@ -2159,6 +2158,16 @@ static int takeany_cave_for_door(uint8 door_id) {
   return -1;
 }
 
+static uint8 takeany_host_room_for_cave(int cave) {
+  if (cave < 0 || cave >= kRandoTakeAnyCaveCount) return 0xFFu;
+  switch (kRandoTakeAnyCaves[cave].host_entrance) {
+  case 0x58: return 0x12;  // room 0x112, Light World Lake Hylia shop
+  case 0x60: return 0x0F;  // room 0x10F, Dark World shop
+  case 0x46: return 0x1F;  // room 0x11F, Light World Kakariko shop
+  default:   return 0xFFu;
+  }
+}
+
 // True iff loc is present in the active placement table (the generator only
 // emits active caves' slots, so presence == "active this seed").
 static bool takeany_loc_in_table(uint16 loc) {
@@ -2190,10 +2199,9 @@ uint8 Rando_TakeAnyDrawKind(uint8 door_id, uint8 pos) {
 }
 
 uint16 Rando_TakeAnyLiveSlot(uint8 room, uint8 door_id, uint8 pos) {
-  (void)room;  // door_id is globally unique across the 31 caves; room is advisory
   if (pos > 1) return 0xFFFFu;
   int cave = takeany_cave_for_door(door_id);
-  if (cave < 0) return 0xFFFFu;
+  if (cave < 0 || room != takeany_host_room_for_cave(cave)) return 0xFFFFu;
   uint16 loc = (uint16)(kRandoTakeAnyLocBase + 2 * cave + pos);
   if (!takeany_loc_in_table(loc)) return 0xFFFFu;   // inactive slot
   if (Rando_IsLocationChecked(loc)) return 0xFFFFu; // already taken (cave locked)
@@ -2205,11 +2213,10 @@ RandoGrantResult Rando_TakeAnyGrant(uint8 room, uint8 door_id, uint8 pos,
                                     RandoGrantPresentation presentation,
                                     uint8 receipt_method,
                                     uint8 chest_position) {
-  (void)room;
   if (pos > 1)
     return kRandoGrantResult_NotActive;
   int cave = takeany_cave_for_door(door_id);
-  if (cave < 0)
+  if (cave < 0 || room != takeany_host_room_for_cave(cave))
     return kRandoGrantResult_NotActive;
   uint16 loc = (uint16)(kRandoTakeAnyLocBase + 2 * cave + pos);
   if (!takeany_loc_in_table(loc))
@@ -2731,28 +2738,74 @@ void Rando_PopulateSlotBitmap(struct RandoSidecarSlot *out_slot) {
   // valid "own nothing" state, so always mark present on a rando save.
   out_slot->header.souls_present = 1;
   memcpy(out_slot->header.soul_flags, Souls_Flags(), sizeof(out_slot->header.soul_flags));
-  // tracker-player-knowledge — persist topology-discovery state (v13 ext).
+  // tracker-player-knowledge — persist topology-discovery state.
   Rando_GetDiscoveryState(&out_slot->header.discovered_dungeons,
                           &out_slot->header.discovered_whirlpools,
                           out_slot->header.discovered_caves,
                           out_slot->header.discovered_exits);
+  // Hints v2 persists only the certified plan identity and mutable discovery.
+  // A legacy/failed-closed activation exports nothing, preserving its absent
+  // metadata instead of silently blessing a current-algorithm reroll.
+  RandoHintPersistedState hint_state;
+  if (Rando_HintsExportPersistedState(&hint_state))
+    out_slot->header.hint_state = hint_state;
 }
 
-void Rando_OnGameSave(int slot_index, const uint8 *paired_sram_slot, uint32 paired_sram_slot_size) {
-  if (!g_rando_slot_active) return;
-  if (slot_index < 0 || slot_index >= 3) return;  // 3 sidecar slots
+// Private deterministic fault injection for the persistence self-check. The
+// production value is always false; keeping the seam here lets the test prove
+// the coordinator propagates a sidecar-write failure without touching a real
+// saves/sram_rando.dat.
+static bool g_rando_selftest_force_sidecar_save_failure;
+
+bool Rando_OnGameSave(int slot_index, const uint8 *paired_sram_slot,
+                      uint32 paired_sram_slot_size) {
+  if (!g_rando_slot_active) return true;
+  if (slot_index < 0 || slot_index >= 3) return false;  // 3 sidecar slots
+  if (g_rando_selftest_force_sidecar_save_failure) return false;
 
   // Read the existing sidecar slot (preserves header + placement table).
-  // If the slot isn't a rando slot, skip silently — the in-game save
-  // still recorded SRAM via ZeldaWriteSram; we just don't have a sidecar
-  // to update.
+  // An active slot must have its sidecar. Suppress the paired SRAM commit if
+  // that durable half cannot be loaded or updated; otherwise spent rupees can
+  // survive without the matching paid-hint discovery bit.
   RandoSidecarSlot slot;
-  if (!Rando_LoadSidecarSlot(slot_index, &slot)) return;
-  if (slot.header.slot_kind != kSlotKind_Randomizer) return;
+  if (!Rando_LoadSidecarSlot(slot_index, &slot)) return false;
+  if (slot.header.slot_kind != kSlotKind_Randomizer) return false;
 
   // Refresh the bitmap from the in-memory session and write back.
   Rando_PopulateSlotBitmap(&slot);
-  (void)Rando_WriteSidecarSlot(slot_index, &slot, paired_sram_slot, paired_sram_slot_size);
+  return Rando_WriteSidecarSlot(slot_index, &slot, paired_sram_slot,
+                                paired_sram_slot_size);
+}
+
+void Rando_GameSaveFailureSelfCheck(void) {
+  uint8 saved_slot_active = g_rando_slot_active;
+  bool saved_force_failure = g_rando_selftest_force_sidecar_save_failure;
+  uint8 staged_sram[0x500];
+  memset(staged_sram, 0, sizeof(staged_sram));
+
+  // The test hook must never suppress an ordinary vanilla save.
+  g_rando_selftest_force_sidecar_save_failure = true;
+  g_rando_slot_active = 0;
+  bool vanilla_allowed =
+      Rando_OnGameSave(0, staged_sram, (uint32)sizeof(staged_sram));
+
+  // Once a randomizer slot is active, the identical forced sidecar failure
+  // must propagate false. SaveGameFile's direct boolean gate then suppresses
+  // ZeldaWriteSram, preserving the sidecar-first paired-commit contract.
+  g_rando_slot_active = 1;
+  bool rando_allowed =
+      Rando_OnGameSave(0, staged_sram, (uint32)sizeof(staged_sram));
+
+  g_rando_slot_active = saved_slot_active;
+  g_rando_selftest_force_sidecar_save_failure = saved_force_failure;
+
+  if (!vanilla_allowed || rando_allowed) {
+    fprintf(stderr,
+            "[Rando_GameSaveFailureSelfCheck] FAIL: sidecar failure "
+            "propagation/vanilla bypass\n");
+    exit(2);
+  }
+  fprintf(stderr, "[Rando_GameSaveFailureSelfCheck] OK\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -4701,16 +4754,6 @@ static uint8 g_rando_active_medallion_assignment[kRandoMedallionEntranceCount];
 // the tracker agree with the bosses actually spawned). Regenerated from
 // (settings, base seed) at slot load, same as prize/medallion.
 static uint8 g_rando_active_boss_assignment[16];
-// the EXACT settings the activation hint block synthesized for the
-// ACTIVE slot: the full recovered blob when valid, else the header-ext /
-// default fallbacks (v1/no-blob slots still get regenerated hints; their
-// Rando_GetActiveSettings() is NULL). Rando_RegenerateActiveSlotHints() replays
-// Rando_GenerateHints over these + the installed placement, so out-of-band
-// hint-table clobbers (the native window's spoiler export regenerates hints
-// from its generate-time snapshot) can restore the active seed's in-game hints
-// exactly — activation and restore share one code path and cannot drift.
-static RandoSettings g_rando_active_hint_settings;
-static bool g_rando_active_hint_settings_valid = false;
 // replay inputs for Rando_ReinstallActiveSlotLogicOverlays(): the
 // ACTIVE slot's header (the same fields Entrance_RuntimeInstall and the door
 // regen consumed at activation) plus whether activation installed a door logic
@@ -5855,59 +5898,28 @@ void Rando_ActivateSidecarSlot(const RandoSidecarSlot *src) {
                        g_rando_active_settings.mode_weapons == kModeWeapons_Swordless)
                           ? 1 : 0;
 
-  // === Phase B hints: regenerate telepathic-tile hints for this slot ===
-  // Hints are a pure function
-  // of (settings, placement table); the generator (rando_hints.c) reads only
-  // the `hints` and `goal` axes from RandoSettings. Rather than the one-way
-  // settings_hash, the slot header carries those two axes additively in its
-  // reserved tail (rando_save.h settings extension). We synthesize a settings
-  // struct from defaults, override `hints`/`goal` from the ext, and
-  // regenerate — so a slot loaded from disk (including share-string imports)
-  // shows hints without re-running the full seed generator.
-  if (g_rando_active_settings_valid) {
-    // Most reliable source: the full canonical settings blob recovered just
-    // above (the same one the reachability engine consumes). It carries the
-    // real `hints` and `goal` axes, so it is immune to a stale or partially
-    // written header ext byte — which would otherwise leave hints silently
-    // off even though the seed was generated with hints on.
-    g_rando_active_hint_settings = g_rando_active_settings;
-  } else {
-    // No canonical blob (older v1 slot / snapshot restore). Fall back to the
-    // additive header ext byte, or default hints-on for the oldest slots so
-    // existing rando slots still surface telepathic-tile hints. goal stays at
-    // the Settings_SetDefaults value (Murahdahla won't fire unless it happens
-    // to be a Triforce/Ganon-hunt default).
-    Settings_SetDefaults(&g_rando_active_hint_settings);
-    if (src->header.settings_ext_present) {
-      g_rando_active_hint_settings.hints = src->header.hints_setting;
-      g_rando_active_hint_settings.goal = src->header.goal;
-    } else {
-      g_rando_active_hint_settings.hints = kHintsMode_On;
-    }
-  }
-  g_rando_active_hint_settings_valid = true;
-  // single code path with the out-of-band restore: the synthesized
-  // hint settings persist in g_rando_active_hint_settings so the bridge's
-  // spoiler export can replay this exact regeneration after clobbering the
-  // hint globals.
+  // === Hints v2: strict identity reconstruction after all overlays ===
+  // The sidecar carries only algorithm/schema/digest/discovery. Import that
+  // expectation and rebuild from the accepted canonical settings, placement,
+  // and the fully installed shuffle/layout state above. Missing (pre-v14),
+  // unsupported, or mismatched metadata disables hints only; it never blesses
+  // a current-algorithm reroll for an old slot.
+  Rando_HintsImportPersistedState(&src->header.hint_state);
   Rando_RegenerateActiveSlotHints();
-  // === Phase B hints: end ===
+  // === Hints v2: end ===
 }
 
-// regenerate the hint table for the CURRENTLY-ACTIVE slot,
-// replaying exactly the activation-time hint block above (including the
-// v1/no-blob header-ext fallbacks captured in g_rando_active_hint_settings).
-// Called by activation itself and by RandoWindowBridge_WriteSpoilerFiles after
-// its snapshot-hints export overwrote the hint globals. Clears the table
-// (vanilla text) when no slot is active — matching the snapshot-restore
-// convention.
+// Rebuild the certified hint plan for the CURRENTLY-ACTIVE slot. The expected
+// identity must already have been imported from its sidecar/snapshot. This
+// never creates a fresh identity and therefore cannot silently upgrade legacy
+// slots or replace a mismatched plan.
 void Rando_RegenerateActiveSlotHints(void) {
   const RandoPlacementTable *pt = Placement_GetActive();
-  if (!g_rando_active_hint_settings_valid || pt == NULL || pt->entries == NULL) {
+  if (!g_rando_slot_active || pt == NULL || pt->entries == NULL) {
     Rando_ClearHints();
     return;
   }
-  Rando_GenerateHints(&g_rando_active_hint_settings, pt, NULL);
+  (void)Rando_RebuildHints(Rando_GetActiveSettings(), pt, NULL);
 }
 
 // reinstall the ACTIVE slot's LOGIC-side overlays after an
@@ -6130,11 +6142,8 @@ void Rando_DeactivateSlot(void) {
   g_rando_show_item_tracker = false;
   g_rando_show_location_tracker = false;
 
-  // Phase B Slice 5 — clear the hint set so it doesn't leak across slot
-  // switches once the hint generator lands (stub today; no-op). Also
-  // invalidate the captured hint settings so a post-deactivation
-  // Rando_RegenerateActiveSlotHints() clears rather than replaying a stale slot.
-  g_rando_active_hint_settings_valid = false;
+  // Clear the immutable hint plan, discovery, imported identity, and paid
+  // presentation latches at every slot boundary.
   Rando_ClearHints();
 
   // §62 — clear the share-string cache; reveal action returns FileNotFound
@@ -6769,6 +6778,31 @@ void Rando_FillItemView(RandoItemView *out) {
 
 extern void sha256_buffer(const uint8 *data, size_t len, uint8 out[32]);
 
+// Race reveal is normally exact-current only. Generator 156 is the one
+// deliberately frozen exception: it predates configurable policy and uses the
+// pinned 1/1 algorithm/schema. Keep accepting that exact historical container
+// after later generator bumps; the embedded spoiler stamp still fails closed
+// if current placement/sphere behavior cannot reproduce its signed bytes.
+// Every other non-current generator remains unsupported.
+static bool reveal_select_hint_identity(uint16 generator_version,
+                                        uint16 *algorithm_version,
+                                        uint16 *text_schema_version) {
+  if (algorithm_version == NULL || text_schema_version == NULL)
+    return false;
+  if (generator_version == (uint16)kGeneratorVersion) {
+    *algorithm_version = kRandoHintPlanAlgorithmVersion;
+    *text_schema_version = kRandoHintTextSchemaVersion;
+    return true;
+  }
+  if (kGeneratorVersion >= kRandoHintConfigurableGeneratorVersion &&
+      generator_version == kRandoHintLegacyGeneratorVersion) {
+    *algorithm_version = kRandoHintPlanLegacyAlgorithmVersion;
+    *text_schema_version = kRandoHintLegacyTextSchemaVersion;
+    return true;
+  }
+  return false;
+}
+
 RandoRevealResult Rando_RevealSpoiler(const char *suppressed_path,
                                       const char *expected_share_string) {
   char resolved[1024];
@@ -6808,8 +6842,27 @@ RandoRevealResult Rando_RevealSpoiler(const char *suppressed_path,
     }
   }
 
-  if (hdr.generator_version != (uint16)kGeneratorVersion) {
+  uint16 hint_algorithm_version;
+  uint16 hint_text_schema_version;
+  if (!reveal_select_hint_identity(hdr.generator_version,
+                                   &hint_algorithm_version,
+                                   &hint_text_schema_version)) {
     return kRandoReveal_VersionMismatch;
+  }
+
+  bool legacy_156 =
+      hdr.generator_version == kRandoHintLegacyGeneratorVersion;
+  if (legacy_156 &&
+      ((hdr.settings_canonical[25] &
+        kHintNpcRewardRevealAxis_Enabled) != 0 ||
+       (hdr.settings_canonical[28] &
+        (kHintTileCoverageAxis_Mask | kHintMixAxis_LowBit)) != 0 ||
+       (hdr.settings_canonical[29] & kHintMixAxis_HighBit) != 0 ||
+       (hdr.settings_canonical[30] & kHintPaidDepthAxis_Mask) != 0)) {
+    // Those seven bits did not exist in generator 156. Accepting them would let
+    // a CRC-correct foreign artifact smuggle configurable policy into the
+    // frozen 1/1 builder instead of reproducing a genuine predecessor seed.
+    return kRandoReveal_SettingsCorrupt;
   }
 
   RandoSettings settings;
@@ -6829,6 +6882,27 @@ RandoRevealResult Rando_RevealSpoiler(const char *suppressed_path,
   ShareString ss;
   if (Share_Decode(share_buf, &ss) != kShareDecodeOk) {
     return kRandoReveal_ParseError;
+  }
+  if (ss.version != (uint8)hdr.generator_version) {
+    return kRandoReveal_VersionMismatch;
+  }
+  if (ss.format == kShareFormatV2) {
+    // ZRSR normally embeds the 50-character v1 identity. If a valid shorter
+    // historical v2 token is encountered, require its settings to normalize
+    // to the same race-cleared canonical bytes instead of trusting two
+    // conflicting sources of regeneration inputs.
+    RandoSettings share_settings;
+    uint8 share_canonical[kSettingsCanonicalLen];
+    if (Settings_CanonicalDeserialize(ss.settings_canonical,
+                                      &share_settings) != 0) {
+      return kRandoReveal_SettingsCorrupt;
+    }
+    share_settings.race_mode = 0;
+    Settings_CanonicalSerialize(&share_settings, share_canonical);
+    if (memcmp(share_canonical, hdr.settings_canonical,
+               sizeof share_canonical) != 0) {
+      return kRandoReveal_SettingsCorrupt;
+    }
   }
   uint64 seed_u64 = ss.seed_u64;
 
@@ -6863,16 +6937,15 @@ RandoRevealResult Rando_RevealSpoiler(const char *suppressed_path,
   RandoSpheres spheres;
   Logic_ComputeSpheres(&settings, &table, &spheres);
 
-  // Regenerate the hint set so the spoiler JSON's `hints[]` array
-  // matches the generate-time bytes. Without this, the regenerated
-  // spoiler emits empty `hints: []` (module-static g_hint_table is
-  // zero in a fresh process), so any seed generated with hints=on
-  // would fail the SHA-256 stamp comparison below with
-  // kRandoReveal_StampMismatch. Determinism contract is in the
-  // rando_hints.c header doc-comment — same (settings, placement) →
-  // byte-identical hint text; mirrors the generate-time call site that
-  // produces the generate-time bytes.
-  (void)Rando_GenerateHints(&settings, &table, &spheres);
+  // Rebuild the immutable generation-time hint plan explicitly. Spoiler
+  // serialization consumes this caller-owned value, so race reveal neither
+  // reads nor clobbers the active gameplay plan/discovery state.
+  RandoHintPlan hint_plan;
+  if (!Rando_BuildHintPlan(&settings, &table, &spheres,
+                           hint_algorithm_version,
+                           hint_text_schema_version, &hint_plan)) {
+    return kRandoReveal_SettingsCorrupt;
+  }
 
   // Build the spoiler view and write to a tmp file for stamp computation.
   // forward_fill_fallback_count and retry_attempts are
@@ -6883,10 +6956,11 @@ RandoRevealResult Rando_RevealSpoiler(const char *suppressed_path,
   memset(&regen, 0, sizeof(regen));
   regen.share_string = share_buf;
   regen.seed_u64 = seed_u64;
-  regen.generator_version = kGeneratorVersion;
+  regen.generator_version = hdr.generator_version;
   regen.settings = &settings;
   regen.placements = &table;
   regen.spheres = &spheres;
+  regen.hint_plan = &hint_plan;
   uint8 regen_medallion_assignment[kRandoMedallionEntranceCount];
   {
     const uint8 *assignment = Rando_GetMedallionAssignment();
@@ -9717,6 +9791,32 @@ static void Rando_CrystalGateSelfCheck(void) {
   fprintf(stderr, "[Rando_CrystalGateSelfCheck] OK\n");
 }
 
+static uint8 rando_selfcheck_dialogue_font(char ch) {
+  if (ch >= 'A' && ch <= 'Z') return (uint8)(ch - 'A');
+  if (ch >= 'a' && ch <= 'z') return (uint8)(26 + ch - 'a');
+  if (ch >= '0' && ch <= '9') return (uint8)(52 + ch - '0');
+  if (ch == '>') return 68;
+  if (ch == ' ') return 89;
+  return 0xFF;
+}
+
+static int rando_selfcheck_find_dialogue_ascii(const uint8 *buf,
+                                                const char *text) {
+  uint8 needle[64];
+  size_t n = strlen(text);
+  if (n == 0 || n > sizeof(needle)) return -1;
+  for (size_t i = 0; i < n; i++) {
+    needle[i] = rando_selfcheck_dialogue_font(text[i]);
+    if (needle[i] == 0xFF) return -1;
+  }
+  int len = 0;
+  while (len < 240 && buf[len] != 0x7F) len++;
+  for (int i = 0; i + (int)n <= len; i++)
+    if (memcmp(buf + i, needle, n) == 0)
+      return i;
+  return -1;
+}
+
 static void Rando_DynamicHintFastForwardSelfCheck(void) {
   uint8 saved_slot_active = g_rando_slot_active;
   bool saved_settings_valid = g_rando_active_settings_valid;
@@ -9732,6 +9832,7 @@ static void Rando_DynamicHintFastForwardSelfCheck(void) {
   g_rando_active_settings_valid = true;
   Settings_SetDefaults(&g_rando_active_settings);
   g_rando_active_settings.hints = kHintsMode_On;
+  g_rando_active_settings.hint_npc_reward_reveal = 1;
   g_zenv.dialogue_flags = 0;
   Placement_Install(&pearl_table);
 
@@ -9745,8 +9846,9 @@ static void Rando_DynamicHintFastForwardSelfCheck(void) {
   RandoPlacement surface_entries[] = {
     {LOC_Desert_Ledge, ITEM_OcarinaInactive},
     {LOC_Bumper_Cave, ITEM_Hookshot},
+    {LOC_Stumpy, ITEM_Shovel},
   };
-  RandoPlacementTable surface_table = {surface_entries, 2};
+  RandoPlacementTable surface_table = {surface_entries, 3};
   Placement_Install(&surface_table);
 
   player_is_indoors = 0;
@@ -9766,25 +9868,57 @@ static void Rando_DynamicHintFastForwardSelfCheck(void) {
       Rando_RenderHintMessage(0xE5, encoded) ||
       !Rando_RewriteInteractiveHintMessage(0xE5, encoded))
     tsc_die("DynamicHint: Stumpy interactive redirect did not activate safely");
-  bool has_choose = false, has_page_reset = false;
+  int first_wait = -1, hint_line2 = 0, hint_line3 = 0;
+  for (int i = 0; i < 240 && encoded[i] != 0x7F; i++) {
+    if (encoded[i] == 0x7E) {
+      first_wait = i;
+      break;
+    }
+    hint_line2 += encoded[i] == 0x75;
+    hint_line3 += encoded[i] == 0x76;
+  }
+  if (first_wait <= 0 || hint_line2 != 1 || hint_line3 != 0)
+    tsc_die("DynamicHint: Stumpy fixture no longer exercises two-line hint");
+
+  Rando_RewriteRewardDialogue(0xE5, encoded);
+  int reward_at = rando_selfcheck_find_dialogue_ascii(encoded, "Shovel");
+  int hint_at = rando_selfcheck_find_dialogue_ascii(encoded, "Flute");
+  if (hint_at < 0)
+    hint_at = rando_selfcheck_find_dialogue_ascii(encoded, "Hints");
+  int selected_at =
+      rando_selfcheck_find_dialogue_ascii(encoded, "    > Yes");
+  int unselected_at =
+      rando_selfcheck_find_dialogue_ascii(encoded, "       No way");
+  bool has_choose = false;
+  int page_waits = 0, page_scrolls = 0, unsafe_top_jumps = 0;
   for (int i = 0; i < 240 && encoded[i] != 0x7F; i++) {
     if (encoded[i] == 0x68) has_choose = true;
-    if (i < 237 && encoded[i] == 0x7E && encoded[i + 1] == 0x73 &&
-        encoded[i + 2] == 0x74)
-      has_page_reset = true;
+    page_waits += encoded[i] == 0x7E;
+    page_scrolls += encoded[i] == 0x73;
+    unsafe_top_jumps += encoded[i] == 0x74;
   }
-  if (!has_choose || !has_page_reset)
-    tsc_die("DynamicHint: Stumpy redirect lost choice/page commands");
+  if (reward_at < 0 || hint_at <= reward_at || selected_at <= hint_at ||
+      unselected_at <= selected_at || !has_choose ||
+      page_waits != 2 || page_scrolls != 6 || unsafe_top_jumps != 0) {
+    fprintf(stderr,
+            "DynamicHint: Stumpy composed reward=%d hint=%d selected=%d "
+            "unselected=%d choose=%d waits=%d scrolls=%d top_jumps=%d\n",
+            reward_at, hint_at, selected_at, unselected_at, has_choose,
+            page_waits, page_scrolls, unsafe_top_jumps);
+    tsc_die("DynamicHint: Stumpy reward/hint/choice composition drifted");
+  }
 
   g_rando_active_settings.hints = kHintsMode_Off;
-  if (Rando_IsDynamicHintMessage(0x36))
-    tsc_die("DynamicHint: hints-off post-Agahnim redirect stayed active");
-  if (!Text_ShouldFastForwardStoryMessage(0x36))
-    tsc_die("DynamicHint: hints-off post-Agahnim story fast-forward changed");
+  if (!Rando_IsDynamicHintMessage(0x36))
+    tsc_die("DynamicHint: hints-off owned redirect was released to vanilla");
+  if (Text_ShouldFastForwardStoryMessage(0x36))
+    tsc_die("DynamicHint: hints-off neutral redirect was fast-forwarded");
   memset(encoded, 0x55, sizeof(encoded));
-  if (Rando_RewriteInteractiveHintMessage(0xE5, encoded) ||
-      encoded[0] != 0x55)
-    tsc_die("DynamicHint: hints-off Stumpy prompt was modified");
+  if (!Rando_RenderHintMessage(0x36, encoded))
+    tsc_die("DynamicHint: hints-off redirect did not render neutral text");
+  memset(encoded, 0x55, sizeof(encoded));
+  if (!Rando_RewriteInteractiveHintMessage(0xE5, encoded))
+    tsc_die("DynamicHint: hints-off Stumpy did not retain a neutral choice");
 
   Placement_Install(saved_placement);
   overworld_screen_index = saved_overworld_screen;
@@ -10580,14 +10714,21 @@ static void Rando_GrantTransactionSelfCheck(void) {
     memset(g_rando_checked_bitmap, 0, sizeof(g_rando_checked_bitmap));
     link_rupees_goal = 0;
     GRANT_TX_CHECK(Rando_TakeAnyGrant(
-                         0x58, 0x56, 0, 0x34,
+                         0x13, 0x56, 0, 0x34,
+                         kRandoGrantPresentation_None, 0, 0) ==
+                         kRandoGrantResult_NotActive &&
+                       !Rando_IsLocationChecked(266) &&
+                       !Rando_IsLocationChecked(267),
+                     "take-any grant accepted the wrong host room", 266);
+    GRANT_TX_CHECK(Rando_TakeAnyGrant(
+                         0x12, 0x56, 0, 0x34,
                          kRandoGrantPresentation_None, 0, 0) ==
                          kRandoGrantResult_Accepted &&
                        Rando_IsLocationChecked(266) &&
                        Rando_IsLocationChecked(267) && link_rupees_goal == 1,
                      "take-any grant/forfeit transaction failed", 266);
     GRANT_TX_CHECK(Rando_TakeAnyGrant(
-                         0x58, 0x56, 0, 0x34,
+                         0x12, 0x56, 0, 0x34,
                          kRandoGrantPresentation_None, 0, 0) ==
                          kRandoGrantResult_AlreadyChecked,
                      "take-any replay was not terminal", 266);
@@ -10604,7 +10745,7 @@ static void Rando_GrantTransactionSelfCheck(void) {
     // where the fix is a small net loss, accepted to keep one contract rather
     // than a per-site policy.
     GRANT_TX_CHECK(Rando_TakeAnyGrant(
-                         0x58, 0x56, 0, 0x16,
+                         0x12, 0x56, 0, 0x16,
                          kRandoGrantPresentation_None, 0, 0) ==
                          kRandoGrantResult_Accepted &&
                        Rando_IsLocationChecked(266) &&
@@ -10783,6 +10924,8 @@ static const RandoSelfCheckEntry kRandoSelfChecks[] = {
   { kRandoSelfCheckGroup_Generation,  Customizer_SelfCheck },
   { kRandoSelfCheckGroup_Generation,  Customizer_PlacementSelfCheck },
   { kRandoSelfCheckGroup_Persistence, RandoSave_SelfCheck },
+  { kRandoSelfCheckGroup_Persistence, Rando_GameSaveFailureSelfCheck },
+  { kRandoSelfCheckGroup_Persistence, SaveGameFile_StagingSelfCheck },
   { kRandoSelfCheckGroup_Generation,  RandoGenerate_SelfCheck },
   { kRandoSelfCheckGroup_Persistence, RandoSnapshotTail_SelfCheck },
   { kRandoSelfCheckGroup_Ui,          TextField_SelfCheck },

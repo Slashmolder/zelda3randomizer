@@ -46,7 +46,7 @@
 #include "features.h"           // kFeatures1_DoorShuffleActive
 #include "rando/shuffle_boss.h"  // BossShuffle_Generate
 #include "rando/shuffle_drops.h"  // DropShuffle_Generate
-#include "rando/rando_hints.h"  // Rando_GenerateHints
+#include "rando/rando_hints.h"  // caller-owned RandoHintPlan
 #include "rando/rando_generate.h"  // Rando_PlaceWithEntrances / spoiler entrance fields
 #include "rando/seed_shape.h"  // generator-side seed-shape filters
 #include "rando/auto_tracker.h"  // AutoTracker_* (opt-in local tracker server)
@@ -1060,11 +1060,18 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
             (unsigned)spheres.unreachable_count, (unsigned)(spheres.max_sphere + 1));
   }
 
-  // Populate per-NPC hint texts. No-op when
-  // settings.hints == kHintsMode_Off. Output reaches users via the
-  // spoiler's `hints[]` array; runtime telepathic-tile intercept is
-  // playtest-gated (#85).
-  Rando_GenerateHints(&settings, &table, &spheres);
+  // Build one immutable generation-time hint plan after placement, overlays,
+  // and spheres are final. Spoiler serialization consumes this caller-owned
+  // value directly and never reads or mutates active gameplay hint globals.
+  RandoHintPlan hint_plan;
+  if (!Rando_BuildHintPlan(&settings, &table, &spheres,
+                           kRandoHintPlanAlgorithmVersion,
+                           kRandoHintTextSchemaVersion, &hint_plan)) {
+    fprintf(stderr, "--generate-seed: hint plan build failed\n");
+    Rando_ClearGenerationLogicOverlays();
+    free(entries);
+    exit(1);
+  }
 
   // Build the spoiler and write it.
   RandoSpoiler spoiler;
@@ -1076,6 +1083,7 @@ static void MaybeRunGenerateSeedAndExit(int argc, char **argv, const char *confi
   Rando_SpoilerSetEntranceFields(&spoiler, &reg);
   spoiler.placements = &table;
   spoiler.spheres = &spheres;
+  spoiler.hint_plan = &hint_plan;
   uint8 medallion_assignment_sp[kRandoMedallionEntranceCount];
   {
     const uint8 *assignment = Rando_GetMedallionAssignment();
@@ -1599,11 +1607,12 @@ static void PersistRandoWindowState(void) {
 // Safe to run while paused: Rando_GenerateSlot only computes placement and
 // writes the TARGET slot's SRAM image + sidecar — it never touches g_ram or
 // the in-flight frame state, so the paused game is unaffected. Its in-session
-// side effects on the ACTIVE seed's globals — it rewrites the hint table with
-// the new seed's hints (Rando_GenerateHints) and clears the logic-side
-// entrance/door overlays (Rando_ClearGenerationLogicOverlays) — are undone by
-// the two restore calls at the bottom. (Without the paused path call the
-// window's no-cancel "Generating seed..." modal sat stuck until unpause.)
+// side effects on the ACTIVE seed's globals are limited to clearing the
+// logic-side entrance/door overlays (Rando_ClearGenerationLogicOverlays);
+// the restore call at the bottom re-installs them. Hint-plan construction is
+// caller-owned and does not touch the active gameplay plan. (Without the
+// paused-path call, the window's no-cancel "Generating seed..." modal sat stuck
+// until unpause.)
 static void ConsumeRandoWindowGenerateRequest(void) {
   if (!RandoWindowBridge_ConsumeGenerateRequest())
     return;
@@ -1623,8 +1632,10 @@ static void ConsumeRandoWindowGenerateRequest(void) {
   if (ok) {
     b->seed_u64 = res.seed_u64;
     RandoWindowBridge_RecomputeDerived();
-    RandoWindowBridge_StoreGenerated(&res.placement, NULL,
+    RandoWindowBridge_StoreGenerated(&res.placement,
+                                     res.has_spheres ? &res.spheres : NULL,
                                      res.has_medallion_assignment ? res.medallion_assignment : NULL,
+                                     res.has_hint_plan ? &res.hint_plan : NULL,
                                      res.race_mode);  // bridge copies
     free(res.placement.entries);                                            // free our owned copy
     // Snapshot the settings/share/seed that produced this placement so the
@@ -1670,14 +1681,6 @@ static void ConsumeRandoWindowGenerateRequest(void) {
   } else {
     RandoWindowBridge_SetGenerateResult(-1, err);
   }
-  // Rando_GenerateSlot writes the new seed's hints into the global hint table
-  // (Rando_GenerateHints in rando_generate.c). Restore the active slot's hints
-  // so generating a seed mid-session without loading it does not leave
-  // telepathic tiles / fortune tellers showing the unloaded seed's hints.
-  // Placed after the if/else so it covers both arms. Today only the success
-  // arm reaches hint regeneration, but the restore is idempotent.
-  // Safe with no active slot: clears to vanilla text.
-  Rando_RegenerateActiveSlotHints();
   // The same generation also clears the active slot's logic-side entrance/door
   // overlays and repoints the logic-VM prize/medallion/boss assignment pointers
   // at the placer's statics for the new seed. Without reinstalling active-slot

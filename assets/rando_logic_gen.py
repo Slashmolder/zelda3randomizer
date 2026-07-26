@@ -7,6 +7,9 @@ Per `randomizer-logic / Logic YAML schema and worked examples` and tasks.md
   - assets/rando/op_registry.yaml          (task 3.4 — op-code IDs)
   - assets/rando/item_registry.yaml        (task 3.2 — item IDs)
   - assets/rando/location_registry.yaml    (task 3.1 — location IDs)
+  - assets/rando/hint_metadata.yaml        (Hints v2 categories/aliases)
+  - assets/rando/hint_metadata.lock.json   (approved algorithm/text fingerprints)
+  - assets/rando/hint_registry_contract.json (merged-registry provenance)
   - assets/rando/logic.schema.yaml         (task 3.5a — schema)
   - assets/rando/macros.yaml               (task 3.4a — named macros) [optional]
   - assets/rando/logic.yaml                (task 3.3 — graph)          [optional]
@@ -15,6 +18,7 @@ Emits:
 
   - src/rando/location_ids.h               (#define LOC_<name> <id>)
   - src/rando/item_ids.h                   (#define ITEM_<name> <id>)
+  - src/rando/hint_metadata.h              (Hints v2 generated metadata)
   - src/rando/logic_data.c                 (LocationDef[], RegionDef[],
                                              EdgeDef[], predicate streams)
 
@@ -55,6 +59,8 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import hashlib
+import inspect
 import json
 import os
 import re
@@ -192,6 +198,45 @@ class LocationDef:
     source: str = ""
 
 
+@dataclasses.dataclass(frozen=True)
+class HintItemMetadata:
+    item_id: int
+    registry_name: str
+    flags: int
+    diversity_group: int
+    short_name: str
+    qualified_name: str
+    compact_qualified_name: str
+
+
+@dataclasses.dataclass(frozen=True)
+class HintLocationMetadata:
+    location_id: int
+    registry_name: str
+    compact_name: str
+
+
+@dataclasses.dataclass(frozen=True)
+class HintRegionMetadata:
+    region_id: int
+    registry_name: str
+    qualified_name: str
+    compact_name: str
+
+
+@dataclasses.dataclass(frozen=True)
+class HintMetadata:
+    format_version: int
+    algorithm_version: int
+    text_schema_version: int
+    algorithm_fingerprint: str
+    text_fingerprint: str
+    items: tuple[HintItemMetadata, ...]
+    locations: tuple[HintLocationMetadata, ...]
+    regions: tuple[HintRegionMetadata, ...]
+    high_friction_location_ids: tuple[int, ...]
+
+
 @dataclasses.dataclass
 class MacroDef:
     name: str
@@ -275,6 +320,1635 @@ def load_locations(path: Path) -> dict[str, LocationDef]:
         # We use the YAML location name lowered + non-alphanumerics replaced with _.
         out[loc.name] = loc
     return out
+
+
+_HINT_ITEM_USEFUL = 0x01
+_HINT_ITEM_MAJOR = 0x02
+_HINT_ITEM_PRIORITY = 0x04
+_HINT_ITEM_JUNK = 0x08
+
+
+def _hint_mapping(value, label: str) -> dict:
+    if not isinstance(value, dict):
+        raise RuntimeError(f"hint metadata {label} must be a mapping")
+    return value
+
+
+def _hint_string_list(value, label: str) -> list[str]:
+    if not isinstance(value, list) or any(not isinstance(v, str) for v in value):
+        raise RuntimeError(f"hint metadata {label} must be a list of strings")
+    if len(set(value)) != len(value):
+        raise RuntimeError(f"hint metadata {label} contains duplicate entries")
+    return value
+
+
+def _hint_split_identifier(value: str) -> str:
+    """Turn a registry token into deterministic player-facing words.
+
+    This generic rule is intentionally codegen-only. Runtime rendering consumes
+    the emitted names, so adding a special spelling cannot create a second,
+    hand-maintained C naming path.
+    """
+    value = value.replace("_", " ")
+    value = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", value)
+    return re.sub(r"(?<=[A-Za-z])(?=[0-9])", " ", value)
+
+
+def _hint_dungeon_identity(
+    item_name: str,
+    dungeon_kinds: dict[str, str],
+) -> tuple[str, str] | None:
+    """Return the registry dungeon-item kind and dungeon suffix, if present."""
+    matches = [
+        (prefix, item_name[len(prefix) + 1:])
+        for prefix in dungeon_kinds
+        if item_name.startswith(prefix + "_")
+    ]
+    if len(matches) > 1:
+        raise RuntimeError(
+            f"hint metadata item {item_name!r} matches multiple dungeon kinds "
+            f"{sorted(prefix for prefix, _ in matches)}"
+        )
+    return matches[0] if matches else None
+
+
+def _hint_item_names(
+    item: ItemDef,
+    overrides: dict,
+    strip_prefixes: list[str],
+    dungeon_kinds: dict[str, str],
+    compact_dungeon_kinds: dict[str, str],
+    dungeon_aliases: dict[str, str],
+    compact_dungeon_aliases: dict[str, str],
+) -> tuple[str, str, str, str | None]:
+    raw = item.name
+    dungeon_identity = _hint_dungeon_identity(raw, dungeon_kinds)
+    override = overrides.get(raw)
+    compact_override = None
+    if override is not None:
+        override = _hint_mapping(override, f"item_names.overrides.{raw}")
+        unknown = set(override) - {
+            "short",
+            "qualified",
+            "compact_qualified",
+        }
+        if unknown:
+            raise RuntimeError(
+                f"hint metadata item override {raw!r} has unknown keys "
+                f"{sorted(unknown)}"
+            )
+        compact_override = override.get("compact_qualified")
+        if compact_override is not None and (
+            not isinstance(compact_override, str) or not compact_override
+        ):
+            raise RuntimeError(
+                f"hint metadata item override {raw!r} has invalid "
+                "compact_qualified name"
+            )
+        short = override.get("short")
+        if short is None:
+            if "qualified" in override:
+                raise RuntimeError(
+                    f"hint metadata item override {raw!r} cannot set qualified "
+                    "without short"
+                )
+        elif not isinstance(short, str) or not short:
+            raise RuntimeError(
+                f"hint metadata item override {raw!r} needs a non-empty short name"
+            )
+        if short is not None:
+            qualified = override.get("qualified", short)
+            compact_qualified = compact_override or qualified
+            if not isinstance(qualified, str) or not qualified:
+                raise RuntimeError(
+                    f"hint metadata item override {raw!r} has invalid "
+                    "qualified name"
+                )
+            return (
+                short,
+                qualified,
+                compact_qualified,
+                dungeon_identity[0] if dungeon_identity is not None else None,
+            )
+        if compact_override is None:
+            raise RuntimeError(
+                f"hint metadata item override {raw!r} has no naming field"
+            )
+
+    if dungeon_identity is not None:
+        prefix, suffix = dungeon_identity
+        kind_name = dungeon_kinds[prefix]
+        dungeon_name = dungeon_aliases.get(suffix)
+        compact_dungeon_name = compact_dungeon_aliases.get(suffix)
+        if dungeon_name is None:
+            raise RuntimeError(
+                f"hint metadata item {raw!r} has unknown dungeon suffix "
+                f"{suffix!r}; add a dungeon_aliases entry"
+            )
+        if compact_dungeon_name is None:
+            raise RuntimeError(
+                f"hint metadata item {raw!r} has no compact dungeon alias for "
+                f"{suffix!r}"
+            )
+        compact_kind_name = compact_dungeon_kinds[prefix]
+        return (
+            kind_name,
+            f"{dungeon_name} {kind_name}",
+            compact_override or f"{compact_dungeon_name} {compact_kind_name}",
+            prefix,
+        )
+
+    if item.category == "dungeon_item":
+        raise RuntimeError(
+            f"hint metadata dungeon item {raw!r} has no recognized kind; "
+            "add a dungeon_kinds entry or an explicit item_names override"
+        )
+
+    if raw.startswith("Prize_Crystal"):
+        short = "Crystal " + raw[len("Prize_Crystal"):]
+        return short, short, compact_override or short, None
+    if raw.startswith("Soul_Npc_"):
+        short = _hint_split_identifier(raw[len("Soul_Npc_"):]) + " Soul"
+        return (
+            short,
+            short,
+            compact_override
+            or "S-" + _hint_split_identifier(raw[len("Soul_Npc_"):]),
+            None,
+        )
+    if raw.startswith("Soul_"):
+        short = _hint_split_identifier(raw[len("Soul_"):]) + " Soul"
+        return (
+            short,
+            short,
+            compact_override
+            or "S-" + _hint_split_identifier(raw[len("Soul_"):]),
+            None,
+        )
+    quantity = re.fullmatch(r"(Rupee|Arrow|Bombs)(\d+)", raw)
+    if quantity is not None:
+        family, raw_count = quantity.groups()
+        count = int(raw_count)
+        noun = {
+            "Rupee": "Rupee" if count == 1 else "Rupees",
+            "Arrow": "Arrow" if count == 1 else "Arrows",
+            "Bombs": "Bomb" if count == 1 else "Bombs",
+        }[family]
+        short = f"{count} {noun}"
+        return short, short, compact_override or short, None
+    if raw.startswith("Trap"):
+        adjective = _hint_split_identifier(raw[len("Trap"):])
+        if adjective == "Fake Low Hp":
+            adjective = "Fake Low HP"
+        short = f"{adjective} Trap"
+        return short, short, compact_override or short, None
+
+    friendly = raw
+    for prefix in strip_prefixes:
+        if friendly.startswith(prefix):
+            friendly = friendly[len(prefix):]
+            break
+    friendly = _hint_split_identifier(friendly)
+    friendly = friendly.replace(" Of ", " of ").replace(" With ", " with ")
+    return friendly, friendly, compact_override or friendly, None
+
+
+def _hint_classify_item(
+    item: ItemDef,
+    dungeon_kind: str | None,
+    category_owner: dict[str, str],
+    item_overrides: dict[str, str],
+    major_dungeon_kinds: set[str],
+    priority_items: set[str],
+) -> int:
+    """Return generated eligibility flags for one registry item."""
+    hint_class = item_overrides.get(
+        item.name, category_owner.get(item.category)
+    )
+    if dungeon_kind in major_dungeon_kinds:
+        hint_class = "major"
+    if hint_class is None:
+        raise RuntimeError(
+            f"hint metadata leaves item {item.name!r} "
+            f"(category {item.category!r}) unclassified"
+        )
+    if hint_class == "junk":
+        flags = _HINT_ITEM_JUNK
+    elif hint_class == "major":
+        flags = _HINT_ITEM_USEFUL | _HINT_ITEM_MAJOR
+    else:
+        flags = _HINT_ITEM_USEFUL
+    if item.name in priority_items:
+        if hint_class != "major":
+            raise RuntimeError(
+                f"hint metadata priority item {item.name!r} is not major"
+            )
+        flags |= _HINT_ITEM_PRIORITY
+    return flags
+
+
+def _hint_compact_location_name(
+    name: str,
+    explicit_aliases: dict[str, str],
+    base_aliases: dict[str, str],
+) -> str:
+    explicit = explicit_aliases.get(name)
+    if explicit is not None:
+        return explicit
+
+    # Generated ordinary-enemy checks carry stable physical coordinates. Keep
+    # those coordinates and discard only the descriptive enemy suffix.
+    match = re.fullmatch(
+        r"Enemy Check - Overworld 0x([0-9A-Fa-f]+) "
+        r"Stage (\d+) Slot (\d+)(?: - .*)?",
+        name,
+    )
+    if match:
+        return (
+            f"Enemy O{int(match.group(1), 16):02X} "
+            f"T{int(match.group(2))} S{int(match.group(3)):02d}"
+        )
+    match = re.fullmatch(
+        r"Enemy Check - Room 0x([0-9A-Fa-f]+) Slot (\d+)(?: - .*)?",
+        name,
+    )
+    if match:
+        return (
+            f"Enemy R{int(match.group(1), 16):03X} "
+            f"S{int(match.group(2)):02d}"
+        )
+    match = re.fullmatch(
+        r"Enemy Check - Room 0x([0-9A-Fa-f]+) "
+        r"Script (\d+) Child (\d+)(?: - .*)?",
+        name,
+    )
+    if match:
+        return (
+            f"Enemy R{int(match.group(1), 16):03X} "
+            f"X{int(match.group(2)):02d} C{int(match.group(3))}"
+        )
+
+    for base, alias in sorted(
+        base_aliases.items(), key=lambda pair: len(pair[0]), reverse=True
+    ):
+        if name == base:
+            return alias
+        suffix_marker = base + " - "
+        if name.startswith(suffix_marker):
+            # Preserve the complete semantic suffix, including Left/Right and
+            # shop/take-any slot numbers.
+            return alias + name[len(base):]
+
+    tokens = re.findall(r"[^ _()/\-]+", name)
+    if not tokens:
+        raise RuntimeError(f"hint metadata cannot compact empty location {name!r}")
+    if len(tokens) <= 2:
+        return " ".join(tokens)
+
+    # Acronymize only the prefix. The final TWO semantic tokens survive in
+    # full, and any earlier digit-bearing coordinate token survives too.
+    #   DarkWorld_NorthWest Bush S52 P05AE -> DWNWB S52 P05AE
+    prefix_out: list[str] = []
+    acronym = ""
+    for token in tokens[:-2]:
+        if any(ch.isdigit() for ch in token):
+            if acronym:
+                prefix_out.append(acronym)
+                acronym = ""
+            prefix_out.append(token)
+            continue
+        capitals = "".join(ch for ch in token if ch.isupper())
+        acronym += capitals or token[0].upper()
+    if acronym:
+        prefix_out.append(acronym)
+    return " ".join([*prefix_out, *tokens[-2:]])
+
+
+def _hint_encode_game_identity(text: str) -> bytes | None:
+    """Mirror the runtime US encoder, including glyphless-char substitution."""
+    def glyph(character: str) -> int:
+        if "A" <= character <= "Z":
+            return ord(character) - ord("A")
+        if "a" <= character <= "z":
+            return 26 + ord(character) - ord("a")
+        if "0" <= character <= "9":
+            return 52 + ord(character) - ord("0")
+        return {
+            "!": 62,
+            "?": 63,
+            "-": 64,
+            ".": 65,
+            ",": 66,
+            ">": 68,
+            "'": 81,
+            " ": 89,
+        }.get(character, 89)
+
+    encoded = bytearray()
+    row = 0
+    column = 0
+    for word in text.split():
+        if column and column + 1 + len(word) > 13:
+            row += 1
+            column = 0
+            if row >= 3:
+                return None
+            encoded.append(0x74 + row)
+        elif column:
+            column += 1
+            encoded.append(glyph(" "))
+        for _ in word:
+            if column >= 13:
+                row += 1
+                column = 0
+                if row >= 3:
+                    return None
+                encoded.append(0x74 + row)
+            encoded.append(glyph(_))
+            column += 1
+    return bytes(encoded)
+
+
+def _hint_text_fits_game(text: str) -> bool:
+    """Mirror the runtime's conservative 3 rows x 13 glyph wrap contract."""
+    return _hint_encode_game_identity(text) is not None
+
+
+def _hint_compact_region_name(
+    region_id: str,
+    display_name: str,
+    explicit_aliases: dict[str, str],
+) -> str:
+    """Create a readable, stable region label for the count-fact envelope."""
+    explicit = explicit_aliases.get(region_id)
+    if explicit is not None:
+        return explicit
+
+    compact = display_name.replace("OW: ", "OW ").replace(" - ", " ")
+    phrase_replacements = (
+        ("Light World", "LW"),
+        ("Dark World", "DW"),
+        ("Death Mountain", "DM"),
+        ("Hyrule Castle", "HC"),
+        ("Palace of Darkness", "PoD"),
+        ("Eastern Palace", "Eastern"),
+        ("Desert Palace", "Desert"),
+        ("Swamp Palace", "Swamp"),
+        ("Ice Palace", "Ice"),
+        ("Turtle Rock", "TR"),
+        ("Misery Mire", "Mire"),
+        ("Tower of Hera", "Hera"),
+        ("Ganons Tower", "GT"),
+    )
+    for old, new in phrase_replacements:
+        compact = compact.replace(old, new)
+    word_replacements = {
+        "Northeast": "NE",
+        "Northwest": "NW",
+        "Southeast": "SE",
+        "Southwest": "SW",
+        "North": "N",
+        "South": "S",
+        "East": "E",
+        "West": "W",
+        "Bottom": "Bot",
+        "Courtyard": "Court",
+        "Entrance": "Entry",
+        "Floating": "Float",
+        "Isolated": "Isle",
+        "Mountain": "Mt",
+        "Portal": "Port",
+        "Waterfall": "Falls",
+        "Whirlpool": "Whirl",
+    }
+    compact = " ".join(
+        word_replacements.get(word, word) for word in compact.split()
+    )
+    if len(compact) <= 20:
+        return compact
+    # Preserve the two most specific semantic words; acronymize only the broad
+    # prefix. Any collision is a fatal request for an explicit alias.
+    return _hint_compact_location_name(compact, {}, {})
+
+
+def _hint_runtime_redirect_item_names(path: Path) -> set[str]:
+    source = path.read_text(encoding="utf-8")
+    table = re.search(
+        r"kDialogueHintRedirects\[\]\s*=\s*\{(.*?)\n\};",
+        source,
+        flags=re.DOTALL,
+    )
+    if table is None:
+        raise RuntimeError(
+            f"cannot parse kDialogueHintRedirects from {path}"
+        )
+    names: set[str] = set()
+    for row in re.finditer(r"\{(.*?)\}", table.group(1), flags=re.DOTALL):
+        text = row.group(1)
+        if "kDialogueHintRedirect_LocationItem" in text:
+            continue
+        item = re.search(r"\bITEM_([A-Za-z0-9_]+)\b", text)
+        if item is None:
+            raise RuntimeError(
+                f"cannot parse item from redirect row {text!r}"
+            )
+        names.add(item.group(1))
+    return names
+
+
+def _hint_json_fingerprint(value) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        ).encode("ascii")
+    ).hexdigest()
+
+
+def _hint_registry_contract(
+    locations: dict[str, LocationDef],
+    regions: dict[str, RegionDef],
+    region_ids: list[str],
+    world_state_overrides: dict[str, dict[int, LocationDef]],
+    *,
+    base_location_count: int,
+    base_region_count: int,
+) -> dict:
+    sorted_locations = sorted(locations.values(), key=lambda loc: loc.id)
+    world_state_rows = sorted(
+        (
+            str(location_key),
+            int(world_state),
+            override.id,
+            override.name,
+            override.region,
+            override.type,
+        )
+        for location_key, world_states in world_state_overrides.items()
+        for world_state, override in world_states.items()
+    )
+    type_counts: dict[str, int] = {}
+    for location in sorted_locations:
+        type_counts[location.type] = type_counts.get(location.type, 0) + 1
+    algorithm_rows = {
+        "locations": [
+            (loc.id, loc.name, loc.region, loc.type)
+            for loc in sorted_locations
+        ],
+        "regions": [
+            (
+                index,
+                region_id,
+                regions[region_id].parent,
+                regions[region_id].world_state_filter,
+            )
+            for index, region_id in enumerate(region_ids)
+        ],
+        "world_state_region_overrides": world_state_rows,
+    }
+    text_rows = {
+        "locations": [(loc.id, loc.name) for loc in sorted_locations],
+        "regions": [
+            (index, region_id, regions[region_id].name)
+            for index, region_id in enumerate(region_ids)
+        ],
+    }
+    provenance_rows = {
+        "locations": [
+            (loc.id, loc.source) for loc in sorted_locations
+        ],
+        "regions": [
+            (index, region_id, regions[region_id].source)
+            for index, region_id in enumerate(region_ids)
+        ],
+    }
+    return {
+        "format_version": 1,
+        "base_location_count": base_location_count,
+        "base_region_count": base_region_count,
+        "location_count": len(sorted_locations),
+        "region_count": len(region_ids),
+        "location_type_counts": dict(sorted(type_counts.items())),
+        "algorithm_registry_fingerprint": _hint_json_fingerprint(
+            algorithm_rows
+        ),
+        "text_registry_fingerprint": _hint_json_fingerprint(text_rows),
+        "provenance_fingerprint": _hint_json_fingerprint(provenance_rows),
+    }
+
+
+def load_hint_registry_contract(path: Path) -> dict:
+    expected_keys = {
+        "format_version",
+        "base_location_count",
+        "base_region_count",
+        "location_count",
+        "region_count",
+        "location_type_counts",
+        "algorithm_registry_fingerprint",
+        "text_registry_fingerprint",
+        "provenance_fingerprint",
+    }
+    if not path.exists():
+        raise RuntimeError(
+            f"{path} is missing; regenerate intentionally with "
+            "--update-hint-metadata-lock"
+        )
+    contract = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(contract, dict) or set(contract) != expected_keys:
+        raise RuntimeError(
+            f"{path} has invalid schema; expected exactly "
+            f"{sorted(expected_keys)}"
+        )
+    for key in (
+        "algorithm_registry_fingerprint",
+        "text_registry_fingerprint",
+        "provenance_fingerprint",
+    ):
+        if not re.fullmatch(r"[0-9a-f]{64}", str(contract.get(key, ""))):
+            raise RuntimeError(f"{path} has invalid {key}")
+    return contract
+
+
+def validate_hint_registry_contract(
+    path: Path,
+    locations: dict[str, LocationDef],
+    regions: dict[str, RegionDef],
+    region_ids: list[str],
+    world_state_overrides: dict[str, dict[int, LocationDef]],
+    *,
+    base_location_count: int,
+    base_region_count: int,
+    update: bool = False,
+) -> dict:
+    actual = _hint_registry_contract(
+        locations,
+        regions,
+        region_ids,
+        world_state_overrides,
+        base_location_count=base_location_count,
+        base_region_count=base_region_count,
+    )
+    if update:
+        required_artifacts = (
+            RANDO_ASSETS / "pots.gen.yaml",
+            RANDO_ASSETS / "enemy_drops.gen.yaml",
+            RANDO_ASSETS / "enemy_checks.gen.yaml",
+            RANDO_ASSETS / "terrain.gen.yaml",
+            RANDO_ASSETS / "bonk.gen.yaml",
+            RANDO_ASSETS / "ow_graph.gen.yaml",
+        )
+        missing_artifacts = [
+            str(artifact)
+            for artifact in required_artifacts
+            if not artifact.exists()
+        ]
+        required_types = {
+            "Pot",
+            "EnemyDrop",
+            "Enemy",
+            "Grass",
+            "Rock",
+            "Bonk",
+        }
+        missing_types = required_types - set(
+            actual["location_type_counts"]
+        )
+        if (
+            actual["location_count"] <= base_location_count
+            or actual["region_count"] <= base_region_count
+            or missing_artifacts
+            or missing_types
+        ):
+            raise RuntimeError(
+                "refusing to approve an assetless/partial Hints merged-registry "
+                f"contract: missing artifacts={missing_artifacts}, "
+                f"missing location types={sorted(missing_types)}"
+            )
+        return actual
+
+    approved = load_hint_registry_contract(path)
+    if actual == approved:
+        return approved
+    if (
+        actual["location_count"] == approved["base_location_count"]
+        and actual["region_count"] == approved["base_region_count"]
+    ):
+        # Public/assetless builds still bind their metadata fingerprints to the
+        # approved shipped superset. Base registry rows are independently
+        # included verbatim in those fingerprints below.
+        return approved
+    raise RuntimeError(
+        "hint merged-registry contract drift/partial artifact set: "
+        f"approved locations={approved['location_count']} "
+        f"regions={approved['region_count']}, actual "
+        f"locations={actual['location_count']} regions={actual['region_count']}"
+    )
+
+
+def load_hint_metadata(
+    path: Path,
+    items: dict[str, ItemDef],
+    locations: dict[str, LocationDef],
+    contract_locations: dict[str, LocationDef] | None = None,
+    regions: dict[str, RegionDef] | None = None,
+    region_ids: list[str] | None = None,
+    contract_regions: dict[str, RegionDef] | None = None,
+    contract_region_ids: list[str] | None = None,
+    contract_world_state_overrides:
+        dict[str, dict[int, LocationDef]] | None = None,
+    registry_contract: dict | None = None,
+) -> HintMetadata:
+    """Load and validate the one registry-tied Hints v2 metadata source.
+
+    Validation is deliberately fatal during ordinary codegen, not just under
+    --strict: an unknown item/dungeon identity or a lossy compact collision
+    makes a rich fact semantically unsafe.
+    """
+    doc = load_yaml(path)
+    if not isinstance(doc, dict):
+        raise RuntimeError(f"{path} must contain a mapping")
+    if doc.get("format_version") != 1:
+        raise RuntimeError(
+            f"{path} format_version must be 1, got {doc.get('format_version')!r}"
+        )
+    if registry_contract is None:
+        raise RuntimeError(
+            "hint metadata requires the approved merged-registry contract"
+        )
+    if registry_contract.get("format_version") != 1:
+        raise RuntimeError("hint merged-registry contract format drift")
+    algorithm_version = doc.get("algorithm_version")
+    if not isinstance(algorithm_version, int) or not (
+        1 <= algorithm_version <= 0xFFFF
+    ):
+        raise RuntimeError(
+            f"{path} algorithm_version must be an integer in 1..65535"
+        )
+    text_schema_version = doc.get("text_schema_version")
+    if not isinstance(text_schema_version, int) or not (
+        1 <= text_schema_version <= 0xFFFF
+    ):
+        raise RuntimeError(
+            f"{path} text_schema_version must be an integer in 1..65535"
+        )
+    expected_top = {
+        "format_version",
+        "algorithm_version",
+        "text_schema_version",
+        "item_classification",
+        "diversity_groups",
+        "item_names",
+        "dungeon_aliases",
+        "compact_dungeon_aliases",
+        "location_base_aliases",
+        "location_aliases",
+        "region_aliases",
+        "redirect_item_location_items",
+        "high_friction_locations",
+    }
+    unknown_top = set(doc) - expected_top
+    if unknown_top:
+        raise RuntimeError(
+            f"{path} has unknown top-level keys {sorted(unknown_top)}"
+        )
+
+    classification = _hint_mapping(
+        doc.get("item_classification"), "item_classification"
+    )
+    expected_classification = {
+        "junk_registry_categories",
+        "major_registry_categories",
+        "useful_registry_categories",
+        "major_dungeon_kinds",
+        "item_overrides",
+        "priority_items",
+    }
+    unknown_classification = set(classification) - expected_classification
+    missing_classification = expected_classification - set(classification)
+    if unknown_classification or missing_classification:
+        raise RuntimeError(
+            "hint metadata item_classification key drift: "
+            f"missing={sorted(missing_classification)} "
+            f"unknown={sorted(unknown_classification)}"
+        )
+
+    class_categories = {
+        "junk": _hint_string_list(
+            classification["junk_registry_categories"],
+            "item_classification.junk_registry_categories",
+        ),
+        "major": _hint_string_list(
+            classification["major_registry_categories"],
+            "item_classification.major_registry_categories",
+        ),
+        "useful": _hint_string_list(
+            classification["useful_registry_categories"],
+            "item_classification.useful_registry_categories",
+        ),
+    }
+    category_owner: dict[str, str] = {}
+    registry_categories = {item.category for item in items.values()}
+    for hint_class, categories in class_categories.items():
+        for category in categories:
+            if category not in registry_categories:
+                raise RuntimeError(
+                    f"hint metadata {hint_class} selector references unknown "
+                    f"registry category {category!r}"
+                )
+            prior = category_owner.get(category)
+            if prior is not None:
+                raise RuntimeError(
+                    f"hint metadata registry category {category!r} belongs to "
+                    f"both {prior} and {hint_class}"
+                )
+            category_owner[category] = hint_class
+
+    item_overrides = _hint_mapping(
+        classification["item_overrides"],
+        "item_classification.item_overrides",
+    )
+    for name, hint_class in item_overrides.items():
+        if name not in items:
+            raise RuntimeError(
+                f"hint metadata classification references unknown item {name!r}"
+            )
+        if hint_class not in {"junk", "major", "useful"}:
+            raise RuntimeError(
+                f"hint metadata item override {name!r} has invalid class "
+                f"{hint_class!r}"
+            )
+
+    item_names = _hint_mapping(doc.get("item_names"), "item_names")
+    expected_item_names = {
+        "overrides",
+        "strip_prefixes",
+        "dungeon_kinds",
+        "compact_dungeon_kinds",
+    }
+    if set(item_names) != expected_item_names:
+        raise RuntimeError(
+            "hint metadata item_names key drift: "
+            f"expected={sorted(expected_item_names)} actual={sorted(item_names)}"
+        )
+    name_overrides = _hint_mapping(
+        item_names["overrides"], "item_names.overrides"
+    )
+    for name in name_overrides:
+        if name not in items:
+            raise RuntimeError(
+                f"hint metadata naming references unknown item {name!r}"
+            )
+    strip_prefixes = _hint_string_list(
+        item_names["strip_prefixes"], "item_names.strip_prefixes"
+    )
+    dungeon_kinds = _hint_mapping(
+        item_names["dungeon_kinds"], "item_names.dungeon_kinds"
+    )
+    if any(
+        not isinstance(key, str)
+        or not key
+        or not isinstance(value, str)
+        or not value
+        for key, value in dungeon_kinds.items()
+    ):
+        raise RuntimeError("hint metadata dungeon_kinds must map strings to strings")
+    compact_dungeon_kinds = _hint_mapping(
+        item_names["compact_dungeon_kinds"],
+        "item_names.compact_dungeon_kinds",
+    )
+    if (
+        set(compact_dungeon_kinds) != set(dungeon_kinds)
+        or any(
+            not isinstance(value, str) or not value
+            for value in compact_dungeon_kinds.values()
+        )
+    ):
+        raise RuntimeError(
+            "hint metadata compact_dungeon_kinds must map every dungeon kind "
+            "to a non-empty string"
+        )
+    dungeon_aliases = _hint_mapping(
+        doc.get("dungeon_aliases"), "dungeon_aliases"
+    )
+    if any(
+        not isinstance(key, str)
+        or not key
+        or not isinstance(value, str)
+        or not value
+        for key, value in dungeon_aliases.items()
+    ):
+        raise RuntimeError(
+            "hint metadata dungeon_aliases must map strings to strings"
+        )
+    compact_dungeon_aliases = _hint_mapping(
+        doc.get("compact_dungeon_aliases"), "compact_dungeon_aliases"
+    )
+    if (
+        set(compact_dungeon_aliases) != set(dungeon_aliases)
+        or any(
+            not isinstance(value, str) or not value
+            for value in compact_dungeon_aliases.values()
+        )
+    ):
+        raise RuntimeError(
+            "hint metadata compact_dungeon_aliases must map every dungeon "
+            "suffix to a non-empty string"
+        )
+
+    major_dungeon_kinds = set(
+        _hint_string_list(
+            classification["major_dungeon_kinds"],
+            "item_classification.major_dungeon_kinds",
+        )
+    )
+    unknown_major_kinds = major_dungeon_kinds - set(dungeon_kinds)
+    if unknown_major_kinds:
+        raise RuntimeError(
+            "hint metadata major_dungeon_kinds references unknown naming kinds "
+            f"{sorted(unknown_major_kinds)}"
+        )
+    priority_items = set(
+        _hint_string_list(
+            classification["priority_items"],
+            "item_classification.priority_items",
+        )
+    )
+    unknown_priority = priority_items - set(items)
+    if unknown_priority:
+        raise RuntimeError(
+            f"hint metadata priority_items references unknown items "
+            f"{sorted(unknown_priority)}"
+        )
+
+    raw_diversity_groups = doc.get("diversity_groups")
+    if not isinstance(raw_diversity_groups, list):
+        raise RuntimeError("hint metadata diversity_groups must be a list")
+    diversity_group_by_item: dict[str, int] = {}
+    diversity_group_ids: set[int] = set()
+    diversity_group_names: set[str] = set()
+    for index, raw_group in enumerate(raw_diversity_groups):
+        group = _hint_mapping(raw_group, f"diversity_groups[{index}]")
+        if set(group) != {"id", "name", "items"}:
+            raise RuntimeError(
+                f"hint metadata diversity_groups[{index}] must contain exactly "
+                "id, name, and items"
+            )
+        group_id = group["id"]
+        group_name = group["name"]
+        if not isinstance(group_id, int) or not 1 <= group_id <= 0xFF:
+            raise RuntimeError(
+                f"hint metadata diversity group id {group_id!r} is not 1..255"
+            )
+        if group_id in diversity_group_ids:
+            raise RuntimeError(
+                f"hint metadata diversity group id {group_id} is duplicated"
+            )
+        if not isinstance(group_name, str) or not group_name:
+            raise RuntimeError(
+                f"hint metadata diversity group {group_id} has invalid name"
+            )
+        if group_name in diversity_group_names:
+            raise RuntimeError(
+                f"hint metadata diversity group name {group_name!r} is duplicated"
+            )
+        group_items = _hint_string_list(
+            group["items"], f"diversity_groups[{index}].items"
+        )
+        if len(group_items) < 2:
+            raise RuntimeError(
+                f"hint metadata diversity group {group_name!r} needs at least "
+                "two items"
+            )
+        for item_name in group_items:
+            if item_name not in items:
+                raise RuntimeError(
+                    f"hint metadata diversity group {group_name!r} references "
+                    f"unknown item {item_name!r}"
+                )
+            prior_group = diversity_group_by_item.get(item_name)
+            if prior_group is not None:
+                raise RuntimeError(
+                    f"hint metadata item {item_name!r} belongs to diversity "
+                    f"groups {prior_group} and {group_id}"
+                )
+            diversity_group_by_item[item_name] = group_id
+        diversity_group_ids.add(group_id)
+        diversity_group_names.add(group_name)
+
+    sorted_items = sorted(items.values(), key=lambda item: item.id)
+    if [item.id for item in sorted_items] != list(range(len(sorted_items))):
+        raise RuntimeError(
+            "hint metadata requires the item registry to remain dense from id 0"
+        )
+    emitted_items: list[HintItemMetadata] = []
+    used_dungeon_kinds: set[str] = set()
+    for item in sorted_items:
+        (
+            short_name,
+            qualified_name,
+            compact_qualified_name,
+            dungeon_kind,
+        ) = _hint_item_names(
+            item,
+            name_overrides,
+            strip_prefixes,
+            dungeon_kinds,
+            compact_dungeon_kinds,
+            dungeon_aliases,
+            compact_dungeon_aliases,
+        )
+        if dungeon_kind is not None:
+            used_dungeon_kinds.add(dungeon_kind)
+
+        flags = _hint_classify_item(
+            item,
+            dungeon_kind,
+            category_owner,
+            item_overrides,
+            major_dungeon_kinds,
+            priority_items,
+        )
+        for label, value in (
+            ("short", short_name),
+            ("qualified", qualified_name),
+            ("compact-qualified", compact_qualified_name),
+        ):
+            if not value or len(value.encode("ascii", errors="strict")) >= 64:
+                raise RuntimeError(
+                    f"hint metadata item {item.name!r} {label} name "
+                    "is empty, non-ASCII, or exceeds the 63-byte runtime buffer"
+                )
+            if " at " in value:
+                raise RuntimeError(
+                    f"hint metadata item {item.name!r} {label} name contains "
+                    "the exact-template delimiter ' at '"
+                )
+            if value != " ".join(value.split()):
+                raise RuntimeError(
+                    f"hint metadata item {item.name!r} {label} name contains "
+                    "leading, trailing, or repeated whitespace"
+                )
+        emitted_items.append(
+            HintItemMetadata(
+                item.id,
+                item.name,
+                flags,
+                diversity_group_by_item.get(item.name, 0),
+                short_name,
+                qualified_name,
+                compact_qualified_name,
+            )
+        )
+
+    unused_kinds = set(dungeon_kinds) - used_dungeon_kinds
+    if unused_kinds:
+        raise RuntimeError(
+            f"hint metadata dungeon_kinds has unused entries {sorted(unused_kinds)}"
+        )
+
+    explicit_location_aliases = _hint_mapping(
+        doc.get("location_aliases"), "location_aliases"
+    )
+    base_location_aliases = _hint_mapping(
+        doc.get("location_base_aliases"), "location_base_aliases"
+    )
+    for label, aliases in (
+        ("location_aliases", explicit_location_aliases),
+        ("location_base_aliases", base_location_aliases),
+    ):
+        if any(
+            not isinstance(key, str)
+            or not key
+            or not isinstance(value, str)
+            or not value
+            for key, value in aliases.items()
+        ):
+            raise RuntimeError(
+                f"hint metadata {label} must map non-empty strings to strings"
+            )
+
+    location_names = set(locations)
+    unknown_location_aliases = set(explicit_location_aliases) - location_names
+    if unknown_location_aliases:
+        raise RuntimeError(
+            "hint metadata location_aliases references unknown locations "
+            f"{sorted(unknown_location_aliases)}"
+        )
+    for base in base_location_aliases:
+        if not any(
+            name == base or name.startswith(base + " - ")
+            for name in location_names
+        ):
+            raise RuntimeError(
+                f"hint metadata base location alias {base!r} matches no registry "
+                "location"
+            )
+
+    sorted_locations = sorted(locations.values(), key=lambda loc: loc.id)
+    if len({loc.id for loc in sorted_locations}) != len(sorted_locations):
+        raise RuntimeError("hint metadata location ids are not unique")
+    if len({loc.name for loc in sorted_locations}) != len(sorted_locations):
+        raise RuntimeError("hint metadata location registry names are not unique")
+    emitted_locations: list[HintLocationMetadata] = []
+    compact_owner: dict[str, HintLocationMetadata] = {}
+    for location in sorted_locations:
+        compact_name = _hint_compact_location_name(
+            location.name,
+            explicit_location_aliases,
+            base_location_aliases,
+        )
+        if (
+            not compact_name
+            or len(compact_name.encode("ascii", errors="strict")) >= 64
+        ):
+            raise RuntimeError(
+                f"hint metadata compact alias for {location.name!r} is empty, "
+                "non-ASCII, or exceeds the 63-byte runtime buffer"
+            )
+        if " at " in compact_name:
+            raise RuntimeError(
+                f"hint metadata compact alias for {location.name!r} contains "
+                "the exact-template delimiter ' at '"
+            )
+        if compact_name != " ".join(compact_name.split()):
+            raise RuntimeError(
+                f"hint metadata compact alias for {location.name!r} contains "
+                "leading, trailing, or repeated whitespace"
+            )
+        row = HintLocationMetadata(location.id, location.name, compact_name)
+        prior = compact_owner.get(compact_name)
+        if prior is not None:
+            raise RuntimeError(
+                "hint metadata lossy compact-location collision: "
+                f"{prior.location_id} ({prior.registry_name!r}) and "
+                f"{location.id} ({location.name!r}) both become "
+                f"{compact_name!r}; add explicit location_aliases"
+            )
+        compact_owner[compact_name] = row
+        emitted_locations.append(row)
+
+    # Exact rich facts retain qualified prose in the semantic/spoiler field and
+    # use a separate lossless compact-qualified item name only when the in-game
+    # three-row renderer needs the compact location form.
+    useful_items = [
+        item for item in emitted_items if item.flags & _HINT_ITEM_USEFUL
+    ]
+    qualified_owner: dict[str, HintItemMetadata] = {}
+    compact_item_owner: dict[str, HintItemMetadata] = {}
+    reward_identity_owner: dict[bytes, HintItemMetadata] = {}
+    for item in emitted_items:
+        prior = qualified_owner.get(item.qualified_name)
+        if prior is not None:
+            raise RuntimeError(
+                "hint metadata reward-preview exact-text collision: items "
+                f"{prior.registry_name!r} and {item.registry_name!r} share "
+                f"qualified name {item.qualified_name!r}"
+            )
+        qualified_owner[item.qualified_name] = item
+        prior = compact_item_owner.get(item.compact_qualified_name)
+        if prior is not None:
+            raise RuntimeError(
+                "hint metadata reward-preview compact-qualified collision: items "
+                f"{prior.registry_name!r} and {item.registry_name!r} share "
+                f"{item.compact_qualified_name!r}"
+            )
+        if item.compact_qualified_name.endswith(" is"):
+            raise RuntimeError(
+                f"hint metadata compact-qualified item {item.registry_name!r} "
+                "must not end in ' is' (it would cross-collide with the full "
+                "exact template)"
+            )
+        compact_item_owner[item.compact_qualified_name] = item
+        for label, value in (
+            ("qualified", item.qualified_name),
+            ("compact-qualified", item.compact_qualified_name),
+        ):
+            identity = _hint_encode_game_identity(value)
+            if identity is None:
+                raise RuntimeError(
+                    f"hint metadata reward-preview {label} item "
+                    f"{item.registry_name!r} cannot render"
+                )
+            prior = reward_identity_owner.get(identity)
+            if prior is not None and prior.item_id != item.item_id:
+                raise RuntimeError(
+                    "hint metadata reward-preview encoded-glyph collision: "
+                    f"items {prior.registry_name!r} and "
+                    f"{item.registry_name!r} share {value!r}"
+                )
+            reward_identity_owner[identity] = item
+    expected_exact_identities = len(useful_items) * len(emitted_locations)
+    proven_exact_identities = len(useful_items) * len(compact_owner)
+    if proven_exact_identities != expected_exact_identities:
+        raise RuntimeError(
+            "hint metadata final exact-text uniqueness proof failed: "
+            f"expected {expected_exact_identities}, proved "
+            f"{proven_exact_identities}"
+        )
+
+    fit_failures: list[str] = []
+    fit_failure_count = 0
+    exact_game_identities: set[bytes] = set()
+    for item in useful_items:
+        for location in emitted_locations:
+            full = (
+                f"{item.qualified_name} is at {location.registry_name}"
+            )
+            compact = (
+                f"{item.compact_qualified_name} at {location.compact_name}"
+            )
+            full_identity = _hint_encode_game_identity(full)
+            compact_identity = _hint_encode_game_identity(compact)
+            if len(full.encode("ascii")) >= 160 or compact_identity is None:
+                fit_failure_count += 1
+                if len(fit_failures) < 8:
+                    fit_failures.append(
+                        f"{item.registry_name}@{location.location_id}: "
+                        f"full={len(full)} compact={compact!r}"
+                    )
+                continue
+            final_text = full if full_identity is not None else compact
+            if len(final_text.encode("ascii")) >= 96:
+                fit_failure_count += 1
+                if len(fit_failures) < 8:
+                    fit_failures.append(
+                        f"{item.registry_name}@{location.location_id}: "
+                        f"chosen game text is {len(final_text)} bytes"
+                    )
+                continue
+            final_identity = full_identity or compact_identity
+            identity_digest = hashlib.blake2b(
+                final_identity, digest_size=16
+            ).digest()
+            if identity_digest in exact_game_identities:
+                raise RuntimeError(
+                    "hint metadata final encoded-glyph exact identity "
+                    f"collides at {item.registry_name!r}/"
+                    f"{location.registry_name!r}; author lossless aliases "
+                    "without glyphless punctuation"
+                )
+            exact_game_identities.add(identity_digest)
+    if fit_failure_count:
+        raise RuntimeError(
+            "hint metadata exact-render envelope leaves "
+            f"{fit_failure_count}/{expected_exact_identities} useful "
+            f"item/location pairs unhintable; examples={fit_failures}"
+        )
+    del exact_game_identities
+
+    redirect_item_names = _hint_string_list(
+        doc.get("redirect_item_location_items"),
+        "redirect_item_location_items",
+    )
+    unknown_redirect_items = set(redirect_item_names) - set(items)
+    if unknown_redirect_items:
+        raise RuntimeError(
+            "hint metadata redirect_item_location_items references unknown "
+            f"items {sorted(unknown_redirect_items)}"
+        )
+    runtime_redirect_items = _hint_runtime_redirect_item_names(
+        RANDO_SRC / "rando_hints.c"
+    )
+    if runtime_redirect_items != set(redirect_item_names):
+        raise RuntimeError(
+            "hint metadata redirect item drift: YAML="
+            f"{sorted(redirect_item_names)} runtime="
+            f"{sorted(runtime_redirect_items)}"
+        )
+    emitted_item_by_name = {
+        item.registry_name: item for item in emitted_items
+    }
+    redirect_short_identities: dict[bytes, str] = {}
+    for item_name in redirect_item_names:
+        identity = _hint_encode_game_identity(
+            emitted_item_by_name[item_name].short_name
+        )
+        if identity is None:
+            raise RuntimeError(
+                f"hint metadata redirect short name {item_name!r} cannot render"
+            )
+        prior = redirect_short_identities.get(identity)
+        if prior is not None:
+            raise RuntimeError(
+                "hint metadata encoded redirect short-name collision: "
+                f"{prior!r} and {item_name!r}"
+            )
+        redirect_short_identities[identity] = item_name
+    redirect_failures: list[str] = []
+    redirect_failure_count = 0
+    for item_name in redirect_item_names:
+        item = emitted_item_by_name[item_name]
+        for location in emitted_locations:
+            candidates = (
+                f"{item.short_name} is in {location.registry_name}",
+                f"{item.short_name} at {location.registry_name}",
+                f"{item.short_name} at {location.compact_name}",
+            )
+            if not any(_hint_text_fits_game(text) for text in candidates):
+                redirect_failure_count += 1
+                if len(redirect_failures) < 8:
+                    redirect_failures.append(
+                        f"{item_name}@{location.location_id}"
+                    )
+    if redirect_failure_count:
+        raise RuntimeError(
+            "hint metadata redirect-item envelope leaves "
+            f"{redirect_failure_count} pairs unrenderable; "
+            f"examples={redirect_failures}"
+        )
+
+    bumper_failures: list[str] = []
+    bumper_identities: dict[bytes, str] = {}
+    for item in emitted_items:
+        identity = next(
+            (
+                encoded
+                for encoded in (
+                    _hint_encode_game_identity(
+                        f"Cape prize is {item.qualified_name}"
+                    ),
+                    _hint_encode_game_identity(
+                        f"Prize is {item.qualified_name}"
+                    ),
+                    _hint_encode_game_identity(item.qualified_name),
+                )
+                if encoded is not None
+            ),
+            None,
+        )
+        if identity is None:
+            bumper_failures.append(item.registry_name)
+            continue
+        prior = bumper_identities.get(identity)
+        if prior is not None:
+            raise RuntimeError(
+                "hint metadata final encoded Bumper identity collision: "
+                f"{prior!r} and {item.registry_name!r}"
+            )
+        bumper_identities[identity] = item.registry_name
+    if bumper_failures:
+        raise RuntimeError(
+            "hint metadata Bumper item envelope cannot render "
+            f"{bumper_failures}"
+        )
+
+    explicit_region_aliases = _hint_mapping(
+        doc.get("region_aliases"), "region_aliases"
+    )
+    if any(
+        not isinstance(key, str)
+        or not key
+        or not isinstance(value, str)
+        or not value
+        for key, value in explicit_region_aliases.items()
+    ):
+        raise RuntimeError(
+            "hint metadata region_aliases must map non-empty strings to strings"
+        )
+    emitted_regions: list[HintRegionMetadata] = []
+    if regions is not None or region_ids is not None:
+        if regions is None or region_ids is None:
+            raise RuntimeError(
+                "hint metadata region validation requires regions and region_ids"
+            )
+        unknown_region_aliases = set(explicit_region_aliases) - set(regions)
+        exact_assetless_contract = (
+            len(locations) == registry_contract["base_location_count"]
+            and len(regions) == registry_contract["base_region_count"]
+        )
+        if unknown_region_aliases and not exact_assetless_contract:
+            raise RuntimeError(
+                "hint metadata region_aliases references unknown regions "
+                f"{sorted(unknown_region_aliases)}"
+            )
+        compact_region_owner: dict[str, HintRegionMetadata] = {}
+        qualified_region_owner: dict[str, HintRegionMetadata] = {}
+        region_game_identities: set[bytes] = set()
+        for region_id, registry_name in enumerate(region_ids):
+            region = regions.get(registry_name)
+            if region is None:
+                raise RuntimeError(
+                    f"hint metadata region id {registry_name!r} is not loaded"
+                )
+            qualified_name = region.name or _hint_split_identifier(
+                registry_name
+            )
+            if (
+                not qualified_name
+                or len(qualified_name.encode("ascii", errors="strict")) >= 96
+                or qualified_name != " ".join(qualified_name.split())
+            ):
+                raise RuntimeError(
+                    f"hint metadata qualified region name for "
+                    f"{registry_name!r} is invalid"
+                )
+            compact_name = _hint_compact_region_name(
+                registry_name, qualified_name, explicit_region_aliases
+            )
+            if (
+                not compact_name
+                or len(compact_name.encode("ascii", errors="strict")) >= 64
+                or compact_name != " ".join(compact_name.split())
+            ):
+                raise RuntimeError(
+                    f"hint metadata compact region alias for "
+                    f"{registry_name!r} is invalid"
+                )
+            row = HintRegionMetadata(
+                region_id, registry_name, qualified_name, compact_name
+            )
+            prior = compact_region_owner.get(compact_name)
+            if prior is not None:
+                raise RuntimeError(
+                    "hint metadata compact-region collision: "
+                    f"{prior.registry_name!r} and {registry_name!r} share "
+                    f"{compact_name!r}; add region_aliases entries"
+                )
+            prior = qualified_region_owner.get(qualified_name)
+            if prior is not None:
+                raise RuntimeError(
+                    "hint metadata qualified-region collision: "
+                    f"{prior.registry_name!r} and {registry_name!r} share "
+                    f"{qualified_name!r}"
+                )
+            compact_region_owner[compact_name] = row
+            qualified_region_owner[qualified_name] = row
+            emitted_regions.append(row)
+            for count in range(
+                2, int(registry_contract["location_count"]) + 1
+            ):
+                full = f"{qualified_name} contains {count} useful items"
+                game = f"{compact_name} has {count} useful"
+                game_identity = _hint_encode_game_identity(game)
+                if len(full.encode("ascii")) >= 160 or game_identity is None:
+                    raise RuntimeError(
+                        "hint metadata region-value envelope cannot render "
+                        f"{registry_name!r} count={count}: {game!r}"
+                    )
+                if len(game.encode("ascii")) >= 96:
+                    raise RuntimeError(
+                        "hint metadata region-value game text exceeds its "
+                        f"runtime buffer for {registry_name!r} count={count}"
+                    )
+                identity_digest = hashlib.blake2b(
+                    game_identity, digest_size=16
+                ).digest()
+                if identity_digest in region_game_identities:
+                    raise RuntimeError(
+                        "hint metadata final encoded-glyph region-value "
+                        f"identity collides at {registry_name!r} count={count}"
+                    )
+                region_game_identities.add(identity_digest)
+
+    high_friction_names = _hint_string_list(
+        doc.get("high_friction_locations"), "high_friction_locations"
+    )
+    unknown_high_friction = set(high_friction_names) - location_names
+    if unknown_high_friction:
+        raise RuntimeError(
+            "hint metadata high_friction_locations references unknown locations "
+            f"{sorted(unknown_high_friction)}"
+        )
+    high_friction_ids = tuple(
+        sorted(locations[name].id for name in high_friction_names)
+    )
+
+    contract_location_values = sorted(
+        (contract_locations or locations).values(), key=lambda loc: loc.id
+    )
+    contract_region_values = contract_regions or {}
+    contract_region_order = contract_region_ids or sorted(
+        contract_region_values
+    )
+    contract_world_state_rows = sorted(
+        (
+            str(location_key),
+            int(world_state),
+            override.id,
+            override.name,
+            override.region,
+            override.type,
+        )
+        for location_key, world_states in (
+            contract_world_state_overrides or {}
+        ).items()
+        for world_state, override in world_states.items()
+    )
+    algorithm_fingerprint_input = {
+        "item_classification": doc["item_classification"],
+        "diversity_groups": doc["diversity_groups"],
+        "high_friction_locations": doc["high_friction_locations"],
+        # Dungeon kind recognition feeds major classification. Display labels
+        # belong exclusively to the text axis.
+        "dungeon_kinds": sorted(doc["item_names"]["dungeon_kinds"]),
+        "items": [
+            (item.id, item.name, item.category)
+            for item in sorted_items
+        ],
+        "locations": [
+            (
+                location.id,
+                location.name,
+                location.region,
+                location.type,
+            )
+            for location in contract_location_values
+        ],
+        "region_id_order": list(contract_region_order),
+        "world_state_region_overrides": contract_world_state_rows,
+        "region_contract": [
+            (
+                region_id,
+                contract_region_values[region_id].parent,
+                contract_region_values[region_id].world_state_filter,
+            )
+            for region_id in contract_region_order
+            if region_id in contract_region_values
+        ],
+        # Hash the whole approved policy object: base-only acceptance counts,
+        # type counts, provenance, and both registry axes are all compatibility
+        # inputs even when one field is redundant for this axis.
+        "merged_registry_contract": registry_contract,
+        "classification_algorithms": {
+            "classification": inspect.getsource(_hint_classify_item),
+            "dungeon_kind_recognition": inspect.getsource(
+                _hint_dungeon_identity
+            ),
+        },
+    }
+    text_fingerprint_input = {
+        "item_names": doc["item_names"],
+        "dungeon_aliases": doc["dungeon_aliases"],
+        "compact_dungeon_aliases": doc["compact_dungeon_aliases"],
+        "location_base_aliases": doc["location_base_aliases"],
+        "location_aliases": doc["location_aliases"],
+        "region_aliases": doc["region_aliases"],
+        "redirect_item_location_items": doc["redirect_item_location_items"],
+        "items": [
+            (item.id, item.name, item.category, item.display_name)
+            for item in sorted_items
+        ],
+        "locations": [
+            (location.id, location.name) for location in contract_location_values
+        ],
+        "regions": [
+            (
+                region_id,
+                contract_region_values[region_id].name,
+            )
+            for region_id in contract_region_order
+            if region_id in contract_region_values
+        ],
+        "merged_registry_contract": registry_contract,
+        "naming_algorithms": {
+            "item": inspect.getsource(_hint_item_names),
+            "dungeon_identity": inspect.getsource(_hint_dungeon_identity),
+            "identifier": inspect.getsource(_hint_split_identifier),
+            "location": inspect.getsource(_hint_compact_location_name),
+            "region": inspect.getsource(_hint_compact_region_name),
+            "encoder": inspect.getsource(_hint_encode_game_identity),
+            "fit": inspect.getsource(_hint_text_fits_game),
+        },
+    }
+    algorithm_fingerprint = hashlib.sha256(
+        json.dumps(
+            algorithm_fingerprint_input,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        ).encode("ascii")
+    ).hexdigest()
+    text_fingerprint = hashlib.sha256(
+        json.dumps(
+            text_fingerprint_input,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        ).encode("ascii")
+    ).hexdigest()
+    return HintMetadata(
+        format_version=1,
+        algorithm_version=algorithm_version,
+        text_schema_version=text_schema_version,
+        algorithm_fingerprint=algorithm_fingerprint,
+        text_fingerprint=text_fingerprint,
+        items=tuple(emitted_items),
+        locations=tuple(emitted_locations),
+        regions=tuple(emitted_regions),
+        high_friction_location_ids=high_friction_ids,
+    )
+
+
+def _hint_runtime_version(path: Path, macro: str) -> int:
+    source = path.read_text(encoding="utf-8")
+    match = re.search(
+        rf"^\s*#define\s+{re.escape(macro)}\s+(\d+)u?\s*$",
+        source,
+        flags=re.MULTILINE,
+    )
+    if match is None:
+        raise RuntimeError(
+            f"cannot read {macro} from {path}"
+        )
+    return int(match.group(1))
+
+
+def hint_runtime_algorithm_version(path: Path) -> int:
+    return _hint_runtime_version(path, "kRandoHintPlanAlgorithmVersion")
+
+
+def hint_runtime_text_schema_version(path: Path) -> int:
+    return _hint_runtime_version(path, "kRandoHintTextSchemaVersion")
+
+
+def validate_hint_metadata_lock(
+    lock_path: Path,
+    metadata: HintMetadata,
+    runtime_algorithm_version: int,
+    runtime_text_schema_version: int,
+    *,
+    update: bool = False,
+) -> None:
+    """Bind semantic selection and rendered text to separate compat axes."""
+    if metadata.algorithm_version != runtime_algorithm_version:
+        raise RuntimeError(
+            "hint metadata algorithm-version drift: "
+            f"hint_metadata.yaml={metadata.algorithm_version}, "
+            f"kRandoHintPlanAlgorithmVersion={runtime_algorithm_version}"
+        )
+    if metadata.text_schema_version != runtime_text_schema_version:
+        raise RuntimeError(
+            "hint metadata text-schema drift: "
+            f"hint_metadata.yaml={metadata.text_schema_version}, "
+            f"kRandoHintTextSchemaVersion={runtime_text_schema_version}"
+        )
+    expected = {
+        "format_version": 1,
+        "algorithm_version": metadata.algorithm_version,
+        "algorithm_fingerprint": metadata.algorithm_fingerprint,
+        "text_schema_version": metadata.text_schema_version,
+        "text_fingerprint": metadata.text_fingerprint,
+    }
+    current = None
+    if lock_path.exists():
+        current = json.loads(lock_path.read_text(encoding="utf-8"))
+        if not isinstance(current, dict) or set(current) != set(expected):
+            raise RuntimeError(
+                f"{lock_path} has an invalid schema; expected exactly "
+                f"{sorted(expected)}"
+            )
+
+    if update:
+        algorithm_changed_without_bump = (
+            current is not None
+            and current.get("algorithm_fingerprint")
+            != metadata.algorithm_fingerprint
+            and current.get("algorithm_version")
+            == metadata.algorithm_version
+        )
+        text_changed_without_bump = (
+            current is not None
+            and current.get("text_fingerprint") != metadata.text_fingerprint
+            and current.get("text_schema_version")
+            == metadata.text_schema_version
+        )
+        if algorithm_changed_without_bump or text_changed_without_bump:
+            axes = []
+            if algorithm_changed_without_bump:
+                axes.append("algorithm_version")
+            if text_changed_without_bump:
+                axes.append("text_schema_version")
+            raise RuntimeError(
+                "hint metadata compatibility fingerprint changed without "
+                f"bumping {', '.join(axes)} in hint_metadata.yaml and the "
+                "matching rando_hints.h constant"
+            )
+        atomic_write_text(
+            lock_path,
+            json.dumps(expected, indent=2, sort_keys=True) + "\n",
+        )
+        return
+
+    if current is None:
+        raise RuntimeError(
+            f"{lock_path} is missing; create it intentionally with "
+            "--update-hint-metadata-lock"
+        )
+    if current != expected:
+        raise RuntimeError(
+            "hint metadata compatibility fingerprint drift: approved "
+            f"algorithm={current.get('algorithm_version')}/"
+            f"{current.get('algorithm_fingerprint')} text="
+            f"{current.get('text_schema_version')}/"
+            f"{current.get('text_fingerprint')}; current algorithm="
+            f"{metadata.algorithm_version}/{metadata.algorithm_fingerprint} "
+            f"text={metadata.text_schema_version}/{metadata.text_fingerprint}. "
+            "Bump the affected runtime + YAML compatibility axis, then run "
+            "rando_logic_gen.py --update-hint-metadata-lock."
+        )
 
 
 def _pot_key_info(room, pot_id, pot_room_wrap, pot_key_wrap):
@@ -3111,6 +4785,136 @@ def sanitize_for_define(s: str) -> str:
     return out
 
 
+def emit_hint_metadata(metadata: HintMetadata, path: Path) -> None:
+    """Emit the private Hints v2 item/location metadata include."""
+    lines = [
+        HEADER_BANNER,
+        "//   - assets/rando/hint_metadata.yaml",
+        "//   - assets/rando/hint_metadata.lock.json",
+        "//   - assets/rando/hint_registry_contract.json",
+        "",
+        "#ifndef ZELDA3_RANDO_HINT_METADATA_H_",
+        "#define ZELDA3_RANDO_HINT_METADATA_H_",
+        "",
+        "#include \"../types.h\"",
+        "#include \"item_ids.h\"",
+        "",
+        "#define kGeneratedHintItemFlag_Useful   0x01u",
+        "#define kGeneratedHintItemFlag_Major    0x02u",
+        "#define kGeneratedHintItemFlag_Priority 0x04u",
+        "#define kGeneratedHintItemFlag_Junk      0x08u",
+        "",
+        "typedef struct GeneratedHintItemMetadata {",
+        "  const char *short_name;",
+        "  const char *qualified_name;",
+        "  const char *compact_qualified_name;",
+        "  uint8 flags;",
+        "  uint8 diversity_group;  // 0 = this item id is its own family.",
+        "} GeneratedHintItemMetadata;",
+        "",
+        "typedef struct GeneratedHintLocationMetadata {",
+        "  const char *compact_name;",
+        "  uint16 location_id;",
+        "} GeneratedHintLocationMetadata;",
+        "",
+        "typedef struct GeneratedHintRegionMetadata {",
+        "  const char *qualified_name;",
+        "  const char *compact_name;",
+        "  uint16 region_id;",
+        "} GeneratedHintRegionMetadata;",
+        "",
+        f"#define kGeneratedHintMetadataFormatVersion "
+        f"{metadata.format_version}u",
+        f"#define kGeneratedHintMetadataAlgorithmVersion "
+        f"{metadata.algorithm_version}u",
+        f"#define kGeneratedHintMetadataTextSchemaVersion "
+        f"{metadata.text_schema_version}u",
+        f"#define kGeneratedHintItemMetadataCount {len(metadata.items)}u",
+        f"#define kGeneratedHintLocationMetadataCount "
+        f"{len(metadata.locations)}u",
+        f"#define kGeneratedHintRegionMetadataCount "
+        f"{len(metadata.regions)}u",
+        f"#define kGeneratedHintHighFrictionLocationCount "
+        f"{len(metadata.high_friction_location_ids)}u",
+        "",
+        "static const char kGeneratedHintMetadataApprovedAlgorithmFingerprint[] =",
+        f"    {json.dumps(metadata.algorithm_fingerprint)};",
+        "static const char kGeneratedHintMetadataApprovedTextFingerprint[] =",
+        f"    {json.dumps(metadata.text_fingerprint)};",
+        "",
+        "static const GeneratedHintItemMetadata "
+        "kGeneratedHintItemMetadata[ITEM__COUNT] = {",
+    ]
+    for item in metadata.items:
+        lines.append(
+            "  { %s, %s, %s, 0x%02xu, %uu },  // %u: %s"
+            % (
+                json.dumps(item.short_name, ensure_ascii=True),
+                json.dumps(item.qualified_name, ensure_ascii=True),
+                json.dumps(item.compact_qualified_name, ensure_ascii=True),
+                item.flags,
+                item.diversity_group,
+                item.item_id,
+                item.registry_name,
+            )
+        )
+    lines.extend(
+        [
+            "};",
+            "",
+            "static const GeneratedHintLocationMetadata "
+            "kGeneratedHintLocationMetadata[] = {",
+        ]
+    )
+    for location in metadata.locations:
+        lines.append(
+            "  { %s, %uu },  // %s"
+            % (
+                json.dumps(location.compact_name, ensure_ascii=True),
+                location.location_id,
+                location.registry_name,
+            )
+        )
+    lines.extend(
+        [
+            "};",
+            "",
+            "static const GeneratedHintRegionMetadata "
+            "kGeneratedHintRegionMetadata[] = {",
+        ]
+    )
+    for region in metadata.regions:
+        lines.append(
+            "  { %s, %s, %uu },  // %s"
+            % (
+                json.dumps(region.qualified_name, ensure_ascii=True),
+                json.dumps(region.compact_name, ensure_ascii=True),
+                region.region_id,
+                region.registry_name,
+            )
+        )
+    lines.extend(
+        [
+            "};",
+            "",
+            "static const uint16 kGeneratedHintHighFrictionLocations[] = {",
+        ]
+    )
+    for location_id in metadata.high_friction_location_ids:
+        lines.append(f"  {location_id}u,")
+    lines.extend(
+        [
+            "};",
+            "",
+            "_Static_assert(kGeneratedHintItemMetadataCount == ITEM__COUNT,",
+            '               "hint item metadata must cover every registry item");',
+            "",
+            "#endif  // ZELDA3_RANDO_HINT_METADATA_H_",
+        ]
+    )
+    atomic_write_text(path, "\n".join(lines) + "\n")
+
+
 def emit_location_ids(locations: dict[str, LocationDef], path: Path):
     lines = [HEADER_BANNER, "", "#ifndef ZELDA3_RANDO_LOCATION_IDS_H_", "#define ZELDA3_RANDO_LOCATION_IDS_H_", "", "// Stable numeric location IDs from assets/rando/location_registry.yaml.", "// Renaming a location does NOT change its numeric ID (append-only registry).", ""]
     for loc in sorted(locations.values(), key=lambda l: l.id):
@@ -4890,6 +6694,13 @@ def main(argv=None):
                    help="Rewrite assets/rando/region_ids.lock.json from the "
                         "current region set (add-rando-ow-warp-shuffle; only "
                         "after an INTENDED region-set change)")
+    p.add_argument(
+        "--update-hint-metadata-lock",
+        action="store_true",
+        help="Approve new Hints algorithm/text metadata fingerprints "
+             "(each changed axis requires its matching version bump when "
+             "replacing an existing lock)",
+    )
     p.add_argument("--out-headers", default=str(RANDO_SRC), help="Destination for emitted headers (default: src/rando/)")
     p.add_argument("--out-data", default=str(RANDO_SRC), help="Destination for emitted logic_data.c (default: src/rando/)")
     p.add_argument("--logic", default=None, help="Path to logic.yaml (optional)")
@@ -4899,6 +6710,11 @@ def main(argv=None):
     ops_path = RANDO_ASSETS / "op_registry.yaml"
     items_path = RANDO_ASSETS / "item_registry.yaml"
     locs_path = RANDO_ASSETS / "location_registry.yaml"
+    hint_metadata_path = RANDO_ASSETS / "hint_metadata.yaml"
+    hint_metadata_lock_path = RANDO_ASSETS / "hint_metadata.lock.json"
+    hint_registry_contract_path = (
+        RANDO_ASSETS / "hint_registry_contract.json"
+    )
     schema_path = RANDO_ASSETS / "logic.schema.yaml"
     macros_path = Path(args.macros) if args.macros else (RANDO_ASSETS / "macros.yaml")
     logic_path = Path(args.logic) if args.logic else (RANDO_ASSETS / "logic.yaml")
@@ -4914,11 +6730,18 @@ def main(argv=None):
     glitch_status_rows = load_glitch_levels(ops_path)
     items = load_items(items_path)
     locations = load_locations(locs_path)
+    contract_locations = dict(locations)
     if not schema_path.exists():
         print(f"WARNING: {schema_path} not found", file=sys.stderr)
     macros = load_macros(macros_path)
     (logic_regions, logic_edges, logic_loc_preds, logic_macros,
      world_state_overrides, world_state_edges) = load_logic(logic_path)
+    contract_regions = dict(logic_regions)
+    contract_region_ids = _region_ids_for_codegen(contract_regions)
+    contract_world_state_overrides = {
+        location: dict(world_states)
+        for location, world_states in world_state_overrides.items()
+    }
 
     # add-rando-pot-sanity: merge the generated local pot registry into BOTH the
     # location set (ids / kRandoLocations rows) and the logic binding (region_id +
@@ -5568,6 +7391,47 @@ def main(argv=None):
         # compiles clean, so this never fires on an unmodified tree.
         sys.exit(1)
 
+    # Hints v2 metadata is validated only after every optional generated
+    # location family has joined the registry, so compact-name collisions in a
+    # local pot/enemy/terrain/bonk substrate fail the same codegen invocation
+    # that would otherwise ship them.
+    hint_registry_contract = validate_hint_registry_contract(
+        hint_registry_contract_path,
+        locations,
+        logic_regions,
+        _all_rids,
+        world_state_overrides,
+        base_location_count=len(contract_locations),
+        base_region_count=len(contract_region_ids),
+        update=args.update_hint_metadata_lock,
+    )
+    hint_metadata = load_hint_metadata(
+        hint_metadata_path,
+        items,
+        locations,
+        contract_locations=contract_locations,
+        regions=logic_regions,
+        region_ids=_all_rids,
+        contract_regions=contract_regions,
+        contract_region_ids=contract_region_ids,
+        contract_world_state_overrides=contract_world_state_overrides,
+        registry_contract=hint_registry_contract,
+    )
+    validate_hint_metadata_lock(
+        hint_metadata_lock_path,
+        hint_metadata,
+        hint_runtime_algorithm_version(RANDO_SRC / "rando_hints.h"),
+        hint_runtime_text_schema_version(RANDO_SRC / "rando_hints.h"),
+        update=args.update_hint_metadata_lock,
+    )
+    if args.update_hint_metadata_lock:
+        atomic_write_text(
+            hint_registry_contract_path,
+            json.dumps(
+                hint_registry_contract, indent=2, sort_keys=True
+            ) + "\n",
+        )
+
     # Emit artifacts.
     out_headers = Path(args.out_headers)
     out_data = Path(args.out_data)
@@ -5575,6 +7439,7 @@ def main(argv=None):
     out_data.mkdir(parents=True, exist_ok=True)
     emit_location_ids(locations, out_headers / "location_ids.h")
     emit_item_ids(items, out_headers / "item_ids.h")
+    emit_hint_metadata(hint_metadata, out_headers / "hint_metadata.h")
     emit_logic_data(locations, logic_regions, logic_edges, location_predicates, edge_predicates,
                     out_data / "logic_data.c", items=items, logic_loc_preds=logic_loc_preds,
                     ow_meta=ow_meta, ow_non_warp_edges=ow_non_warp_edge_count,
@@ -5630,6 +7495,11 @@ def main(argv=None):
 
     print(f"generated location_ids.h ({len(locations)} locations)")
     print(f"generated item_ids.h ({len(items)} items)")
+    print(
+        "generated hint_metadata.h "
+        f"({len(hint_metadata.items)} items, "
+        f"{len(hint_metadata.locations)} locations)"
+    )
     print(f"generated logic_data.c ({len(logic_regions)} regions, {len(logic_edges)} edges, {len(locations)} locations)")
     print(f"generated chest_lookup.h ({chest_lookup_count} chest entries)")
     print(f"generated pot_lookup.h ({pot_lookup_count} pot entries)")

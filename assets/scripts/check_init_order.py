@@ -28,7 +28,7 @@ SAVES_REF = Path("saves/ref")
 OWNED_BEGIN_NAME = "kRam_RandoOwnedBegin"
 OWNED_END_NAME = "kRam_RandoOwnedEnd"
 FIRST_OWNED_CELL = "kRam_Features1"
-LAST_OWNED_CELL = "kRam_RandoOverworldDoor"
+LAST_OWNED_CELL = "kRam_RandoTakeAnyDoor"
 
 
 def discover_rando_owned_range() -> tuple[int, int] | None:

@@ -30,6 +30,7 @@ from pathlib import Path
 #   - src/rando/logic_data.c        (from assets/rando/logic.yaml — task 3.5)
 #   - src/rando/location_ids.h      (from assets/rando/location_registry.yaml — task 3.1)
 #   - src/rando/item_ids.h          (from assets/rando/item_registry.yaml — task 3.2)
+#   - src/rando/hint_metadata.h     (from assets/rando/hint_metadata.yaml — Hints v2)
 #   - src/rando/chest_lookup.h      (from assets/chest_data.py + location_registry.yaml — task 6.3)
 #   - src/rando/pot_lookup.h        (from local assets/rando/pots.gen.yaml — pot room/pos lookup)
 #   - src/rando/enemy_drop_lookup.h (from local enemy_drops.gen.yaml — forced enemy key drops)
@@ -45,6 +46,7 @@ EXPECTED_GENERATED = [
     "src/rando/logic_data.c",
     "src/rando/location_ids.h",
     "src/rando/item_ids.h",
+    "src/rando/hint_metadata.h",
     "src/rando/chest_lookup.h",
     "src/rando/pot_lookup.h",
     "src/rando/terrain_lookup.h",  # add-rando-grass-rock-shuffle
@@ -76,6 +78,9 @@ MSBUILD_REQUIRED_CODEGEN_INPUTS = {
     "assets/rando/ow_quotient_allowlist.yaml",
     "assets/rando/item_registry.yaml",
     "assets/rando/location_registry.yaml",
+    "assets/rando/hint_metadata.yaml",
+    "assets/rando/hint_metadata.lock.json",
+    "assets/rando/hint_registry_contract.json",
     "assets/rando/icon_atlas.yaml",
     "assets/rando/direct_grant_icons.yaml",
     "assets/rando/logic.yaml",
@@ -85,6 +90,7 @@ MSBUILD_REQUIRED_CODEGEN_INPUTS = {
     "assets/rando/door_predicates.gen.json",
     "assets/rando/door_portals.yaml",
     "assets/rando/logic_parts/**/*.yaml",
+    "src/rando/rando_hints.c",
     "assets/rando_logic_gen.py",
     "assets/chest_data.py",
 }

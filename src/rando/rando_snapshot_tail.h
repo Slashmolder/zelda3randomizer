@@ -33,8 +33,8 @@
 #include "../types.h"
 #include <stdio.h>
 
-// TLV constants. ZRSNAP01 is 8 raw ASCII bytes (no NUL); matches what the
-// pre-rewrite stub emitted and what the spec implicitly pins for Phase A.
+// TLV constants. ZRSNAP01 is 8 raw ASCII bytes (no NUL), retained as the
+// stable historical format magic.
 #define kRandoSnapshotTail_Magic   "ZRSNAP01"
 #define kRandoSnapshotTail_MagicLen 8
 
@@ -90,6 +90,13 @@
 // is length-tolerant so the deferred door phase can append its bitmap without
 // a new type.
 #define kRandoSnapshotTail_Type_Discovery 10u
+// Hints v2 immutable plan identity plus mutable 24-bit discovery. The plan is
+// rebuilt only after every settings/layout TLV has landed and the active logic
+// overlays have been reinstalled; the payload never stores rendered text,
+// assignments, paid cursors, or in-flight transactions.
+#define kRandoSnapshotTail_Type_HintState 11u
+#define kRandoSnapshotTail_HintStateFormat 1u
+#define kRandoSnapshotTail_HintStatePayloadSize 41u
 
 // Upper bound on a single TLV payload's claimed length. The largest legal
 // payload is the RandoState body (52 + kRandoLocationCapacity*2 bytes); the

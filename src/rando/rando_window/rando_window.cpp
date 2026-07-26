@@ -77,6 +77,10 @@ static bool s_wants_shown = false;
 // new slot (RandoWindow_OpenForNewSlot). At most one is set at a time.
 static bool s_select_game_settings_once = false;
 static bool s_select_general_once = false;
+// Set by General's hint-summary affordance. The Hints tab is rendered later in
+// the same nested tab bar, so SetSelected can switch immediately without a
+// second click or a persistent navigation state.
+static bool s_select_hints_once = false;
 
 // Asset-warn "allow once" session bypass — mirrors select_file.c's
 // g_asset_warn_session_bypass. Set by the modal's "Allow once" choice, consumed
@@ -413,7 +417,9 @@ static void ApplyOpenFastGanonCorePreset(RandoSettings *s) {
 
 static void ApplyRaceSafePreset(RandoSettings *s) {
   s->race_mode = 1;
-  s->hints = 1;
+  // Race-safe is the one utility preset that deliberately resets the complete
+  // hint policy. Ordinary seed presets preserve all hint-policy fields.
+  Settings_ApplyHintProfile(s, kHintProfile_Balanced);
   s->item_pool_difficulty = kItemPoolDifficulty_Normal;
   s->customizer_active = 0;  // Race mode refuses customizer manifests.
   ApplyDungeonKeysWildMapsPreset(s);
@@ -706,14 +712,20 @@ static void Panel_General() {
   for (int i = 0; i < kPreset__Count; i++) {
     if (i > 0) ImGui::SameLine();
     if (ImGui::Button(Settings_PresetName((SettingsPreset)i))) {
-      // HINTS is a UI-scoped axis, not a preset axis. Settings_ApplyPreset runs
-      // Settings_SetDefaults, which resets hints to its default; preserve the
-      // user's explicit Hints choice across a preset click so picking a preset
-      // doesn't silently flip the Hints checkbox. (PC equivalent of the in-game
-      // screen's cece249 fix, which is compiled out on PC.)
+      // Hints are a UI-scoped axis, not a seed-preset axis. Preserve the full
+      // policy; restoring only the Off/Balanced byte would silently erase a
+      // Custom profile's coverage, mix, and paid depth.
       uint8 saved_hints = s->hints;
+      uint8 saved_hint_tile_coverage = s->hint_tile_coverage;
+      uint8 saved_hint_mix = s->hint_mix;
+      uint8 saved_hint_paid_depth = s->hint_paid_depth;
+      uint8 saved_hint_npc_reward_reveal = s->hint_npc_reward_reveal;
       Settings_ApplyPreset((SettingsPreset)i, s);
       s->hints = saved_hints;
+      s->hint_tile_coverage = saved_hint_tile_coverage;
+      s->hint_mix = saved_hint_mix;
+      s->hint_paid_depth = saved_hint_paid_depth;
+      s->hint_npc_reward_reveal = saved_hint_npc_reward_reveal;
       // A preset may move the goal off/onto Completionist; re-evaluate the lock
       // from scratch so we don't restore a stale pre-lock value.
       s_accessibility_locked = false;
@@ -737,7 +749,7 @@ static void Panel_General() {
     ApplyAccessibilityLock(s);
     changed = true;
   }
-  HelpTooltip("Turns race mode on, keeps hints on, uses Normal item pool, disables Customizer mode, and applies Dungeon keys / wild maps.");
+  HelpTooltip("Turns race mode on, sets hints to Balanced, uses Normal item pool, disables Customizer mode, and applies Dungeon keys / wild maps.");
 
   // ---- Core axes ----
   ImGui::SeparatorText("World & Goal");
@@ -878,9 +890,10 @@ static void Panel_General() {
     if (s->race_mode)
       ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f),
                          "Spoiler will be suppressed until Reveal is invoked.");
-    v = s->hints != 0;
-    if (ImGui::Checkbox("Hints", &v)) { s->hints = v; changed = true; }
-    HelpTooltip("Telepathic-tile hints.");
+    ImGui::Text("Hints: %s", RandoHints_PendingProfileName());
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Configure in Hints")) s_select_hints_once = true;
+    HelpTooltip("Choose tile coverage, paid-clue depth, and hint mix in the Hints tab.");
   }
 
   // Quality-of-Life controls live in their own top-level tab
@@ -2382,6 +2395,7 @@ void RandoWindow_Init(SDL_Window *window, SDL_GLContext gl_context) {
 // The gate keys off what was LAST GENERATED, never pending.race_mode (§14.1).
 // Returns the count; fills `out_tabs` (capacity `cap`) with stable string ptrs.
 static const char *const kTab_General         = "General";
+static const char *const kTab_Hints           = "Hints";
 static const char *const kTab_SeedTools       = "Seed Tools";
 static const char *const kTab_Dungeons        = "Dungeons";
 static const char *const kTab_Shuffles        = "Shuffles";
@@ -2393,7 +2407,7 @@ static const char *const kTab_Spoiler         = "Spoiler";
 static int RandoWindow_BuildTabList(bool last_generated_race_mode,
                                     const char **out_tabs, int cap) {
   int n = 0;
-  const char *base[] = { kTab_General, kTab_SeedTools, kTab_Dungeons, kTab_Shuffles,
+  const char *base[] = { kTab_General, kTab_Hints, kTab_SeedTools, kTab_Dungeons, kTab_Shuffles,
                          kTab_QualityOfLife, kTab_Trackers, kTab_AssetHash };
   for (size_t i = 0; i < sizeof base / sizeof base[0]; i++)
     if (n < cap) out_tabs[n++] = base[i];
@@ -2414,6 +2428,12 @@ static bool TabListContains(const char **tabs, int n, const char *name) {
 static void RandoWindow_TabSelfCheck(void) {
   const char *tabs[10];
   int n = RandoWindow_BuildTabList(/*race_mode=*/true, tabs, 10);
+  if (n < 2 || tabs[1] != kTab_Hints) {
+    fprintf(stderr,
+            "[rando_window] SELF-CHECK FAILED: Hints is not the regular tab "
+            "immediately after General.\n");
+    exit(2);
+  }
   if (TabListContains(tabs, n, kTab_Spoiler)) {
     fprintf(stderr,
             "[rando_window] SELF-CHECK FAILED: Spoiler tab present under "
@@ -2499,9 +2519,13 @@ void RandoWindow_BeginFrame(void) {
         if (ImGui::BeginTabBar("##rando_tabs")) {
           for (int i = 0; i < ntabs; i++) {
             ImGuiTabItemFlags tflags =
-                (s_select_general_once && tabs[i] == kTab_General) ? ImGuiTabItemFlags_SetSelected : 0;
+                ((s_select_general_once && tabs[i] == kTab_General) ||
+                 (s_select_hints_once && tabs[i] == kTab_Hints))
+                    ? ImGuiTabItemFlags_SetSelected
+                    : 0;
             if (ImGui::BeginTabItem(tabs[i], nullptr, tflags)) {
               if (tabs[i] == kTab_General)            Panel_General();
+              else if (tabs[i] == kTab_Hints)         RandoHints_Render();
               else if (tabs[i] == kTab_SeedTools)     Panel_SeedTools();
               else if (tabs[i] == kTab_Dungeons)      Panel_Dungeons();
               else if (tabs[i] == kTab_Shuffles)      Panel_Shuffles();
@@ -2514,7 +2538,6 @@ void RandoWindow_BeginFrame(void) {
           }
           // Read-only logic views (their own files).
           if (ImGui::BeginTabItem("Reachability")) { RandoReach_Render(); ImGui::EndTabItem(); }
-          if (ImGui::BeginTabItem("Hints"))        { RandoHints_Render(); ImGui::EndTabItem(); }
           ImGui::EndTabBar();
         }
         // Generate flow lives inside the Randomizer tab, below its sub-tabs, but
@@ -2525,6 +2548,7 @@ void RandoWindow_BeginFrame(void) {
         ImGui::EndTabItem();
       }
       s_select_general_once = false;
+      s_select_hints_once = false;
 
       // Debug — live inventory/equipment editor (writes g_ram directly; gated to
       // in-game, non-replay, non-emulator-attached).
@@ -2574,7 +2598,7 @@ void RandoWindow_Shutdown(void) {
   }
   // Free the bridge's owned spoiler-viewer placement copy (passing NULL frees +
   // clears without re-storing) so it isn't leaked at process exit. (audit LOW)
-  RandoWindowBridge_StoreGenerated(NULL, NULL, NULL, false);
+  RandoWindowBridge_StoreGenerated(NULL, NULL, NULL, NULL, false);
 }
 
 // ---- Show / hide -----------------------------------------------------------

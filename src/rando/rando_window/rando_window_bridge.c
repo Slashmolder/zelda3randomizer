@@ -7,9 +7,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "../rando.h"  // kGeneratorVersion, Rando_RegenerateActiveSlotHints
+#include "../rando.h"          // kGeneratorVersion
 #include "../rando_spoiler.h"  // RandoSpoiler, Spoiler_Write (§14.4/§14.5)
-#include "../rando_hints.h"    // Rando_GenerateHints/Rando_ClearHints (snapshot-consistent hints)
 #include "../customizer.h"     // Customizer_GetActive (Validate: manifest loaded?)
 
 RandoWindowBridge g_rando_window_bridge;
@@ -44,8 +43,8 @@ bool RandoWindowBridge_WriteSpoilerFiles(const char *json_path, const char *txt_
   if (!b->has_last_generated || b->last_generated_placement.entries == NULL)
     return false;
   // Build the spoiler from the generate-time SNAPSHOT (not `pending`, which the
-  // user may have edited since). Spheres are not snapshotted for the native
-  // path, so sphere_data is omitted (NULL).
+  // user may have edited since). The sphere table and immutable hint plan are
+  // both retained by value, so export has no dependency on active slot globals.
   RandoSpoiler sp;
   memset(&sp, 0, sizeof sp);
   sp.share_string = b->last_generated_share_string;
@@ -53,33 +52,17 @@ bool RandoWindowBridge_WriteSpoilerFiles(const char *json_path, const char *txt_
   sp.generator_version = (uint32)kGeneratorVersion;
   sp.settings = &b->last_generated_settings;
   sp.placements = &b->last_generated_placement;
-  sp.spheres = NULL;
+  sp.spheres = b->last_generated_has_spheres
+                   ? &b->last_generated_spheres
+                   : NULL;
+  sp.hint_plan = b->last_generated_has_hint_plan
+                     ? &b->last_generated_hint_plan
+                     : NULL;
   sp.medallion_assignment = b->last_generated_has_medallion_assignment
                                 ? b->last_generated_medallion_assignment
                                 : NULL;
   sp.goal_completable = b->last_generated_goal_completable;
-  // Spoiler_Write reads the hint GLOBALS (Rando_GetHintString over rando_hints.c's
-  // g_hint_table) at write time, and those are overwritten by ANY slot activation
-  // (Rando_ActivateSidecarSlot), newer generation, or race reveal — writing here
-  // without re-installing would mix THIS snapshot's placement with ANOTHER
-  // slot's hints. Hints are a pure deterministic function of (settings.hints/
-  // .goal, placement) — the sub-RNG is seeded from the placement digest, and
-  // Hints_SelfCheck asserts run-to-run byte-identity — so regenerating from the
-  // snapshotted settings+placement reproduces the generate-time hints exactly
-  // (the spheres arg is reserved/unused).
-  Rando_GenerateHints(&b->last_generated_settings, &b->last_generated_placement, NULL);
-  bool ok = Spoiler_Write(&sp, json_path, txt_path);
-  // Restore the ACTIVE slot's hint state so in-game telepathic tiles / fortune
-  // tellers keep showing the active seed's hints after a spoiler export.
-  // Rando_RegenerateActiveSlotHints REPLAYS Rando_ActivateSidecarSlot's hint
-  // block exactly — including the v1/no-blob fallbacks (header-ext
-  // hints_setting/goal, default-on for the oldest slots), which a
-  // Rando_GetActiveSettings()-based restore here used to miss (it returns NULL
-  // for those slots even though activation regenerated their hints, leaving
-  // vanilla text until slot reload). No slot active / snapshot restore still
-  // fails safe to a cleared table — vanilla text.
-  Rando_RegenerateActiveSlotHints();
-  return ok;
+  return Spoiler_Write(&sp, json_path, txt_path);
 }
 
 void RandoWindowBridge_RecomputeDerived(void) {
@@ -166,13 +149,16 @@ void RandoWindowBridge_SetGenerateResult(int status, const char *err) {
 void RandoWindowBridge_StoreGenerated(const RandoPlacementTable *table,
                                       const RandoSpheres *spheres,
                                       const uint8 *medallion_assignment,
+                                      const RandoHintPlan *hint_plan,
                                       bool race_mode) {
   RandoWindowBridge *b = &g_rando_window_bridge;
   // Free any prior owned copy before overwriting.
   free(b->last_generated_placement.entries);
   b->last_generated_placement.entries = NULL;
   b->last_generated_placement.count = 0;
+  b->last_generated_has_spheres = false;
   b->last_generated_has_medallion_assignment = false;
+  b->last_generated_has_hint_plan = false;
   b->has_last_generated = false;
 
   if (table != NULL && table->entries != NULL && table->count > 0) {
@@ -181,11 +167,18 @@ void RandoWindowBridge_StoreGenerated(const RandoPlacementTable *table,
       memcpy(copy, table->entries, (size_t)table->count * sizeof(RandoPlacement));
       b->last_generated_placement.entries = copy;
       b->last_generated_placement.count = table->count;
-      if (spheres != NULL) b->last_generated_spheres = *spheres;
+      if (spheres != NULL) {
+        b->last_generated_spheres = *spheres;
+        b->last_generated_has_spheres = true;
+      }
       if (medallion_assignment != NULL) {
         memcpy(b->last_generated_medallion_assignment, medallion_assignment,
                sizeof(b->last_generated_medallion_assignment));
         b->last_generated_has_medallion_assignment = true;
+      }
+      if (hint_plan != NULL) {
+        b->last_generated_hint_plan = *hint_plan;
+        b->last_generated_has_hint_plan = true;
       }
       b->last_generated_race_mode = race_mode;
       b->has_last_generated = true;

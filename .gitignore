@@ -60,6 +60,7 @@ __pycache__
 /src/rando/logic_data.c
 /src/rando/location_ids.h
 /src/rando/item_ids.h
+/src/rando/hint_metadata.h
 /src/rando/chest_lookup.h
 /src/rando/pot_lookup.h
 /src/rando/terrain_lookup.h

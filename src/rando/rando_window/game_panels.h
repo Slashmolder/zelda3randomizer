@@ -20,9 +20,11 @@ void DbgTime_Render(void);       // pause / frame-advance / speed (dbg_timecontr
 void DbgWarp_Render(void);       // teleport (dbg_warp.cpp; owns the warp g_ram sequence)
 void DbgFlags_Render(void);      // story/progress flag editor (dbg_flags.cpp)
 
-// Randomizer tab sub-panels (read-only).
+// Randomizer tab sub-panels.
 void RandoReach_Render(void);    // reachability view (rando_reach_panel.cpp)
-void RandoHints_Render(void);    // active-slot hint list (rando_hints_panel.cpp)
+void RandoHints_Render(void);    // next-seed setup + active-slot journal (rando_hints_panel.cpp)
+const char *RandoHints_PendingProfileName(void);  // summary for General tab
+void RandoHints_SelfCheck(void); // race/full-view policy invariants
 
 // Headless render smoke check (invoked from --rando-selftest): renders every
 // panel once into a backend-less ImGui context to catch crashes / null-derefs.
