@@ -5,48 +5,107 @@ TBD - created by archiving change add-randomizer-support. Update Purpose after a
 ## Requirements
 ### Requirement: Dispatcher signature and fall-back behavior
 
-The placement layer SHALL expose `Rando_OnLocationCheck(location_id, vanilla_item_id)`. The function resolves the location ID to a substitute item via the active placement table and applies the appropriate item-receipt routine. When the location ID is not in the table (or the table is absent), the dispatcher SHALL grant the supplied `vanilla_item_id` via the standard vanilla code path.
+The placement layer SHALL expose internal placement-resolution and grant-plan
+functions used by approved grant transactions. Gameplay grant sites SHALL call
+an animated, quiet, or deferred transaction rather than own the pairing of raw
+dispatch, sentinel interpretation, and delivery. When a location is absent from
+the active placement table, the transaction SHALL preserve its supplied vanilla
+grant behavior. When a location is present, the substituted item SHALL be
+delivered by its explicit grant plan and SHALL never silently fall back to the
+location's vanilla item.
+
+The location checked bit SHALL commit only after immediate delivery succeeds or
+at the delivery point of a prepared deferred transaction. Merely resolving a
+placement SHALL have no checked-state side effect.
 
 #### Scenario: Known location grants substitute
-- **WHEN** the location ID is present in the active placement table and maps to "Hookshot"
-- **THEN** the hookshot is granted via its standard receive path regardless of the supplied `vanilla_item_id`
+
+- **WHEN** an approved grant transaction resolves a known location to Hookshot
+- **THEN** Hookshot is delivered through the normal receive or lossless fallback
+  path regardless of the supplied vanilla item, and the location becomes
+  checked only after delivery succeeds
 
 #### Scenario: Unknown location falls back to vanilla
-- **WHEN** the location ID is not present in the placement table
-- **THEN** the dispatcher logs a single warning (debug-build assert), grants `vanilla_item_id` via the vanilla receive path, and gameplay does not soft-lock
+
+- **WHEN** an approved grant transaction receives a location absent from the
+  active placement table
+- **THEN** it preserves the caller's vanilla grant behavior and does not invent
+  a randomizer checked location
+
+#### Scenario: Deferred resolution is not collection
+
+- **WHEN** a tablet or falling prize resolves an item but its delivery visual is
+  not yet committed
+- **THEN** the location remains unchecked unless a lossless immediate fallback
+  has already delivered the item
 
 ### Requirement: Single dispatch point per grant site
 
-Every vanilla item-grant site enumerated in the Phase 0 audit (`audit.md`) SHALL route through exactly one `Rando_OnLocationCheck` call. The grant sites enumerated by the audit SHALL include, at minimum: every chest open path (dungeon chest, big-key chest, dungeon-prize chest, overworld chest, cave chest); every NPC gift (uncle, sahasrahla, magic bat, library, hobo, sick kid, bottle merchant, dwarf brothers, smith bros initial + tempering, witch, bombo merchant, bee merchant, mushroom→powder turn-in); every static-location pickup (master sword pedestal, ether tablet, bombos tablet, pyramid plaque, sanctuary chest); every dungeon-prize grant (heart container + crystal/pendant from boss); every event-flag grant that affects inventory (king zora flippers, zora's lake flippers, fat fairy upgrades, pyramid fairy upgrades); and every minigame chest (digging game, treasure chest minigame, hype cave, peg cave). Sites that are not item grants in the rando sense (e.g., `link_item_in_hand` clearing on holster, wishing-pond temporary-store-and-restore) SHALL be marked exempt in the audit with a documented reason.
+Every randomizer item-grant site enumerated by the checked-in audit SHALL route
+through exactly one approved animated, quiet, or deferred grant transaction.
+Raw `Rando_OnLocationCheck` / `Rando_DispatchVanillaGrant` pairing SHALL be
+internal to the grant core and tests. Non-grant state writes SHALL retain an
+explicit audit exemption, and the randomizer-inactive path SHALL preserve
+vanilla behavior.
 
 #### Scenario: Vanilla path bit-identical when rando inactive
-- **WHEN** `kFeatures1_RandomizerActive` is clear and the player opens a chest
-- **THEN** `g_ram` after the grant is bit-identical to the pre-change binary's behavior, validated by replaying the per-chapter savestates
+
+- **WHEN** `kFeatures1_RandomizerActive` is clear and a grant handler runs,
+  including when receipt allocation is unavailable
+- **THEN** its RAM and caller-state behavior matches the pre-change vanilla path
 
 #### Scenario: Audit deliverable is checked in before implementation
-- **WHEN** any task in section 6 of `tasks.md` (dispatch additions) begins
-- **THEN** `audit.md` exists in the change folder enumerating every grant site, its file/line, its classification (grant / state-shuffle / cosmetic / progress), and its target location ID
+
+- **WHEN** a change adds or converts a randomized grant site
+- **THEN** the tracked grant-site enumeration (the grant-consumer guard's
+  per-file/function allowlist plus the audit-exemption annotations) is updated
+  in the same change, and the source guards fail the build when it is not
 
 #### Scenario: New grant site without dispatch fails the build
-- **WHEN** a developer adds a write to `link_item_*` outside the dispatch layer without an audit-exemption comment
-- **THEN** the audit check step fails the build with the file/line and a request to either route via dispatch or annotate exemption
+
+- **WHEN** gameplay code calls a raw randomizer resolver/dispatcher or writes a
+  tracked inventory cell outside the transaction layer without an approved
+  audited exemption
+- **THEN** the source guards fail with the file and line
 
 ### Requirement: Item types receivable via dispatcher
 
-The dispatcher SHALL grant any item type listed in the audit deliverable's "receivable items" enumeration. Phase A receivable items include:
+Every non-virtual item declared grantable by the authoritative item registry
+SHALL resolve through generated semantic opcode + payload metadata. The runtime
+SHALL implement the declared progressive, absolute equipment, magic, bottle,
+heart, dungeon item, rupee/filler, prize, trap, soul, and explicit no-op classes
+without hand-maintained fallback to a location's vanilla item.
 
-- **Progressive items** (mandatory for ALTTPR-style placement): `ProgressiveSword`, `ProgressiveShield`, `ProgressiveArmor`, `ProgressiveGlove`, `ProgressiveBow`. Each grant advances the corresponding `link_item_*` by one level via a new helper; at-max grants are a generator error in well-formed seeds.
-- All vanilla absolute `link_item_*` items, **`SilverArrowUpgrade`** (standalone upgrade item used in absolute-bow mode).
-- **`TriforcePiece`** — required by Triforce Hunt and Ganon Hunt; grant path adds 1 to the player's triforce-piece counter and updates the HUD.
-- **Magic upgrades** as items: `HalfMagic`, `QuarterMagic` — the grant is **strictly progressive**: each magic upgrade advances `link_magic_consumption` by exactly one tier (capped at the maximum), regardless of which of the two items it is. **This port uses `0 = full, 1 = half, 2 = quarter`** (the cost table is indexed `item*3 + consumption`), NOT the vanilla-SNES `1/2/4` convention. Grant path: `magic_upgrade_direct_grant` plus the Magic Bat identity write. This deliberately diverges from ALTTPR (whose `QuarterMagic` jumps straight to quarter); capping at +1 tier wastes no pickup and cannot skip the half tier, and is placement-neutral because no logic predicate requires quarter specifically (the magic macro is satisfied at ≥ half).
-- **Bottle-with-contents** as distinct item IDs: `BottleEmpty`, `BottleWithFairy`, `BottleWithBee`, `BottleWithGoodBee`, `BottleWithRedPotion`, `BottleWithGreenPotion`, `BottleWithBluePotion`.
-- **Heart items** as two distinct IDs: `PieceOfHeart` (granted via the vanilla PoH path — 4 pieces = +1 max HP via the existing quarters mechanic) and `BossHeartContainer` (granted via a direct +1 max HP path, no quarters mechanic). The dispatcher routes each ID to the correct receive code.
-- Small keys (per dungeon), big keys (per dungeon), maps, compasses.
-- Multi-tier rupees: `Rupee1`, `Rupee5`, `Rupee20`, `Rupee100`, `Rupee300`.
-- Junk pool: `SmallMagic`, `Arrow1`, `Arrow10`, `Bombs1`, `Bombs3`, `Bombs10`. **`Rupoor` is in the receivable enumeration but enters the pool only when `item_pool_difficulty ∈ {hard, expert}`** — the dispatcher still needs the grant path so a hard-pool seed actually works.
-- Prize items (when prize shuffle is enabled): `Prize_Crystal1..7`, `Prize_GreenPendant`, `Prize_RedPendant`, `Prize_BluePendant`. Granted by clearing the dungeon to which prize shuffle assigned the prize; dispatch site is the boss-death code path in `dungeon.c`.
+Recognized items may produce an accepted no-op when their effect is already at
+its cap; this is a terminal successful delivery. A resource-capacity condition
+that the player can change, such as no empty bottle slot, is retryable and SHALL
+not commit the check. Invalid virtual items are generation/runtime errors.
 
-Item types not in the receivable enumeration SHALL NOT be placed by the generator.
+#### Scenario: Progressive grant advances by one level
+
+- **WHEN** a progressive item is below its effective cap
+- **THEN** delivery advances exactly one semantic tier and the frozen display
+  plan shows that granted tier
+
+#### Scenario: Progressive grant at max is accepted no-op
+
+- **WHEN** a progressive item is delivered at its effective maximum tier
+- **THEN** no unrelated junk or vanilla item is granted, the valid placement is
+  accepted, and the location commits exactly once
+
+#### Scenario: Full bottle inventory is retryable
+
+- **WHEN** a bottle-content item is offered with no empty bottle slot
+- **THEN** delivery is not accepted, no irreversible caller state commits, and
+  the location remains available after the player empties a bottle
+
+#### Scenario: Dungeon, prize, and direct classes use placed identity
+
+- **WHEN** a dungeon item, prize, trap, soul, magic upgrade, Rupoor, or Nothing
+  is placed away from its vanilla source
+- **THEN** the semantic opcode applies the placed item's destination/effect (or
+  intentional no-op for Nothing) and never the current dungeon or source's
+  vanilla item
 
 #### Scenario: Small-key receive
 - **WHEN** the dispatcher grants a small key from a chest in a dungeon other than that key's vanilla home
@@ -812,31 +871,35 @@ enemy-drop locations.
 
 ### Requirement: Enemy-drop staged grant and suppression
 
-Active enemy-drop checks SHALL dispatch placed items through a staged grant path, not
-through the vanilla small-key increment path. The staged path SHALL guard checked
-locations before dispatch, then force placement resolution with
-`vanilla_registry_id = 0xFFFF` for unchecked locations. The existing dispatch path
-marks the checked bit as pickup intent and routes direct grants, confirmations, and
-receive animations according to the placed item.
+Active enemy-drop checks SHALL use the approved quiet grant transaction rather
+than the vanilla current-dungeon key increment. The transaction SHALL check for
+an already-terminal source, perform presence-aware placement resolution, accept
+and deliver the placed item, then commit the checked bit. Only after that commit
+may the runtime suppress future forced-key behavior. An identity placement still
+uses the transaction and SHALL NOT also run the vanilla increment.
 
-After a successful grant, the runtime SHALL suppress future forced-key behavior for
-that checked source. This suppression SHALL apply even when the placed item is the
-same small key that the vanilla drop would have granted; identity placements still use
-placement semantics and SHALL NOT also run the vanilla current-dungeon key increment.
-
-Customizer may pin items on active key-tier enemy-drop locations like other non-empty
-locations. Trap shuffle SHALL target enemy-drop locations only for trap classes whose
-delivery path is proven safe through the staged pickup hook.
+Customizer and trap eligibility SHALL retain their existing delivery-safety
+rules. No enemy-drop source may mark checked merely as pickup intent before the
+quiet transaction accepts delivery.
 
 #### Scenario: Identity placement does not double grant
-- **WHEN** an active enemy-drop location is identity-placed with its own small key
-- **THEN** the staged dispatch grants the placed key once and the vanilla case-12
-  current-dungeon increment is bypassed
+
+- **WHEN** an active enemy-drop location is identity-placed with its own small
+  key
+- **THEN** the quiet transaction grants and commits the key once and bypasses
+  the vanilla case-12 current-dungeon increment
+
+#### Scenario: Failed enemy delivery remains retryable
+
+- **WHEN** the placed item cannot currently be accepted
+- **THEN** the source remains unchecked and its forced pickup behavior is not
+  permanently suppressed
 
 #### Scenario: Trap eligibility is delivery-safe
+
 - **WHEN** trap shuffle considers an enemy-drop location
-- **THEN** only trap classes that can be delivered through the staged forced-key
-  pickup path are eligible
+- **THEN** only trap classes deliverable through the production quiet
+  transaction are eligible
 
 ### Requirement: All-enemy locations participate in placement as real checks
 
@@ -947,3 +1010,4 @@ overflowing or omitting Skeleton Key.
 - **WHEN** accessibility is beatable-only and Skeleton Key lands outside the goal
   spheres
 - **THEN** the seed remains valid because no logic predicate or goal requires it
+
