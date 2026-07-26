@@ -707,6 +707,10 @@ void Rando_SetEntranceRegionOverridePred(uint16 loc_id, uint16 region_id,
 void Rando_AddEntranceEdge(uint16 from_region, uint16 to_region,
                            uint32 pred_off, uint16 pred_len);
 int Rando_GetEntranceAddedEdgeCount(void);
+// Budget introspection for the combined-consumer selfcheck: edges dropped by
+// the cap since the last Begin (must stay 0) and the store capacity.
+int Rando_GetEntranceAddedEdgeDropped(void);
+int Rando_EntranceAddedEdgeCapacity(void);
 
 // ---------------------------------------------------------------------------
 // Door shuffle (add-rando-door-shuffle) — logic-side install + generated data.

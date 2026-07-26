@@ -138,6 +138,9 @@ void Entrance_ApplyDecoupledExitEdges(const uint8 *exit_assign, int n);
 // Spoiler: one-way "decoupled_exit" map (hole → exit hole).
 void Entrance_WriteDecoupledSpoilerJson(void *file, const uint8 *exit_assign, int n);
 void Entrance_WriteDecoupledSpoilerText(void *file, const uint8 *exit_assign, int n);
+// Worst-case added-edge load of all entrance modes combined (decoupled exits +
+// cross-category dungeon-behind-cave edges), for the shared-store budget check.
+int Entrance_AddedEdgeWorstCase(void);
 // D.4 runtime helpers: map an entrance-id → cave interior, and a cave interior's
 // representative entrance-id (for the decoupled arrival-table keying + replay).
 int Entrance_InteriorOfEntranceId(uint8 ent_id);

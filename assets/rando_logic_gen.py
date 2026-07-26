@@ -5029,6 +5029,42 @@ def main(argv=None):
         sys.exit(f"{_region_lock_path} missing — run with "
                  f"--update-region-lock once to create it.")
 
+    # Edge-override budget (randomizer-logic spec): the runtime store
+    # Rando_SetEntranceEdgeOverride silently ignores old_to_region ids at or
+    # above kEntranceEdgeOverrideMax, so every override-ELIGIBLE region — each
+    # dungeon's override key (interior/lobby region, falling back to the entry
+    # region) — must keep an id below that cap. Parse the authoritative
+    # kDungeons table and the cap from the C sources rather than duplicating
+    # either list here; a violation is a hard codegen failure because the
+    # runtime failure mode is a silently un-remapped dungeon door.
+    _se_src = Path("src/rando/shuffle_entrance.c").read_text(encoding="utf-8")
+    _rl_src = Path("src/rando/rando_logic.c").read_text(encoding="utf-8")
+    _cap_m = re.search(r"#define\s+kEntranceEdgeOverrideMax\s+(\d+)", _rl_src)
+    _tbl_m = re.search(r"kDungeons\[kEntranceDungeonCount\]\s*=\s*\{(.*?)\n\};",
+                       _se_src, re.S)
+    if not _cap_m or not _tbl_m:
+        sys.exit("edge-override budget: cannot parse kEntranceEdgeOverrideMax "
+                 "(rando_logic.c) or kDungeons (shuffle_entrance.c)")
+    _ov_cap = int(_cap_m.group(1))
+    _ov_bad = []
+    for _row_m in re.finditer(r"\{\s*\"[^\"]+\"[^}]*\}", _tbl_m.group(1)):
+        _strs = re.findall(r"\"([^\"]+)\"", _row_m.group(0))
+        if len(_strs) < 2:
+            continue
+        _ov_key = _strs[2] if len(_strs) >= 3 else _strs[1]
+        _ov_id = _non_warp_map.get(_ov_key)
+        if _ov_id is None:
+            sys.exit(f"edge-override budget: dungeon override key {_ov_key!r} "
+                     f"(shuffle_entrance.c kDungeons) is not a known logic "
+                     f"region")
+        if _ov_id >= _ov_cap:
+            _ov_bad.append((_ov_key, _ov_id))
+    if _ov_bad:
+        sys.exit(f"edge-override budget: dungeon override-key region id(s) at "
+                 f"or above kEntranceEdgeOverrideMax={_ov_cap}: {_ov_bad} — "
+                 f"keep these regions early in id order or raise the cap in "
+                 f"rando_logic.c")
+
     # Region budget: the reachability walker's structures are sized by
     # kReachabilityMaxRegions (rando_logic.c) = 512 after this change;
     # regions at or above the cap are silently never walked, so the budget

@@ -1320,9 +1320,10 @@ otherwise dead-end the hub. Because decoupled entrance mode alone adds up to 40 
 (`kEntranceCaveInteriorCount`) and composes with cross-mode edges — already
 at the 64-edge overlay cap's doorstep,
 whose overflow today drops SILENTLY — this change SHALL raise the overlay
-capacity to 128 and add a self-check asserting the combined post-injection
-count of ALL consumers (entrance modes + warp axes) stays below the cap,
-converting the silent-drop cliff into a loud failure. Edge-transition
+capacity to 128, count and report any capped drop at install time, and add a
+self-check asserting the worst-case combined load of ALL consumers (entrance
+modes + warp axes) fits below the cap with zero dropped edges, converting
+the silent-drop cliff into a loud failure. Edge-transition
 shuffle's larger edge volume remains out of scope for the overlay and this
 change.
 

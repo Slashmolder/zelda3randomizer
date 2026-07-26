@@ -886,11 +886,13 @@ static bool g_entrance_edge_active = false;
 // Stage 3 (cross-category): per-seed ADDED edges (overworld region → dungeon
 // entry) for dungeons that land behind cave doors. Walked alongside kRandoEdges
 // when g_entrance_edge_active. pred_len 0 = unconditional (cave-door access).
-// add-rando-ow-warp-shuffle raised 64 -> 128: decoupled entrance mode alone
-// adds up to kEntranceCaveInteriorCount (40) exit edges, warp shuffle adds
-// ~20, and overflow DROPS SILENTLY below — 60 left <= 4 slots of headroom
-// for cross-mode edges and any future consumer. The OwWarp selfcheck
-// asserts the combined post-injection count stays in range.
+// add-rando-ow-warp-shuffle raised 64 -> 128. Worst-case consumers: decoupled
+// entrance mode adds up to kEntranceCaveInteriorCount (40) exit edges,
+// cross-category adds one per dungeon behind a cave door
+// (<= kEntranceDungeonCount = 11), and the warp overlay adds <= 20 (asserted
+// per install) — 71 total, 57 slots of headroom. Overflow drops the edge but
+// counts it (one-time stderr below); OwWarp_SelfCheck asserts the combined
+// worst case fits the cap and that no drop occurred.
 #define kEntranceAddedEdgeMax 128
 static struct {
   uint16 from_region, to_region;
@@ -898,11 +900,13 @@ static struct {
   uint16 pred_len;
 } g_entrance_added_edges[kEntranceAddedEdgeMax];
 static int g_entrance_added_edge_count = 0;
+static int g_entrance_added_edge_dropped = 0;
 
 void Rando_BeginEntranceEdgeOverrides(void) {
   for (int i = 0; i < kEntranceEdgeOverrideMax; i++)
     g_entrance_edge_override[i] = 0xFFFF;
   g_entrance_added_edge_count = 0;
+  g_entrance_added_edge_dropped = 0;
   g_entrance_edge_active = true;
 }
 
@@ -958,9 +962,26 @@ int Rando_GetEntranceAddedEdgeCount(void) {
   return g_entrance_edge_active ? g_entrance_added_edge_count : 0;
 }
 
+// Edges dropped by the cap since the last Begin. Any nonzero value means a
+// consumer's reachability silently shrank — the budget selfcheck asserts 0.
+int Rando_GetEntranceAddedEdgeDropped(void) {
+  return g_entrance_added_edge_dropped;
+}
+
+int Rando_EntranceAddedEdgeCapacity(void) {
+  return kEntranceAddedEdgeMax;
+}
+
 void Rando_AddEntranceEdge(uint16 from_region, uint16 to_region,
                            uint32 pred_off, uint16 pred_len) {
-  if (g_entrance_added_edge_count >= kEntranceAddedEdgeMax) return;
+  if (g_entrance_added_edge_count >= kEntranceAddedEdgeMax) {
+    if (g_entrance_added_edge_dropped++ == 0)
+      fprintf(stderr,
+              "Rando: added-edge store full (%d) — edge %u->%u dropped; "
+              "logic reachability is understated\n",
+              kEntranceAddedEdgeMax, from_region, to_region);
+    return;
+  }
   int i = g_entrance_added_edge_count++;
   g_entrance_added_edges[i].from_region = from_region;
   g_entrance_added_edges[i].to_region = to_region;

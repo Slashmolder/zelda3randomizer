@@ -43,15 +43,21 @@ explicit fail-closed wiring an axis that adds no pool items requires.
 
 With `flute_shuffle` active, the generator SHALL select eight distinct flute
 destinations from the Light World candidate set (candidate positions ported
-from the upstream `flute_data`; pseudo-screens 0x80+ excluded) using the
-ported upstream selection semantics for both modes: sector-based
-distribution across disconnected region groups, the upstream FORCED spot
-entries (the Desert/Mire access guarantee, whose teleporter-ledge spot is
-the only vanilla route to those areas), and — for `balanced` — the
-proximity ignore-set rule (flooded through same-screen/adjacent components
-and one-way ledges, avoiding overlap with previously used spots, including
-the upstream rule's deliberate rare escape) on top of `random`'s
-unconstrained draw within those invariants.
+from the upstream `flute_data`; pseudo-screens 0x80+ excluded), preserving
+the upstream selection GUARANTEES: the upstream FORCED spot entries always
+join (the Desert/Mire access guarantee, whose teleporter-ledge spot is the
+only vanilla route to those areas); every disconnected screen-component
+sector holding a candidate receives a spot before any sector receives a
+second (empty-sector-first, then uniform draws over the remaining
+candidates); and `balanced` additionally avoids proximity clusters via an
+ignore set flooded through same-screen/adjacent components and one-way
+ledges, with a deliberate rare (1-in-32) escape roll applied uniformly to
+every conflict class. This is a guarantee-preserving reimplementation, NOT a
+line-for-line port of upstream `shuffle_flute_spots` — upstream distributes
+by proportional per-sector quota with an in-sector round-robin, never
+escapes same-region collisions in balanced mode, and orders menu slots by
+the `flute_data` slot column, whereas this implementation orders menu slots
+by screen id.
 At runtime the flute map UI, the selection cycling order, and the installed
 landing SHALL all reflect the same per-seed spot for every slot: the blip
 drawn for slot k, the destination previewed by cycling to slot k, and the
@@ -81,17 +87,19 @@ formula outputs), and spots on other screens derive a world-space
 link-centered position (cosmetic; playtest-tunable). The flute map draws
 blips from hardcoded const tables in `messaging.c`, not from the arrival
 assets, and upstream's icon columns are in a different coordinate space —
-neither is a valid blip source for non-vanilla screens. Both SHALL be validated by `--rando-selftest` oracles at the eight
-vanilla spots: ported tableaux MUST byte-match the corresponding vanilla
-`kBirdTravel_*` asset rows, and derived blips MUST match the vanilla const
-blip tables. Either oracle failing SHALL be treated as a data/transform
-bug, never worked around by editing the expected rows.
+neither is a valid blip source for non-vanilla screens. The tableau half
+SHALL be validated by a `--rando-selftest` oracle at the eight vanilla
+spots: ported tableaux MUST byte-match the corresponding vanilla
+`kBirdTravel_*` asset rows. Blips need no separate oracle — the vanilla arms
+of the blip resolver read the `messaging.c` const tables directly, so a
+table-vs-table comparison would be tautological. An oracle failure SHALL be
+treated as a data/transform bug, never worked around by editing the
+expected rows.
 
-#### Scenario: Oracles pin both datasets
+#### Scenario: Oracle pins the tableau dataset
 - **WHEN** `--rando-selftest` runs on any build of this feature
-- **THEN** the flute-tableau and flute-blip oracle vectors pass, proving the
-  ported rows and the blip transform reproduce the engine's own arrival and
-  map data for all eight vanilla spots
+- **THEN** the flute-tableau oracle vectors pass, proving the ported rows
+  reproduce the engine's own arrival data for all eight vanilla spots
 
 ### Requirement: Flute logic routes solely through the shuffled spots
 

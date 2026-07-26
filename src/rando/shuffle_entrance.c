@@ -249,6 +249,15 @@ static int Entrance_DungeonPoolCount(const RandoSettings *settings) {
 // Engine
 // ---------------------------------------------------------------------------
 
+// Worst-case added-edge load the entrance modes can place on the shared
+// logic-edge store: every cave interior gets a decoupled exit edge, and every
+// dungeon (GT pool included) lands behind a cave door in cross-category.
+// Consumed by OwWarp_SelfCheck's combined budget assert against
+// Rando_EntranceAddedEdgeCapacity().
+int Entrance_AddedEdgeWorstCase(void) {
+  return kEntranceCaveInteriorCount + kEntranceDungeonCount;
+}
+
 bool Entrance_IsActive(const RandoSettings *settings) {
   if (settings == NULL) return false;
   if (!settings->shuffle_cave_entrances) return false;

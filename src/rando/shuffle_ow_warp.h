@@ -64,7 +64,9 @@ uint8 Rando_OwWarp_WhirlpoolBirdRow(uint8 entered_row);
 
 // Selftest (wired into Rando_RunAllSelfChecks): determinism vector, forced-
 // spot guarantee, sector spread, conflict honoring, whirlpool involution,
-// digest stability, overlay budget, and the vanilla-8 oracles (candidate
-// tableaux byte-equal to the kBirdTravel_* asset rows; vanilla blips equal
-// to the messaging.c const tables).
+// digest stability, overlay budget (warp-alone AND the combined
+// entrance+warp worst case, with zero dropped edges), and the vanilla-8
+// tableau oracle (candidate tableaux byte-equal to the kBirdTravel_* asset
+// rows; blips need no separate oracle — the vanilla arms of
+// Rando_OwWarp_FluteBlip read the messaging.c const tables directly).
 void OwWarp_SelfCheck(void);

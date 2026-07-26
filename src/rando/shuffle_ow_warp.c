@@ -13,6 +13,7 @@
 #include "rando.h"
 #include "rando_logic.h"
 #include "rando_rng.h"
+#include "shuffle_entrance.h"  // Entrance_AddedEdgeWorstCase (budget selfcheck)
 
 // Vanilla flute-map blip tables (messaging.c, exported for the rando path +
 // the oracle — single source, no drift).
@@ -374,6 +375,14 @@ void OwWarp_SelfCheck(void) {
   OwWarp_InstallLogicEdges(&ml);
   int added = Rando_GetEntranceAddedEdgeCount();
   OWSC(added > 0 && added <= 20, "warp overlay edge count out of range");
+  // Combined-consumer budget (randomizer-logic spec): the worst case every
+  // entrance mode can add plus this maximal warp overlay must fit the shared
+  // store, and the store must not have dropped an edge while installing.
+  OWSC(Entrance_AddedEdgeWorstCase() + added <=
+           Rando_EntranceAddedEdgeCapacity(),
+       "combined entrance+warp added-edge budget exceeded");
+  OWSC(Rando_GetEntranceAddedEdgeDropped() == 0,
+       "added-edge store dropped edges during warp install");
   Rando_ClearEntranceEdgeOverrides();
 #undef OWSC
   fprintf(stderr, "[OwWarp_SelfCheck] OK\n");
