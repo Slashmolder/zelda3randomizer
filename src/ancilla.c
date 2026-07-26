@@ -15,6 +15,7 @@
 #include "zelda_rtl.h"
 #include "rando/rando.h"
 #include "rando/rando_placement.h"
+#include "rando/dungeon_ids.h"
 #include "rando/item_ids.h"
 #include "rando/location_ids.h"
 
@@ -6570,6 +6571,51 @@ int Ancilla_RandoFallingPrizeSelfCheck(void) {
   k = AncillaAdd_FallingPrize(0x29, 1, 4);
   TABLET_CHECK(k >= 0 && ancilla_U[k] == 0,
                 "base falling prize retained a token marker");
+
+  // A boss prize must start the VANILLA receipt, not the floating direct-grant
+  // icon. The receipt is what plays the fanfare and — for a crystal —
+  // transmutes into the rising-crystal cutscene whose tail sets
+  // submodule_index = 0x18, the only exit from a sealed boss room. Direct-
+  // granting alone banked the crystal and softlocked the player in Palace of
+  // Darkness; nothing here caught it, because this file's other cases assert
+  // the plan/token layer rather than driving a real prize delivery.
+  {
+    static RandoPlacement prize_entry[1];
+    uint16 prize_loc = Rando_GetBossPrizeLocation(kGameDungeon_PalaceOfDarkness);
+    TABLET_CHECK(prize_loc != 0xFFFFu, "PoD has no boss prize location");
+    // A non-PoD crystal at PoD also proves the PLACED prize is what gets
+    // granted, not the dungeon's vanilla one.
+    prize_entry[0].location_id = prize_loc;
+    prize_entry[0].item_id = ITEM_Prize_Crystal4;
+    RandoPlacementTable prize_table = {prize_entry, 1};
+    Placement_Install(&prize_table);
+    memset(g_rando_checked_bitmap, 0, sizeof(g_rando_checked_bitmap));
+    memset(ancilla_type, 0, 10);
+    memset(ancilla_item_to_link, 0, 10);
+    link_has_crystals = 0;
+    TABLET_CHECK(Rando_GrantBossPrizeReceipt(
+                     kGameDungeon_PalaceOfDarkness, 0x20,
+                     kRandoGrantPresentation_Animated, 3, 0) ==
+                     kRandoGrantResult_Accepted,
+                 "boss prize grant refused");
+    int receipt = -1, icon = -1;
+    for (int i = 0; i < 10; i++) {
+      if (ancilla_type[i] == kAncillaType_ItemReceipt) receipt = i;
+      if (ancilla_type[i] == kAncillaType_RandoIconReceipt) icon = i;
+    }
+    TABLET_CHECK(icon < 0,
+                 "boss prize used the direct-grant icon: no fanfare, and a "
+                 "crystal never reaches the cutscene that exits the boss room");
+    TABLET_CHECK(receipt >= 0 && ancilla_item_to_link[receipt] == 0x20,
+                 "boss prize did not start the vanilla crystal receipt");
+    // Deliberately "some crystal bit", not a specific one: prize_item_direct_grant
+    // permutes 5 of the 7 crystal->bit assignments relative to the in-game
+    // crystal numbering (upstream Item.php: Crystal1=0x02 .. Crystal7=0x08,
+    // matching this fork's own kDungeonCrystalPendantBit x map-glyph
+    // composition). That is a separate, count-preserving pre-existing bug;
+    // pinning an exact bit here would freeze whichever convention is current.
+    TABLET_CHECK(link_has_crystals != 0, "placed crystal bit not granted");
+  }
 
 cleanup:
   Placement_Install(saved_placement);

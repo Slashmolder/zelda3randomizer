@@ -2657,6 +2657,42 @@ static void rando_show_direct_grant_icon_only(uint8 item_id) {
                                 plan.display_oam_flags);
 }
 
+// Vanilla receive code for a dungeon-prize item, or 0 if `item_id` is not one.
+//
+// Dungeon prizes are DIRECT grants (kRandoGrantOp_DirectPrize): the dispatch
+// writes the placed prize's pendant/crystal bit itself, because under
+// prize_shuffle the dungeon's vanilla bit is the wrong one. But the vanilla
+// RECEIPT is what plays the boss-prize fanfare and — for a crystal —
+// transmutes into the rising-crystal cutscene whose tail sets
+// submodule_index = 0x18, the only thing that warps the player out of a boss
+// room that has sealed behind them. Direct-granting alone therefore banked the
+// prize and left the player stuck (playtest: Palace of Darkness).
+//
+// Running the vanilla receipt under rando is pure PRESENTATION and cannot
+// double-grant: kValueToGiveItemTo[] is -1 for all four prize codes so the
+// generic table write is skipped, and both explicit bit-ORs — the pendant one
+// in ItemReceipt_GrantInventory and the crystal one in Ancilla_RisingCrystal —
+// are already suppressed while rando is active, precisely because "the
+// dispatch path owns the bit". This restarts a chain those comments already
+// assumed was running.
+//
+// Codes are keyed by prize ITEM id, never by colour name: the registry's
+// Red/Blue Pendant names are swapped relative to the drawn colour, and the
+// codes follow the BIT each prize sets (0x37 -> 4 = EP/green, 0x39 -> 2 =
+// DP/red, 0x38 -> 1 = TH/blue; see kDungeonCrystalPendantBit).
+static uint8 rando_prize_vanilla_receive_code(uint16 item_id) {
+  switch (item_id) {
+    case ITEM_Prize_GreenPendant: return 0x37;
+    case ITEM_Prize_RedPendant:   return 0x39;
+    case ITEM_Prize_BluePendant:  return 0x38;
+    case ITEM_Prize_Crystal1: case ITEM_Prize_Crystal2:
+    case ITEM_Prize_Crystal3: case ITEM_Prize_Crystal4:
+    case ITEM_Prize_Crystal5: case ITEM_Prize_Crystal6:
+    case ITEM_Prize_Crystal7: return 0x20;
+    default: return 0;
+  }
+}
+
 void Rando_ShowDirectGrantConfirmation(uint8 item_id) {
   if (g_last_dispatched_plan_valid &&
       g_last_dispatched_plan.item_id == item_id &&
@@ -2945,7 +2981,16 @@ RandoGrantResult Rando_CommitPreparedGrant(
     }
   } else if (presentation == kRandoGrantPresentation_Animated &&
              plan->disposition != kRandoGrantDisposition_Receive) {
-    Rando_ShowDirectGrantConfirmation((uint8)plan->item_id);
+    // A dungeon prize runs the VANILLA receipt for its cutscene/fanfare rather
+    // than the floating confirmation icon — see
+    // rando_prize_vanilla_receive_code for why this cannot double-grant.
+    uint8 prize_code = rando_prize_vanilla_receive_code(plan->item_id);
+    if (prize_code != 0) {
+      item_receipt_method = receipt_method;
+      Link_ReceiveItem(prize_code, chest_position);
+    } else {
+      Rando_ShowDirectGrantConfirmation((uint8)plan->item_id);
+    }
   }
   return kRandoGrantResult_Accepted;
 }
