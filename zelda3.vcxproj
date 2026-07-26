@@ -1014,6 +1014,8 @@
        and the up-to-date check works (skips when unchanged, fires on any logic_parts edit). -->
   <ItemGroup>
     <RandoCodegenInput Include="assets\rando\op_registry.yaml" />
+    <RandoCodegenInput Include="assets\rando\region_ids.lock.json" />
+    <RandoCodegenInput Include="assets\rando\ow_quotient_allowlist.yaml" />
     <RandoCodegenInput Include="assets\rando\item_registry.yaml" />
     <RandoCodegenInput Include="assets\rando\location_registry.yaml" />
     <RandoCodegenInput Include="assets\rando\icon_atlas.yaml" />

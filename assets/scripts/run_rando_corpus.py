@@ -57,7 +57,10 @@ ENEMY_COMPILED_ARTIFACTS = (
 
 def load_manifest(path: Path) -> dict:
     if not path.exists():
-        return {"entries": [], "generator_version": None}
+        # A present-but-empty manifest is the A0 scaffold pass; a MISSING file
+        # is a wrong --manifest path and must not report green over zero rows.
+        print(f"error: corpus manifest {path} not found")
+        sys.exit(2)
     try:
         import yaml  # type: ignore
     except ImportError:

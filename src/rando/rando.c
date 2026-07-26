@@ -440,10 +440,6 @@ static uint16 g_last_dispatched_location_id = 0xFFFFu;
 static RandoGrantPlan g_last_dispatched_plan;
 static bool g_last_dispatched_plan_valid;
 
-uint16 Rando_LastDispatchedItemId(void) {
-  return g_last_dispatched_item_id;
-}
-
 static bool rando_is_magic_upgrade_item(uint16 item_id) {
   return item_id == ITEM_HalfMagic || item_id == ITEM_QuarterMagic;
 }
@@ -2514,14 +2510,6 @@ void Rando_ShowDirectGrantConfirmation(uint8 item_id) {
   rando_show_direct_grant_icon_only(item_id);
 }
 
-void Rando_ReceiveOrConfirm(uint8 lttp_code, uint8 item_id) {
-  if (Rando_ShouldSkipReceive(lttp_code)) {
-    Rando_ShowDirectGrantConfirmation(item_id);
-  } else {
-    Link_ReceiveItem(lttp_code, 0);
-  }
-}
-
 typedef struct RandoPotCarrySnapshot {
   uint8 flag_immobilized;
   uint8 flag_sprite_pickup;
@@ -2685,56 +2673,6 @@ static void rando_tick_deferred_pot_confirmation(void) {
               g_rando_pot_confirmation_count * sizeof(g_rando_pot_confirmation_icons[0]));
     }
   }
-}
-
-// add-rando-pot-sanity — streamlined grant for a pot pickup. The vanilla
-// Link_ReceiveItem plays the full hold-over-head receipt: it zeroes
-// link_item_in_hand (so a CARRIED pot is dropped mid-lift — "the pot goes
-// flying"), poses Link, and freezes him for the whole animation. Far too heavy
-// to fire on every pot. Instead the shared no-animation receipt helper applies
-// both the immediate inventory write and the completed receipt's deferred
-// effects. We deliberately do NOT call Link_ReceiveItem or allocate a receipt
-// ancilla, so Link's lift/carry/throw of the pot is left untouched. Pot grants
-// play sound + HUD immediately, then show the lightweight confirmation icon on
-// the next safe tick. The icon path is visual-only, so it does not touch Link's
-// lift/carry state the way Link_ReceiveItem does.
-static void rando_pot_quiet_receive_impl(uint8 lttp_code, uint16 item_id, bool show_confirmation) {
-  RandoPotCarrySnapshot carry = rando_pot_capture_carry_state();
-  if (g_last_dispatched_plan_valid &&
-      g_last_dispatched_plan.item_id == item_id &&
-      g_last_dispatched_plan.disposition == kRandoGrantDisposition_RetryableFailure) {
-    rando_pot_restore_carry_state(&carry);
-    link_receiveitem_index = 0;
-    return;
-  }
-  if (g_last_dispatched_plan_valid &&
-      g_last_dispatched_plan.item_id == item_id &&
-      (g_last_dispatched_plan.disposition == kRandoGrantDisposition_Receive ||
-       g_last_dispatched_plan.disposition == kRandoGrantDisposition_RetryableFailure))
-    lttp_code = g_last_dispatched_plan.receive_code;
-  if (Rando_ShouldSkipReceive(lttp_code)) {
-    // Direct-grant classes were already written by Rando_DispatchVanillaGrant.
-    if (show_confirmation)
-      rando_queue_pot_confirmation(item_id, lttp_code);
-    link_receiveitem_index = 0;
-    return;
-  }
-
-  item_receipt_method = 0;             // normal write path
-  link_receiveitem_index = lttp_code;  // keep global state aligned with vanilla receipt code
-  if (!ItemReceipt_GrantWithoutAnimation(lttp_code)) {
-    rando_pot_restore_carry_state(&carry);
-    link_receiveitem_index = 0;
-    return;
-  }
-  rando_pot_restore_carry_state(&carry);  // undo receipt-side lift/carry mutations
-  if (show_confirmation)
-    rando_queue_pot_confirmation(item_id, lttp_code);
-  link_receiveitem_index = 0;
-}
-
-void Rando_QuietReceiveOrConfirm(uint8 lttp_code, uint16 item_id) {
-  rando_pot_quiet_receive_impl(lttp_code, item_id, true);
 }
 
 static RandoGrantResult rando_validate_prepared_token(
@@ -3130,11 +3068,6 @@ bool Rando_ObjScratchReserveForFrame(uint8 owner) {
     return true;
   }
   return false;
-}
-
-uint8 Rando_ObjScratchOwnerThisFrame(void) {
-  Rando_ObjScratchSyncFrame();
-  return s_rando_obj_scratch_owner;
 }
 
 void Rando_ObjScratchResetFrameReservation(void) {
@@ -5877,10 +5810,6 @@ void Rando_ApplyLoadedSaveRuntimeSettings(void) {
   // count so tower=random rolling 0 pre-opens too.
   if (g_rando_effective_crystals_tower == 0)
     save_ow_event_info[0x43] |= 0x20;
-}
-
-const char *Rando_GetActiveShareString(void) {
-  return g_rando_slot_active ? g_rando_active_share_string : "";
 }
 
 uint32 Rando_ActiveForcedFeatures0(void) {

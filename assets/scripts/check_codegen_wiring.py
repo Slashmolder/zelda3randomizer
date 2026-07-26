@@ -72,6 +72,8 @@ BUILD_SYSTEM_FILES = [
 # add/delete invalidation behavior.
 MSBUILD_REQUIRED_CODEGEN_INPUTS = {
     "assets/rando/op_registry.yaml",
+    "assets/rando/region_ids.lock.json",
+    "assets/rando/ow_quotient_allowlist.yaml",
     "assets/rando/item_registry.yaml",
     "assets/rando/location_registry.yaml",
     "assets/rando/icon_atlas.yaml",

@@ -49,6 +49,9 @@ BUMP_TRIGGER_GLOBS = [
     "assets/scripts/gen_enemy_drop_tables.py",
     "assets/scripts/gen_enemy_check_tables.py",
     "assets/scripts/gen_soul_room_tables.py",
+    "assets/scripts/gen_terrain_tables.py",
+    "assets/scripts/gen_bonk_tables.py",
+    "assets/scripts/gen_ow_graph_tables.py",
 ]
 
 

@@ -32,9 +32,6 @@ RAW_CORE_ALLOWED_CALLS = {
     ("Rando_OnLocationCheck", "Rando_DispatchVanillaGrant"): "legacy compatibility adapter",
     ("Rando_ResolveLiveGrantPlan", "Rando_DispatchVanillaGrant"): "legacy compatibility plan",
     ("Rando_ResolveLiveGrantPlan", "Rando_CommitRepeatableShopIdentity"): "validated vanilla-identity commit",
-    ("Rando_LastDispatchedItemId", "Rando_LastDispatchedItemId"): "legacy accessor definition",
-    ("Rando_ReceiveOrConfirm", "Rando_ReceiveOrConfirm"): "legacy delivery adapter definition",
-    ("Rando_QuietReceiveOrConfirm", "Rando_QuietReceiveOrConfirm"): "legacy quiet adapter definition",
     ("Rando_ResolveLiveGrantPlan", "rando_show_direct_grant_icon_only"): "presentation-only plan lookup",
     ("Rando_ResolveLiveGrantPlan", "rando_item_display_lttp"): "presentation-only plan lookup",
     ("Rando_ResolveLiveGrantPlan", "rando_placed_item_icon"): "presentation-only plan lookup",
@@ -48,6 +45,9 @@ RAW_CALLS = (
     "Rando_ResolveLiveGrantPlan",
     "Rando_OnLocationCheck",
     "Rando_DispatchVanillaGrant",
+    # Deleted legacy adapters — kept guarded so a reintroduction (or a stale
+    # copy/paste of the pre-transaction delivery pattern) fails the source
+    # guard instead of quietly reviving the raw API.
     "Rando_ReceiveOrConfirm",
     "Rando_QuietReceiveOrConfirm",
     "Rando_LastDispatchedItemId",
@@ -73,7 +73,6 @@ LOW_LEVEL_ALLOWED_CALLS = {
     (Path("src/player.c"), "Link_ReceiveItem", "Link_ReceiveItem"): "animated receipt definition",
     (Path("src/player.c"), "AncillaAdd_ItemReceipt", "Link_ReceiveItem"): "animated receipt allocation handoff",
     (Path("src/player.c"), "ItemReceipt_GrantWithoutAnimation", "Link_ReceiveItem"): "lossless saturation handoff",
-    (Path("src/rando/rando.c"), "ItemReceipt_GrantWithoutAnimation", "rando_pot_quiet_receive_impl"): "legacy quiet adapter",
     (Path("src/rando/rando.c"), "ItemReceipt_GrantWithoutAnimation", "Rando_CommitPreparedGrant"): "transaction-core quiet delivery",
     (Path("src/rando/rando.c"), "Link_ReceiveItem", "Rando_CommitPreparedGrant"): "transaction-core animated delivery",
     (Path("src/ancilla.c"), "Link_ReceiveItem", "Ancilla22_ItemReceipt"): "vanilla receipt continuation",
@@ -81,7 +80,6 @@ LOW_LEVEL_ALLOWED_CALLS = {
     (Path("src/ancilla.c"), "Link_ReceiveItem", "Ancilla36_Flute"): "vanilla flute receipt",
     (Path("src/misc.c"), "Link_ReceiveItem", "ItemReceipt_LosslessSelfCheck"): "receipt implementation tests",
     (Path("src/player.c"), "Link_ReceiveItem", "Link_PerformOpenChest"): "validated chest vanilla fallback",
-    (Path("src/rando/rando.c"), "Link_ReceiveItem", "Rando_ReceiveOrConfirm"): "legacy delivery adapter",
     (Path("src/rando/rando_placement.c"), "Link_ReceiveItem", None): "link receipt declaration",
     (Path("src/sprite.c"), "Link_ReceiveItem", "Sprite_HandleAbsorptionByPlayer"): "vanilla key pickup fallback",
     (Path("src/sprite_main.c"), "Link_ReceiveItem", "Sprite_GrantAnimatedOrVanilla"): "validated inactive vanilla fallback",

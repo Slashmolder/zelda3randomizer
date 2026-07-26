@@ -254,10 +254,15 @@ def requested_local_artifacts_ok(d: Path, *, require_pots: bool,
         ok = False
     if require_all:
         for rel, label in ((SOUL_ROOMS_REL, "soul-room registry"),
-                           (BONK_REGISTRY_REL, "bonk registry")):
+                           (BONK_REGISTRY_REL, "bonk registry"),
+                           (OW_GRAPH_REL, "OW warp graph")):
             if not (d / rel).is_file():
                 print(f"{prefix} missing required {label}: {rel}",
                       file=sys.stderr)
+                if rel == OW_GRAPH_REL:
+                    print(f"{prefix}   produce with: python "
+                          "assets/scripts/gen_ow_graph_tables.py",
+                          file=sys.stderr)
                 ok = False
     return ok
 

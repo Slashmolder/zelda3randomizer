@@ -3683,7 +3683,7 @@ bool Rando_TryGrantStartingInventory(const RandoSettings *settings) {
   // Applied in ALL world-states. Standard mode needs it for HC escape combat;
   // Open/Inverted/Retro don't have escape but the grant is harmless (slightly
   // generous starting ammo). Keying on world_state would require settings,
-  // which isn't available on slot-reload (see TODO above).
+  // which isn't available on slot-reload (see the escape-fill TODO below).
   //
   // TODO(escape-fill v2): replace this one-shot pre-grant with a faithful
   // port of ALTTPR's `World::setEscapeFills` (in `app/World.php`). That

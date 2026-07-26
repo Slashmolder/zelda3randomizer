@@ -308,18 +308,6 @@ bool Rando_RenderTrapMessage(uint16 msg_id, uint8 *out_buffer);
 #define kRandoSoulDialogueId 0x0221u
 bool Rando_RenderSoulMessage(uint16 msg_id, uint8 *out_buffer);
 
-// Returns the item id resolved by the most recent compatibility dispatch or
-// explicit transaction commit. Used by direct-grant
-// confirmation sites to feed the per-item icon lookup. Returns 0xFFFF when
-// no dispatch has run yet this slot.
-uint16 Rando_LastDispatchedItemId(void);
-
-// Streamlined direct grant for checks that resolve at a world interaction
-// point where the vanilla receive animation would be intrusive or unsafe
-// (pot breaks, ordinary enemy deaths). `item_id` should be the registry item
-// returned by Rando_LastDispatchedItemId after Rando_DispatchVanillaGrant.
-void Rando_QuietReceiveOrConfirm(uint8 lttp_code, uint16 item_id);
-
 // ---------------------------------------------------------------------------
 // Race-mode reveal action.
 //
@@ -435,31 +423,14 @@ static inline int Rando_ShouldSkipReceive(uint8 lttp_code) {
 void Rando_ShowDirectGrantConfirmation(uint8 item_id);
 
 // ---------------------------------------------------------------------------
-// Rando_ReceiveOrConfirm — convenience wrapper that combines the standard
-// NPC grant pattern into a single call.
-//
-// Replaces:
-//   if (Rando_ShouldSkipReceive(lttp_code))
-//     Rando_ShowDirectGrantConfirmation(item_id);
-//   else
-//     Link_ReceiveItem(lttp_code, 0);
-//
-// with:
-//   Rando_ReceiveOrConfirm(lttp_code, item_id);
-//
-// Behavior: when `lttp_code` is the §6.2 skip-sentinel, fires the §7.6
-// confirmation cue (sound + HUD refresh + icon ancilla when `item_id` is a
-// trap or has a verified entry in `kDirectGrantIcons[]`). Otherwise invokes
-// Link_ReceiveItem with chest_position=0 — every existing call site at the
-// NPC dispatch pattern passes 0; sites that need non-zero chest_position
-// (chest opens) continue to call Link_ReceiveItem directly with an explicit
-// confirmation gate.
-//
-// `item_id` is the ITEM_* id of the placed item (Placement_Lookup result).
-// When the dispatcher returns a vanilla lttp_code (no swap), `item_id` is
-// unused; pass the vanilla ITEM_* for symmetry and forward-compat.
+// Grant delivery: route every randomized grant site through the transaction
+// API — Rando_PrepareGrant / Rando_CommitPreparedGrant (or a site-specific
+// Rando_Grant* wrapper) — and branch explicitly on NotActive / Accepted /
+// AlreadyChecked / Blocked, postponing irreversible caller state until
+// accepted delivery. Raw Rando_OnLocationCheck / Rando_DispatchVanillaGrant
+// pairing is internal to the grant core and its tests;
+// check_grant_consumers.py rejects new callers outside its allowlist.
 // ---------------------------------------------------------------------------
-void Rando_ReceiveOrConfirm(uint8 lttp_code, uint8 item_id);
 
 // ---------------------------------------------------------------------------
 // Runtime pot grant hook and per-pot marker.
@@ -551,7 +522,6 @@ enum {
 };
 
 bool Rando_ObjScratchReserveForFrame(uint8 owner);
-uint8 Rando_ObjScratchOwnerThisFrame(void);
 void Rando_ObjScratchResetFrameReservation(void);
 
 bool Rando_OverlayPaletteRequestGold(uint8 row);
@@ -1184,7 +1154,6 @@ bool Rando_MedallionOpens(uint8 cast_medallion, uint8 entrance_index);
 bool Rando_IsActive(void);
 bool Rando_HasActiveSettings(void);
 const RandoSettings *Rando_GetActiveSettings(void);
-const char *Rando_GetActiveShareString(void);
 // Runtime crystal gate. Unknown/v1 settings fail closed to vanilla's seven-
 // crystal requirement. The load hook pre-opens GT for a zero-crystal setting.
 bool Rando_HasRequiredTowerCrystals(void);
