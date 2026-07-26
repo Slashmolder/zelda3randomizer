@@ -913,6 +913,9 @@ extern uint8 g_rando_checked_bitmap[kRandoCheckedBitmapBytes];
 void Rando_MarkLocationChecked(uint16 location_id);
 // Test the bit for `location_id`. Returns false for OOB or no slot active.
 bool Rando_IsLocationChecked(uint16 location_id);
+
+// Structural guard for the dungeon-prize inventory bits (grant group).
+void Rando_PrizeBitSelfCheck(void);
 bool Rando_HasLocationPlacement(uint16 location_id);
 // Presence-aware completion predicate for spawn/visibility guards. A mapped
 // randomizer location uses its checked bit; an absent row uses the caller's

@@ -4025,14 +4025,25 @@ void Ancilla29_MilestoneItemReceipt(int k) {  // 88ca8c
       if (player_is_indoors &&
           (receive_item == 0x20 || receive_item == 0x37 ||
            receive_item == 0x38 || receive_item == 0x39)) {
+        // Free THIS slot before delivering. The grant spawns the vanilla
+        // receipt, which allocates from the same 5-slot pool (Ancilla_AllocInit
+        // scans 0..4); with the pool full, Link_ReceiveItem silently takes its
+        // quiet fallback — no receipt, so no fanfare and no rising-crystal
+        // cutscene, i.e. exactly the softlock this dispatch is meant to avoid,
+        // except the grant would still report Accepted with the prize banked
+        // and the location checked, leaving nothing to retry. Vanilla cleared
+        // the slot first for this reason; the transaction rework moved the
+        // clear after the call. Restore it when delivery did NOT happen, so a
+        // retryable refusal still leaves the prize on the floor.
+        uint8 saved_type = ancilla_type[k];
+        ancilla_type[k] = 0;
         RandoGrantResult result = Rando_GrantBossPrizeReceipt(
             BYTE(cur_palace_index_x2) >> 1, receive_item,
             kRandoGrantPresentation_Animated, 3, 0);
         if (result == kRandoGrantResult_Accepted ||
-            result == kRandoGrantResult_AlreadyChecked) {
-          ancilla_type[k] = 0;
+            result == kRandoGrantResult_AlreadyChecked)
           return;
-        }
+        ancilla_type[k] = saved_type;
         if (result != kRandoGrantResult_NotActive)
           return;
       }
@@ -6592,6 +6603,8 @@ int Ancilla_RandoFallingPrizeSelfCheck(void) {
     memset(g_rando_checked_bitmap, 0, sizeof(g_rando_checked_bitmap));
     memset(ancilla_type, 0, 10);
     memset(ancilla_item_to_link, 0, 10);
+    // rando-exempt: self-check fixture zeroing; the whole g_ram is restored at
+    // `cleanup:` before this function returns.
     link_has_crystals = 0;
     TABLET_CHECK(Rando_GrantBossPrizeReceipt(
                      kGameDungeon_PalaceOfDarkness, 0x20,

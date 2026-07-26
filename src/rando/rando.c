@@ -406,20 +406,108 @@ static void rando_grant_generic_key(void) {
 // app/Region/Standard/<Dungeon>.php.
 //
 // Returns 1 on success.
+// Crystal N's link_has_crystals bit, indexed by (item id - ITEM_Prize_Crystal1),
+// i.e. by the in-game crystal NUMBER. THE single source: the grant, the live
+// reachability inventory read, and the tracker all index this one table.
+//
+// Derived by composing this fork's own vanilla data — kOverworldMapData (the
+// pause map's digit glyph per marker slot) x kCrystalBitMask x
+// kDungeonCrystalPendantBit — which gives PoD=1, SP=2, SW=3, TT=4, IP=5, MM=6,
+// TR=7, exactly PrizeShuffle_Run's vanilla assignment. Independently identical
+// to upstream ALTTPR (app/Item.php: Crystal1 bit 0x02 .. Crystal7 bit 0x08).
+//
+// It was wrong for 5 of 7 from its introduction until a playtest-driven audit,
+// because the two readers below were written to MIRROR the grant rather than to
+// re-derive it, so all three agreed with each other and with nothing else. An
+// earlier fix corrected the sibling PENDANT rows in this same switch and left
+// the crystals alone, recording "Crystal bits verified correct against
+// kDungeonCrystalPendantBit" — true of bit-vs-DUNGEON, which is not the
+// question; the crystal NUMBER convention is where the permutation entered.
+// Rando_PrizeBitSelfCheck now re-derives it from the identity assignment.
+const uint8 kRandoCrystalItemBit[7] = {
+  0x02,  // Crystal 1 - Palace of Darkness
+  0x10,  // Crystal 2 - Swamp Palace
+  0x40,  // Crystal 3 - Skull Woods
+  0x20,  // Crystal 4 - Thieves' Town
+  0x04,  // Crystal 5 - Ice Palace
+  0x01,  // Crystal 6 - Misery Mire
+  0x08,  // Crystal 7 - Turtle Rock
+};
+
 static int prize_item_direct_grant(uint16 registry_id) {
+  if (registry_id >= ITEM_Prize_Crystal1 && registry_id <= ITEM_Prize_Crystal7) {
+    link_has_crystals |= kRandoCrystalItemBit[registry_id - ITEM_Prize_Crystal1];
+    return 1;
+  }
   switch (registry_id) {
     case ITEM_Prize_GreenPendant: link_which_pendants |= 0x04; return 1;  // EP
     case ITEM_Prize_RedPendant:   link_which_pendants |= 0x02; return 1;  // DP
     case ITEM_Prize_BluePendant:  link_which_pendants |= 0x01; return 1;  // ToH
-    case ITEM_Prize_Crystal1: link_has_crystals |= 0x10; return 1;
-    case ITEM_Prize_Crystal2: link_has_crystals |= 0x02; return 1;
-    case ITEM_Prize_Crystal3: link_has_crystals |= 0x01; return 1;
-    case ITEM_Prize_Crystal4: link_has_crystals |= 0x40; return 1;
-    case ITEM_Prize_Crystal5: link_has_crystals |= 0x04; return 1;
-    case ITEM_Prize_Crystal6: link_has_crystals |= 0x20; return 1;
-    case ITEM_Prize_Crystal7: link_has_crystals |= 0x08; return 1;
     default: return 0;
   }
+}
+
+// Re-derives every dungeon prize's inventory bit from the vanilla assignment
+// and asserts prize_item_direct_grant produces it — by CALLING that function,
+// not by restating its table. This is the check whose absence let a 5-of-7
+// crystal permutation live from introduction to playtest: the two other
+// readers were written to mirror the grant, so "they all agree" proved nothing.
+//
+// Ground truth is composed, never transcribed: PrizeShuffle_Run(NULL, ...)
+// yields the identity (vanilla) dungeon->prize assignment without drawing RNG,
+// and kDungeonCrystalPendantBit says which bit each dungeon sets in vanilla.
+// A prize placed at its vanilla dungeon must therefore grant that dungeon's
+// bit. Any permutation of the crystal-number convention breaks this.
+void Rando_PrizeBitSelfCheck(void) {
+  uint8 identity[kRandoDungeonCount];
+  PrizeShuffle_Run(NULL, NULL, identity);
+
+  uint8 saved_crystals = link_has_crystals;
+  uint8 saved_pendants = link_which_pendants;
+  const char *failure = NULL;
+  uint8 seen_crystals = 0, seen_pendants = 0;
+
+  for (uint8 d = 0; d < kRandoDungeonCount && failure == NULL; d++) {
+    uint8 prize = identity[d];
+    if (prize == 0xFF)
+      continue;  // HCE / HCT / GT hold no shuffled prize
+    uint8 game = Rando_GameDungeonFromRandoDungeon(d);
+    if (game >= 13) { failure = "prize dungeon has no game-dungeon id"; break; }
+    uint8 want = kDungeonCrystalPendantBit[game];
+    if (want == 0) { failure = "vanilla prize dungeon has no prize bit"; break; }
+
+    link_has_crystals = 0;
+    link_which_pendants = 0;
+    if (!prize_item_direct_grant((uint16)(ITEM_Prize_GreenPendant + prize))) {
+      failure = "prize item was not granted";
+      break;
+    }
+    bool is_crystal = prize >= kPrize_Crystal1;
+    uint8 got = is_crystal ? link_has_crystals : link_which_pendants;
+    if (got != want) {
+      failure = is_crystal
+          ? "crystal grants a bit other than its vanilla dungeon's"
+          : "pendant grants a bit other than its vanilla dungeon's";
+      break;
+    }
+    if (is_crystal) seen_crystals++; else seen_pendants++;
+  }
+
+  // Every bit distinct, so no two prizes can collapse onto one inventory slot.
+  for (int i = 0; i < 7 && failure == NULL; i++)
+    for (int j = i + 1; j < 7; j++)
+      if (kRandoCrystalItemBit[i] == kRandoCrystalItemBit[j])
+        failure = "two crystals share an inventory bit";
+  if (failure == NULL && (seen_crystals != 7 || seen_pendants != 3))
+    failure = "vanilla assignment did not cover 3 pendants + 7 crystals";
+
+  link_has_crystals = saved_crystals;
+  link_which_pendants = saved_pendants;
+  if (failure != NULL) {
+    fprintf(stderr, "[Rando_PrizeBitSelfCheck] FAIL: %s\n", failure);
+    exit(2);
+  }
+  fprintf(stderr, "[Rando_PrizeBitSelfCheck] OK\n");
 }
 
 static void capacity_upgrade_direct_grant_to(bool bombs, uint8 target) {
@@ -6265,9 +6353,8 @@ void Rando_BuildRuntimeCounts(RandoCounts *out) {
   // (OP_TOWER_CRYSTALS_MET, any HAS_ITEM(Prize_*)) count by_item_id — without
   // these the live tracker showed Ganon's Tower unreachable with all seven
   // crystals in hand.
-  static const uint8 kPrizeCrystalMask[7] = {0x10, 0x02, 0x01, 0x40, 0x04, 0x20, 0x08};
   for (int i = 0; i < 7; i++) {
-    if (link_has_crystals & kPrizeCrystalMask[i])
+    if (link_has_crystals & kRandoCrystalItemBit[i])
       out->by_item_id[ITEM_Prize_Crystal1 + i] = 1;
   }
   if (link_which_pendants & 0x04) out->by_item_id[ITEM_Prize_GreenPendant] = 1;
@@ -6531,15 +6618,14 @@ void Rando_FillItemView(RandoItemView *out) {
   // Crystals (7) and pendants (3). crystal_mask bit (N-1) = rando Crystal N
   // obtained, indexed by the PRIZE crystal number (kPrize_Crystal1..7) the
   // tracker and placement use — NOT the HUD display order. The per-crystal
-  // link_has_crystals bits mirror prize_item_direct_grant: C1=0x10, C2=0x02,
-  // C3=0x01, C4=0x40, C5=0x04, C6=0x20, C7=0x08. pendant_mask bit0=green,
+  // link_has_crystals bits mirror prize_item_direct_grant: C1=0x02, C2=0x10,
+  // C3=0x40, C4=0x20, C5=0x04, C6=0x01, C7=0x08. pendant_mask bit0=green,
   // 1=red (ToH/Wisdom), 2=blue (DP/Power) by in-game DISPLAY color (the registry
   // Red/Blue Pendant names are swapped vs display); PrizeIcon maps prize->bit.
-  static const uint8 kCrystalMask[7] = { 0x10, 0x02, 0x01, 0x40, 0x04, 0x20, 0x08 };
   static const uint8 kPendantMask[3] = { 4, 1, 2 };
   uint8 cbits = link_has_crystals, pbits = link_which_pendants;
   for (uint8 i = 0; i < 7; i++) {
-    if (cbits & kCrystalMask[i]) { out->crystal_mask |= (uint8)(1 << i); out->crystals++; }
+    if (cbits & kRandoCrystalItemBit[i]) { out->crystal_mask |= (uint8)(1 << i); out->crystals++; }
   }
   for (uint8 i = 0; i < 3; i++) {
     if (pbits & kPendantMask[i]) { out->pendant_mask |= (uint8)(1 << i); out->pendants++; }
@@ -8130,8 +8216,13 @@ void Rando_SelfCheck(void) {
       fprintf(stderr, "Rando_SelfCheck: Crystal4 dispatch should return kRandoLttpSkip (got 0x%02x)\n", (unsigned)lttp);
       exit(2);
     }
-    if ((link_has_crystals & 0x40) == 0) {
-      fprintf(stderr, "Rando_SelfCheck: Crystal4 dispatch should OR 0x40 into link_has_crystals\n");
+    // Crystal 4 is Thieves' Town's in vanilla, so its bit is TT's 0x20. This
+    // asserted 0x40 (Skull Woods') for as long as prize_item_direct_grant was
+    // permuted -- a check written from the implementation instead of from the
+    // vanilla composition, which is why the permutation survived review.
+    // Rando_PrizeBitSelfCheck now derives all ten expectations.
+    if ((link_has_crystals & 0x20) == 0) {
+      fprintf(stderr, "Rando_SelfCheck: Crystal4 dispatch should OR 0x20 into link_has_crystals\n");
       exit(2);
     }
     // Same site with Prize_GreenPendant.
@@ -8164,7 +8255,10 @@ void Rando_SelfCheck(void) {
         kRandoGrantPresentation_None, 3, 0);
     if (prize_result != kRandoGrantResult_Accepted ||
         !Rando_IsLocationChecked(LOC_Skull_Woods_Prize) ||
-        (link_has_crystals & 0x40) == 0) {
+        // Crystal 4's bit is Thieves' Town's 0x20 -- the PLACED prize's bit,
+        // not the host dungeon's. This asserted Skull Woods' own 0x40, which
+        // only looked correct while prize_item_direct_grant was permuted.
+        (link_has_crystals & 0x20) == 0) {
       fprintf(stderr, "Rando_SelfCheck: boss prize receipt transaction failed\n");
       exit(2);
     }
@@ -10263,7 +10357,7 @@ static void Rando_GrantTransactionSelfCheck(void) {
                          kRandoGrantPresentation_None, 3, 0) ==
                          kRandoGrantResult_Accepted &&
                        Rando_IsLocationChecked(LOC_Skull_Woods_Prize) &&
-                       (link_has_crystals & 0x40),
+                       (link_has_crystals & 0x20),  // Crystal 4 = TT's bit
                      "boss-prize transaction failed", LOC_Skull_Woods_Prize);
     GRANT_TX_CHECK(Rando_GrantBossPrizeReceipt(
                          kGameDungeon_SkullWoods, 0x20,
@@ -10487,6 +10581,7 @@ static const RandoSelfCheckEntry kRandoSelfChecks[] = {
   { kRandoSelfCheckGroup_Grant,       ItemReceipt_FastFanfareSelfCheck },
   { kRandoSelfCheckGroup_Grant,       ItemReceipt_LosslessSelfCheck },
   { kRandoSelfCheckGroup_Grant,       Rando_GrantPlanSelfCheck },
+  { kRandoSelfCheckGroup_Grant,       Rando_PrizeBitSelfCheck },
   { kRandoSelfCheckGroup_Grant,       Rando_GrantTransactionSelfCheck },
   { kRandoSelfCheckGroup_Grant,       Rando_SpriteMainGrantPresentationSelfCheckOrDie },
   { kRandoSelfCheckGroup_Grant,       Rando_SpriteGrantRetrySelfCheckOrDie },
