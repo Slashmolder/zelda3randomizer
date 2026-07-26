@@ -45,13 +45,13 @@ the truth".
 - **The icon is knowledge-gated.** A prize marker renders the *true* placed
   prize only once the player has observed it — that dungeon's prize location is
   checked (`Rando_IsLocationChecked(Rando_GetDungeonPrizeLocation(d))`).
-  Until then it renders vanilla's existing blinking "?" marker, which the code
+  Until then it renders vanilla's existing blinking red-X marker, which the code
   already draws for the pre-pendant map-icon states (the `tab >> 8 == 0` path
   through `kOwMap_tab2`). No new art, no new render path.
 
 - **Visibility is location-keyed and the marker persists.** Under
   `prize_shuffle` a prize dungeon always carries a marker; collecting its prize
-  turns "?" into the real icon instead of erasing it, so the pause map doubles
+  turns the red X into the real icon instead of erasing it, so the pause map doubles
   as the in-game prize tracker (the only one that exists on Switch). Vanilla's
   type-keyed hide test is left untouched on the vanilla path.
 

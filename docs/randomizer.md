@@ -1418,7 +1418,7 @@ prize, so under `prize_shuffle` it pointed you at the wrong dungeons entirely.
 Markers now follow the dungeon, not the prize:
 
 - Every prize dungeon keeps its marker at its normal overworld spot, showing
-  the blinking **"?"** until you collect *that dungeon's* prize; then it turns
+  the blinking **red X** until you collect *that dungeon's* prize; then it turns
   into the real pendant or crystal (with the right crystal number). Unlike
   vanilla the marker does **not** vanish on pickup — it stays as a record of
   what that dungeon gave you, which is the only prize tracker the Switch build

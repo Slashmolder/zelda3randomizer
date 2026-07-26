@@ -59,7 +59,7 @@
 - [x] 5.4 Corpus regen shows **0** digest changes vs. the pre-change baseline
       (display-only claim verified, not asserted) — no `kGeneratorVersion` bump
 - [ ] 5.5 Owner playtest: vanilla seed pause map unchanged; `prize_shuffle` seed
-      shows "?" at every prize dungeon, flips to the correct icon + crystal
+      shows the blinking red X at every prize dungeon, flips to the correct icon + crystal
       number after collecting that dungeon's prize; Inverted pause map sane
 
 ## 6. Close-out

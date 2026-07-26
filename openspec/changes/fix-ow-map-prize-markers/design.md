@@ -25,7 +25,7 @@ Per-`k` content, read off those tables:
 
 | `k` | markers | meaning |
 | --- | --- | --- |
-| 0,1,2 | slot 0, `tab == 0` | blinking "?" routing marker (castle / Sahasrahla) |
+| 0,1,2 | slot 0, `tab == 0` | blinking red-X routing marker (castle / Sahasrahla) |
 | **3** | **slots 0,1,2** + slot 3 | **the three pendant dungeons** + Master Sword pedestal |
 | 4 | slot 0 | pedestal |
 | 5 | slot 0 | Hyrule Castle |
@@ -128,8 +128,8 @@ observed: the prize at a dungeon whose prize location is checked.
 
 **D3 — Persist the marker after collection; show the real icon.** Vanilla
 erases a marker once its prize type is owned. Under D2 that would make the
-revealed-icon branch unreachable, leaving the map permanently "?"-only. Keeping
-the marker and flipping "?" → real icon costs nothing (7 slots, 7 markers max),
+revealed-icon branch unreachable, leaving the map permanently red-X-only. Keeping
+the marker and flipping red X → real icon costs nothing (7 slots, 7 markers max),
 is knowledge-safe by construction (the player collected it), keeps the map and
 the ImGui tracker in agreement, and gives the Switch build — which has no
 tracker window — a prize tracker. The count of visible markers is unchanged
@@ -140,11 +140,11 @@ either way, so nothing is inferable from marker *presence*.
 type-keyed visibility test are both correct; staying on the vanilla path keeps
 that case byte-identical. When `Rando_GetActiveSettings()` returns NULL
 (snapshot replay / v1 slot) the code **fails closed** — treats the seed as
-shuffled, so the marker degrades to "?" rather than asserting a possibly-wrong
+shuffled, so the marker degrades to the red X rather than asserting a possibly-wrong
 prize. Same NULL-fail-closed shape as `tracker_windows.cpp`'s `shuffle_on`.
 
 **D5 — An identity assignment stays hidden.** If `prize_shuffle` is on but the
-roll happens to be the identity, markers still show "?" until collected. The
+roll happens to be the identity, markers still show the red X until collected. The
 player cannot know the roll was identity; this mirrors the landed
 "Identity-mapped assignment stays hidden" scenario for dungeon shuffle.
 
@@ -155,7 +155,7 @@ assignment read. The resolution therefore lives in `src/rando/ow_map_prizes.c`
 — the shape `src/rando/medallion_icons.c` already uses for the other deliberate
 in-world assignment surface — and only that file is allowlisted.
 
-**D7 — Reuse vanilla's "?" render path.** Substituting `tab = 0` *before* the
+**D7 — Reuse vanilla's red-X render path.** Substituting `tab = 0` *before* the
 existing `t = tab >> 8` branch routes the marker through vanilla's own
 `kOwMap_tab2` blink path (flags `0x32`, `ext 0`, no `-4` pre-adjust, no
 odd-frame skip). That path is live in vanilla at `k = 0/1/2`, so it needs no new
@@ -176,7 +176,7 @@ and the claim is verified with a corpus regen rather than asserted.
 - **Render/OAM regression is playtest-only.** The corpus never executes this
   code. The identity-oracle self-check proves the *data* mapping, not the draw.
   Pause-map playtest is a required gate: vanilla seed unchanged, shuffled seed
-  shows "?" then the right icon and crystal number after a boss.
+  shows the red X then the right icon and crystal number after a boss.
 - **Inverted.** The light/dark marker split is `(k >= 6) ^ is_in_dark_world`.
   Under Inverted the dungeon-to-world correspondence is unchanged (a dungeon
   stays where it is; the *player's* world flips), so the split still selects the

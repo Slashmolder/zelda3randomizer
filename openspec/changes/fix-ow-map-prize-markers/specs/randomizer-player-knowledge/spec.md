@@ -9,7 +9,7 @@ marker, a HUD glyph, an in-world sprite or plaque — SHALL be held to the same
 invariant as the tracker surfaces: it may only assert what is true under EVERY
 assignment consistent with the player's in-game observations. Where the surface
 cannot make a knowledge-consistent assertion it SHALL degrade to an explicitly
-unknown presentation (the vanilla "?"/blank marker form where one exists),
+unknown presentation (the vanilla red-X/blank marker form where one exists),
 never to the vanilla assumption, and never to the true assignment.
 
 Observation for a dungeon prize SHALL mean that dungeon's prize location is
@@ -28,7 +28,7 @@ shuffled assignment (a marker relocated to a shuffled entrance) SHALL NOT.
 
 - **WHEN** a `prize_shuffle` slot is active and the player has not collected a
   given dungeon's prize
-- **THEN** that dungeon's pause-map marker draws the unknown ("?") form
+- **THEN** that dungeon's pause-map marker draws the unknown (blinking red X) form
 
 #### Scenario: A known un-gated surface is recorded, not silently tolerated
 

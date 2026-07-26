@@ -10,7 +10,8 @@
 // dungeon->prize assignment. This module re-keys the icon by DUNGEON and gates
 // the reveal on player knowledge: the true prize appears only once that
 // dungeon's prize location is checked; until then the marker draws vanilla's
-// existing blinking "unknown" form.
+// existing blinking "unknown" form (a red X — upstream ALTTPR names the same
+// glyph table WorldMap_RedXChars; ours is kOwMap_tab2 in messaging.c).
 //
 // See openspec/specs/randomizer-player-knowledge — this is an in-world
 // (diegetic) assignment surface, held to the tracker invariant.
