@@ -269,9 +269,8 @@ static const uint8 kOverworldMap_tab1[333] = {
   0xf7, 0xf7, 0xf6, 0xf5, 0xf4, 0xf4, 0xf3, 0xf2, 0xf2, 0xf1, 0xf0, 0xef, 0xee, 0xee, 0xed, 0xec,
   0xeb, 0xea, 0xe9, 0xe8, 0xe8, 0xe7, 0xe6, 0xe5, 0xe4, 0xe3, 0xe2, 0xe1, 0xe0,
 };
-// non-static: fix-ow-map-prize-markers re-keys the crystal NUMBER glyph by
-// crystal id (prize_shuffle breaks the vanilla slot->number correspondence).
-// Indexed by `sprite index - 8`; single source for the rando path + its oracle.
+// non-static: see messaging.h — fix-ow-map-prize-markers re-keys the crystal
+// NUMBER glyph by crystal id (prize_shuffle breaks the slot->number match).
 const uint8 kOverworldMapData[7] = {0x79, 0x6e, 0x6f, 0x6d, 0x7c, 0x6c, 0x7f};
 static const uint8 kBirdTravel_tab1[8] = {0x7f, 0x79, 0x6c, 0x6d, 0x6e, 0x6f, 0x7c, 0x7d};
 // non-static: add-rando-ow-warp-shuffle reuses the hand-tuned vanilla blip
@@ -280,8 +279,10 @@ const uint8 kBirdTravel_x_lo[8] = {0x80, 0xcf, 0x10, 0xb8, 0x30, 0x70, 0x70, 0xf
 const uint8 kBirdTravel_x_hi[8] = {6, 0xc, 2, 8, 0xf, 0, 7, 0xe};
 const uint8 kBirdTravel_y_lo[8] = {0x5b, 0x98, 0xc0, 0x20, 0x50, 0xb0, 0x30, 0x80};
 const uint8 kBirdTravel_y_hi[8] = {3, 5, 7, 0xb, 0xb, 0xf, 0xf, 0xf};
-static const uint8 kPendantBitMask[3] = {4, 1, 2};
-static const uint8 kCrystalBitMask[7] = {2, 0x40, 8, 0x20, 1, 4, 0x10};
+// non-static: see messaging.h — rando/ow_map_prizes.c identifies each marker
+// slot's DUNGEON from these bits, an anchor independent of the icon tables.
+const uint8 kPendantBitMask[3] = {4, 1, 2};
+const uint8 kCrystalBitMask[7] = {2, 0x40, 8, 0x20, 1, 4, 0x10};
 static const uint16 kOwMapCrystal0_x[9] = {0x7ff, 0x2c0, 0xd00, 0xf31, 0x6d, 0x7e0, 0xf40, 0xf40, 0x8dc};
 static const uint16 kOwMapCrystal0_y[9] = {0x730, 0x6a0, 0x710, 0x620, 0x70, 0x640, 0x620, 0x620, 0x30};
 static const uint16 kOwMapCrystal1_x[9] = {0xff00, 0xff00, 0xff00, 0x8d0, 0xff00, 0xff00, 0xff00, 0x82, 0xff00};
@@ -303,11 +304,11 @@ static const uint16 kOwMapCrystal3_tab[9] = {0, 0, 0, 0x6234, 0, 0, 0, 0x6434, 0
 static const uint16 kOwMapCrystal4_tab[9] = {0, 0, 0, 0, 0, 0, 0, 0x6434, 0};
 static const uint16 kOwMapCrystal5_tab[9] = {0, 0, 0, 0, 0, 0, 0, 0x6434, 0};
 static const uint16 kOwMapCrystal6_tab[9] = {0, 0, 0, 0, 0, 0, 0, 0x6434, 0};
-// The seven pause-map prize marker slots, gathered so the draw loop below (and
-// rando/ow_map_prizes.c, which re-keys them by DUNGEON under prize_shuffle) can
+// The seven pause-map prize marker slots, gathered so the draw loop below can
 // index them. Slot i draws as sprite `14 - i`; `x == 0xff00` means "no marker
 // in this slot for this map-icon state". The tab word is `ch << 8 | flags`,
-// with `tab == 0` meaning vanilla's blinking "unknown" marker.
+// with `tab == 0` meaning vanilla's blinking "unknown" marker. (kOwMapCrystal_tab
+// is shared with rando/ow_map_prizes.c — declared in messaging.h.)
 static const uint16 *const kOwMapCrystal_x[7] = {
   kOwMapCrystal0_x, kOwMapCrystal1_x, kOwMapCrystal2_x, kOwMapCrystal3_x,
   kOwMapCrystal4_x, kOwMapCrystal5_x, kOwMapCrystal6_x,
@@ -316,7 +317,6 @@ static const uint16 *const kOwMapCrystal_y[7] = {
   kOwMapCrystal0_y, kOwMapCrystal1_y, kOwMapCrystal2_y, kOwMapCrystal3_y,
   kOwMapCrystal4_y, kOwMapCrystal5_y, kOwMapCrystal6_y,
 };
-// non-static: see kOverworldMapData above.
 const uint16 *const kOwMapCrystal_tab[7] = {
   kOwMapCrystal0_tab, kOwMapCrystal1_tab, kOwMapCrystal2_tab, kOwMapCrystal3_tab,
   kOwMapCrystal4_tab, kOwMapCrystal5_tab, kOwMapCrystal6_tab,
@@ -1520,8 +1520,10 @@ void WorldMap_HandleSprites() {  // 8abf66
   // Vanilla draws seven byte-identical copies of this block, one per marker
   // slot (slot i => sprite 14 - i). Folded into a loop so the rando prize
   // re-keying below is ONE hook instead of seven. The pendant ownership test
-  // only exists for slots 0..2 in vanilla, and is vacuous elsewhere anyway
-  // (it requires map-icon state 3, where slots 4..6 hold no marker).
+  // exists only for slots 0..2 in vanilla, and the `i < 3` guard is load-
+  // bearing, not cosmetic: kPendantBitMask has just 3 entries, so dropping it
+  // would read out of bounds. (Slot 3 DOES carry a marker at map-icon state 3
+  // — the Master Sword pedestal — which vanilla deliberately never hides.)
   for (int i = 0; i < 7; i++) {
     // fix-ow-map-prize-markers: under prize_shuffle the vanilla (icon, crystal
     // number, ownership test) triple asserts the VANILLA dungeon->prize

@@ -2,23 +2,23 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "dungeon_ids.h"
 #include "rando.h"
 #include "rando_placement.h"
 #include "rando_shuffles.h"
 #include "../features.h"
+#include "../messaging.h"  // vanilla marker tables (kOwMapCrystal_tab et al.)
 #include "../variables.h"
 
-// Vanilla pause-map marker data, owned by messaging.c. Shared rather than
-// copied so the re-keyed path and its oracle cannot drift from what the engine
-// actually draws (the kBirdTravel_* pattern).
-//   kOwMapCrystal_tab[slot][k] — icon word `ch << 8 | flags` for marker slot
-//     `slot` in map-icon state `k`; 0 means vanilla's blinking unknown marker.
-//   kOverworldMapData[spr - 8] — the crystal-NUMBER glyph baked into each OAM
-//     slot (marker slot `i` draws as sprite `14 - i`).
-extern const uint16 *const kOwMapCrystal_tab[7];
-extern const uint8 kOverworldMapData[7];
+// kDungeonCrystalPendantBit[game_dungeon] — the prize bit a dungeon sets in
+// vanilla. Cross-referenced against kPendantBitMask/kCrystalBitMask (which say
+// which bit each MARKER SLOT tests) this pins slot -> dungeon from a source the
+// icon tables do not share; RandoOwMap_SelfCheck asserts exactly that, so a
+// permutation applied consistently to slot->dungeon AND prize->icon (which
+// would cancel out in a composition-only check) still fails.
+extern const uint8 kDungeonCrystalPendantBit[13];
 
 enum { kOwMapMarkerSlots = 7, kPrizeCount = 10 };
 
@@ -89,15 +89,17 @@ static uint8 PrizeDungeonForSlot(uint8 k, uint8 slot) {
   }
 }
 
-bool RandoOwMap_PrizeMarker(uint8 k, uint8 slot, uint16 *tab, uint8 *num_char) {
-  if (!(enhanced_features1 & kFeatures1_RandomizerActive))
-    return false;
-  const RandoSettings *rs = Rando_GetActiveSettings();
-  // Fail CLOSED when the active slot's settings can't be recovered (snapshot
-  // replay / pre-settings slot): treat the seed as shuffled so the marker
-  // degrades to the unknown form rather than asserting the vanilla prize.
-  // `rs && rs->prize_shuffle` would render the vanilla claim when unknown.
-  if (rs != NULL && rs->prize_shuffle == 0)
+// Pure decision core — reads NO process state, so RandoOwMap_SelfCheck can
+// drive every branch with synthetic inputs. `shuffled` = the seed shuffles
+// prizes (or its settings are unrecoverable and we fail closed); `assign` may
+// be NULL; `observed` bit d = the player has collected dungeon d's prize.
+// Keeping this separate is deliberate: the wrapper below is then a
+// state-gathering shim thin enough to audit by eye, and the logic that decides
+// what a marker CLAIMS is covered by the oracle.
+static bool OwMapResolveMarker(uint8 k, uint8 slot, bool shuffled,
+                               const uint8 *assign, uint16 observed,
+                               uint16 *tab, uint8 *num_char) {
+  if (!shuffled)
     return false;  // identity assignment: the vanilla art is already true
   uint8 dungeon = PrizeDungeonForSlot(k, slot);
   if (dungeon == kRandoDungeon_None)
@@ -107,15 +109,8 @@ bool RandoOwMap_PrizeMarker(uint8 k, uint8 slot, uint16 *tab, uint8 *num_char) {
   // reproduce the vanilla assignment — the player cannot know that.
   *tab = 0;
   *num_char = 0;
-
-  uint16 prize_loc = Rando_GetDungeonPrizeLocation(dungeon);
-  if (prize_loc == 0xFFFF || !Rando_IsLocationChecked(prize_loc))
+  if (!(observed & (uint16)(1u << dungeon)))
     return true;
-
-  // Observed: the player collected THIS dungeon's prize, so naming it reveals
-  // nothing they don't already hold. Allowlisted read (this file only) — see
-  // assets/scripts/check_knowledge_consumers.py.
-  const uint8 *assign = Rando_GetDungeonPrizeAssignment();
   if (assign == NULL)
     return true;
   uint8 prize = assign[dungeon];
@@ -127,6 +122,29 @@ bool RandoOwMap_PrizeMarker(uint8 k, uint8 slot, uint16 *tab, uint8 *num_char) {
   return true;
 }
 
+bool RandoOwMap_PrizeMarker(uint8 k, uint8 slot, uint16 *tab, uint8 *num_char) {
+  if (!(enhanced_features1 & kFeatures1_RandomizerActive))
+    return false;
+  // Fail CLOSED when the active slot's settings can't be recovered (snapshot
+  // replay / pre-settings slot): treat the seed as shuffled so the marker
+  // degrades to the unknown form rather than asserting the vanilla prize.
+  // `rs && rs->prize_shuffle` would render the vanilla claim when unknown.
+  const RandoSettings *rs = Rando_GetActiveSettings();
+  bool shuffled = (rs == NULL) || rs->prize_shuffle != 0;
+
+  // Observation = the player collected that dungeon's prize, so naming it
+  // reveals nothing they don't already hold. Allowlisted assignment read (this
+  // file only) — see assets/scripts/check_knowledge_consumers.py.
+  uint16 observed = 0;
+  for (uint8 d = 0; d < kRandoDungeonCount; d++) {
+    uint16 prize_loc = Rando_GetDungeonPrizeLocation(d);
+    if (prize_loc != 0xFFFF && Rando_IsLocationChecked(prize_loc))
+      observed |= (uint16)(1u << d);
+  }
+  return OwMapResolveMarker(k, slot, shuffled, Rando_GetDungeonPrizeAssignment(),
+                            observed, tab, num_char);
+}
+
 // ---------------------------------------------------------------------------
 // Self-check
 // ---------------------------------------------------------------------------
@@ -136,13 +154,33 @@ static void selfcheck_die(const char *msg) {
 }
 
 void RandoOwMap_SelfCheck(void) {
-  // The identity assignment is what vanilla's baked marker art depicts, so
-  // resolving it through the re-keyed path must reproduce that art exactly.
-  // This pins the slot->dungeon table AND the prize->icon tables at once: get
-  // either wrong and some slot's icon or crystal number stops matching.
-  // PrizeShuffle_Run(NULL, ...) takes the identity branch without drawing RNG.
+  // (1) ANCHOR slot -> dungeon to the prize BITS, a source the icon tables do
+  // not share. A composition-only check (slot -> dungeon -> prize -> icon vs
+  // the vanilla icon) is circular: permute slot->dungeon and prize->icon
+  // together and the errors cancel. The bit tables cannot cancel with either.
+  for (uint8 slot = 0; slot < 3; slot++) {
+    uint8 game = Rando_GameDungeonFromRandoDungeon(kPendantSlotDungeon[slot]);
+    if (game >= 13 || kDungeonCrystalPendantBit[game] != kPendantBitMask[slot])
+      selfcheck_die("pendant slot -> dungeon disagrees with the vanilla prize bits");
+  }
+  for (uint8 slot = 0; slot < kOwMapMarkerSlots; slot++) {
+    uint8 game = Rando_GameDungeonFromRandoDungeon(kCrystalSlotDungeon[slot]);
+    if (game >= 13 || kDungeonCrystalPendantBit[game] != kCrystalBitMask[slot])
+      selfcheck_die("crystal slot -> dungeon disagrees with the vanilla prize bits");
+  }
+  if (PrizeDungeonForSlot(kOwMapState_FirstDark, 0) !=
+      kCrystalSlotDungeon[0])
+    selfcheck_die("first-dark-world marker must point at the same dungeon as crystal slot 0");
+
+  // (2) The identity assignment is what vanilla's baked marker art depicts, so
+  // driving the REAL resolver with it must reproduce that art exactly — icon
+  // word and crystal-number glyph, for every prize slot in every affected map
+  // icon state. PrizeShuffle_Run(NULL, ...) takes the identity branch without
+  // drawing RNG. `observed` is all-ones here: the revealed branch is the one
+  // that makes a claim, so that is the branch this must pin.
   uint8 identity[kRandoDungeonCount];
   PrizeShuffle_Run(NULL, NULL, identity);
+  const uint16 kAllObserved = 0xFFFF;
 
   static const uint8 kPrizeStates[3] = {
     kOwMapState_Pendants, kOwMapState_FirstDark, kOwMapState_Crystals,
@@ -152,27 +190,87 @@ void RandoOwMap_SelfCheck(void) {
     uint8 k = kPrizeStates[si];
     for (uint8 slot = 0; slot < kOwMapMarkerSlots; slot++) {
       uint8 dungeon = PrizeDungeonForSlot(k, slot);
-      if (dungeon == kRandoDungeon_None)
+      uint16 tab = 0xDEAD;
+      uint8 num_char = 0xEE;
+      bool owned = OwMapResolveMarker(k, slot, /*shuffled=*/true, identity,
+                                      kAllObserved, &tab, &num_char);
+      if (owned != (dungeon != kRandoDungeon_None))
+        selfcheck_die("resolver disagrees with the slot -> dungeon table");
+      if (!owned)
         continue;
       prize_slots++;
       uint8 prize = identity[dungeon];
       if (prize >= kPrizeCount)
         selfcheck_die("prize marker slot maps to a dungeon with no vanilla prize");
-      if (kPrizeTab[prize] != kOwMapCrystal_tab[slot][k])
-        selfcheck_die("prize icon word disagrees with the vanilla marker table");
-      if (prize >= kPrize_Crystal1) {
-        // Marker slot `slot` draws as sprite `14 - slot`, and the vanilla glyph
-        // lives at kOverworldMapData[sprite - 8].
-        if (kCrystalNumChar[prize - kPrize_Crystal1] != kOverworldMapData[6 - slot])
-          selfcheck_die("crystal number glyph disagrees with the vanilla table");
-      } else if (kPrizeTab[prize] >> 8 == 100) {
-        selfcheck_die("pendant resolved to the crystal icon");
-      }
+      if (tab != kOwMapCrystal_tab[slot][k])
+        selfcheck_die("resolved icon word disagrees with the vanilla marker table");
+      // Marker slot `slot` draws as sprite `14 - slot`; the vanilla number
+      // glyph lives at kOverworldMapData[sprite - 8]. Pendants have none.
+      uint8 want_num = (prize >= kPrize_Crystal1) ? kOverworldMapData[6 - slot] : 0;
+      if (num_char != want_num)
+        selfcheck_die("resolved crystal number glyph disagrees with the vanilla table");
+
+      // (3) Every GATE of the real resolver, driven directly. Each of these
+      // survived a mutation of the shipped code before this block existed.
+      uint16 t2 = 0xDEAD; uint8 n2 = 0xEE;
+      if (OwMapResolveMarker(k, slot, /*shuffled=*/false, identity, kAllObserved,
+                             &t2, &n2))
+        selfcheck_die("prize_shuffle off must fall through to the vanilla marker");
+      if (t2 != 0xDEAD || n2 != 0xEE)
+        selfcheck_die("vanilla fall-through must not touch the caller's outputs");
+      // Unobserved -> the blinking unknown form, never the placed prize.
+      if (!OwMapResolveMarker(k, slot, true, identity, /*observed=*/0, &t2, &n2) ||
+          t2 != 0 || n2 != 0)
+        selfcheck_die("an unobserved prize must resolve to the unknown marker");
+      // Observing a DIFFERENT dungeon must not reveal this one.
+      if (!OwMapResolveMarker(k, slot, true, identity,
+                              (uint16)~(1u << dungeon), &t2, &n2) ||
+          t2 != 0 || n2 != 0)
+        selfcheck_die("another dungeon's prize must not reveal this marker");
+      // A NULL assignment, or an out-of-range prize id, stays unknown.
+      if (!OwMapResolveMarker(k, slot, true, NULL, kAllObserved, &t2, &n2) ||
+          t2 != 0 || n2 != 0)
+        selfcheck_die("a missing assignment must resolve to the unknown marker");
+      uint8 bogus[kRandoDungeonCount];
+      memset(bogus, 0xEE, sizeof(bogus));
+      if (!OwMapResolveMarker(k, slot, true, bogus, kAllObserved, &t2, &n2) ||
+          t2 != 0 || n2 != 0)
+        selfcheck_die("an out-of-range prize id must resolve to the unknown marker");
     }
   }
   // 3 pendant dungeons + the first-dark-world marker + 7 crystal dungeons.
   if (prize_slots != 11)
     selfcheck_die("unexpected prize marker slot count");
+
+  // (4) With the randomizer inactive the wrapper must decline without touching
+  // the caller's outputs — this is what keeps the vanilla pause map (and the
+  // side-by-side ROM RAM compare) byte-identical. The rest of the wrapper is a
+  // deliberately thin state-gathering shim over the core tested above: it reads
+  // the active settings (failing closed to "shuffled" when unrecoverable) and
+  // builds the observed mask from Rando_IsLocationChecked. Driving those two
+  // would need an installed slot; they are audited by eye instead.
+  {
+    uint32 saved = enhanced_features1;
+    enhanced_features1 = saved & ~(uint32)kFeatures1_RandomizerActive;
+    uint16 t = 0xDEAD;
+    uint8 n = 0xEE;
+    bool owned = RandoOwMap_PrizeMarker(kOwMapState_Crystals, 0, &t, &n);
+    enhanced_features1 = saved;
+    if (owned || t != 0xDEAD || n != 0xEE)
+      selfcheck_die("an inactive randomizer must leave the vanilla marker untouched");
+  }
+
+  // (5) Every prize id must resolve to a DISTINCT (icon, number) pair, so no
+  // two prizes can render identically — the failure mode a per-slot identity
+  // comparison alone would miss for crystals (they share one icon word).
+  for (uint8 a = 0; a < kPrizeCount; a++) {
+    for (uint8 b = (uint8)(a + 1); b < kPrizeCount; b++) {
+      uint8 na = (a >= kPrize_Crystal1) ? kCrystalNumChar[a - kPrize_Crystal1] : 0;
+      uint8 nb = (b >= kPrize_Crystal1) ? kCrystalNumChar[b - kPrize_Crystal1] : 0;
+      if (kPrizeTab[a] == kPrizeTab[b] && na == nb)
+        selfcheck_die("two prizes render identically on the pause map");
+    }
+  }
 
   // Routing markers must stay vanilla: the pedestal shares state 3 with the
   // pendant dungeons, and states 0/1/2/4/5/8 carry no prize claim at all.

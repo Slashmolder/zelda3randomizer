@@ -28,8 +28,18 @@ shuffled assignment (a marker relocated to a shuffled entrance) SHALL NOT.
 
 - **WHEN** a `prize_shuffle` slot is active and the player has not collected a
   given dungeon's prize
-- **THEN** that dungeon's pause-map marker draws the unknown ("?") form, and no
-  in-world surface states which prize the dungeon holds
+- **THEN** that dungeon's pause-map marker draws the unknown ("?") form
+
+#### Scenario: A known un-gated surface is recorded, not silently tolerated
+
+- **WHEN** an in-world surface is found to encode a per-seed assignment and is
+  not yet gated
+- **THEN** the gap is named in the owning change's design and in
+  `docs/randomizer.md` rather than left implicit. The dungeon-area overworld
+  MUSIC is such a surface today: vanilla plays a different track near a pendant
+  dungeon than a crystal dungeon, this fork loads that table statically, and no
+  randomizer code varies it — so it still announces the VANILLA prize type. It
+  is a documented, accepted gap, not a satisfied requirement
 
 #### Scenario: Identity roll is still hidden
 
