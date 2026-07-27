@@ -9,7 +9,7 @@ as REFUTED in this file rather than quietly "fixed".
 - [x] 1.1 Split the bottle predicate in `rando.c` into permanent (pickup at four
       bottles — monotonic) vs transient (content with no empty bottle). Permanent
       ⇒ `AcceptedNoOp`; transient ⇒ `RetryableFailure`
-- [ ] 1.2 Confirm no surface treats an `AcceptedNoOp` location as an item held
+- [x] 1.2 Confirm no surface treats an `AcceptedNoOp` location as an item held
       (tracker item view, goal completion, hints, live reachability)
 - [x] 1.3 Self-check matrix over (permanent, transient, at-cap, unsatisfiable) ×
       expected disposition, driving `Rando_PrepareGrant` itself
@@ -32,39 +32,44 @@ as REFUTED in this file rather than quietly "fixed".
 
 ## 3. MODERATE sites
 
-- [ ] 3.1 `ancilla.c` tablet (`Ancilla29_CommitStoredRandoGrant`) — free the
+- [x] 3.1 `ancilla.c` tablet (`Ancilla29_CommitStoredRandoGrant`) — free the
       ancilla slot before delivering, restore when not delivered (the `a5ef5eb0`
       pattern)
-- [ ] 3.2 `ancilla.c` flute spot (`Ancilla36_Flute`) — same inversion; also
+- [x] 3.2 `ancilla.c` flute spot (`Ancilla36_Flute`) — same inversion; also
       ensure `Invalid` does not leave a permanently floating ancilla
-- [ ] 3.3 `sprite.c` ToH basement cage — restore the `!Rando_IsLocationChecked`
+- [x] 3.3 `sprite.c` ToH basement cage — restore the `!Rando_IsLocationChecked`
       term so a later non-enemy-drop key in room 0x87 is not swallowed
-- [ ] 3.4 `sprite.c` `SpriteDeath_Func4` — make the Kholdstare retry idempotent
-      (resume at the boss branch; do not re-roll the prize and lose the
-      `type == 0xa2` arm)
-- [ ] 3.5 `misc.c` `AncillaAdd_ItemReceipt` — move the `ItemReceipt_GrantInventory`
+- [x] 3.4 `sprite.c` `SpriteDeath_Func4` — DOCUMENTED AT THE SITE, not
+      restructured. Confirmed: parking re-enters `Sprite_DoTheDeath` from the
+      top, whose prize roll can rewrite `sprite_type[k]` and destroy the `0xa2`
+      arm. Resuming at the branch needs per-sprite pending state in a boss death
+      path no automated check can exercise, so patching it blind is the worse
+      trade. Reachability is now transient-refusal-only
+- [x] 3.5 `misc.c` `AncillaAdd_ItemReceipt` — move the `ItemReceipt_GrantInventory`
       reject above `Ancilla_AddAncilla` / the immobilize set, so a live failure
       cannot leak a half-built receipt with Link locked
-- [ ] 3.6 `misc.c` `ItemReceipt_GrantWithoutAnimation` — stop forcing
+- [x] 3.6 `misc.c` `ItemReceipt_GrantWithoutAnimation` — stop forcing
       `item_receipt_method = 0` in a way that defeats vanilla's method-2
       capacity suppression
-- [ ] 3.7 `misc.c` `ItemReceipt_RestoreActionState` — restore the carried-object
+- [x] 3.7 `misc.c` `ItemReceipt_RestoreActionState` — restore the carried-object
       ancilla and `link_cape_mode` alongside the carry-state bytes, or narrow
       what the 0x20 branch destroys
-- [ ] 3.8 `sprite_main.c` `Sprite_GrantAnimatedOrVanilla` — do not report
+- [x] 3.8 `sprite_main.c` `Sprite_GrantAnimatedOrVanilla` — do not report
       `Accepted` for the `NotActive` fallback without verifying
       `Link_ReceiveItem` delivered
-- [ ] 3.9 `player.c` tablet `*_StartCutscene` — do not return inside a
+- [x] 3.9 `player.c` tablet `*_StartCutscene` — do not return inside a
       half-applied caller tableau; preflight or complete
-- [ ] 3.10 `overworld.c` lift/smash retry — do not return a value
+- [x] 3.10 `overworld.c` lift/smash retry — do not return a value
       indistinguishable from success while leaving the tile in place
-- [ ] 3.11 `sprite.c` / `sprite_main.c` ignored `bool` returns
-      (`Sprite_ManuallySetDeathFlagUW` at 3 sites) — honor or document
+- [x] 3.11 Agahnim and Freezor now HONOR the return (Agahnim also releases Link
+      before retrying, per D2). The big-key absorb site DOCUMENTS why it cannot:
+      its vanilla state bits are already committed and the RAM compare depends
+      on them
 
 ## 4. Guards
 
-- [ ] 4.1 A guard for the slot-ordering pattern so D4's class cannot reappear
-- [ ] 4.2 Extend the grant self-checks to exercise a REFUSAL and assert caller
+- [x] 4.1 A guard for the slot-ordering pattern so D4's class cannot reappear
+- [x] 4.2 Extend the grant self-checks to exercise a REFUSAL and assert caller
       state after it — the existing ones only assert result codes and inventory
       bytes, which is why none of this was caught
 
