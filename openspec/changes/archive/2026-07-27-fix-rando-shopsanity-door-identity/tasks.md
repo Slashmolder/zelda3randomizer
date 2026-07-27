@@ -65,9 +65,26 @@
 
 ## 6. Owner playtest (cannot be automated)
 
-- [ ] 6.1 Enter each of the four room-`0x10F` Dark World shops and confirm each
-      offers its own three slots.
-- [ ] 6.2 Enter both room-`0x112` shops (DW Death Mountain, LW Lake Hylia) and
-      confirm they differ.
-- [ ] 6.3 Save-and-quit / snapshot-replay inside a shop and confirm the slots
-      still resolve (the persisted door id).
+Owner-playtested 2026-07-27; all three pass.
+
+- [x] 6.1 Village of Outcasts and Lumberjack Hut (both room `0x10F`) offer
+      DIFFERENT items. Before the fix all four room-`0x10F` doors served the
+      Outcasts' slots and Lumberjack's own group (243-245) was one of the
+      fifteen unreachable ones, so buying from it at all is the fix confirmed
+      at runtime.
+- [x] 6.2 Dark World Death Mountain and Light World Lake Hylia (both room
+      `0x112`) show DIFFERENT items. Before the fix both doors served Lake
+      Hylia's 261-263 and Death Mountain's 252-254 were unreachable, so this is
+      the second shared-room group confirmed separated. Note both shops have
+      identical VANILLA contents (Red Potion / Heart / 10 Bombs), so distinct
+      inventories here can only come from the door key resolving correctly.
+- [x] 6.3 Snapshot replay (`Ctrl+F1`) inside a Dark World shop keeps the slots
+      resolving — the case the `g_ram`-resident door key exists for, since a
+      replay-restore restores RAM but not C statics. Save-and-quit separately
+      behaves correctly: the purchased slot reverts to its vanilla item
+      (location 246's vanilla item IS RedPotion) while the two unbought slots
+      still show their randomizer items, which is the buy-once-then-vanilla-
+      restock contract rather than a lost check. Worth recording because a
+      restocked slot and a slot that failed to reload look identical if you
+      only inspect the one you bought — the unbought slots are the
+      discriminator.
