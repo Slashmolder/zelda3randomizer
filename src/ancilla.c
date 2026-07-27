@@ -6490,6 +6490,8 @@ int Ancilla_RandoFallingPrizeSelfCheck(void) {
   // no longer exercise the retry-preservation path. A potion with no empty
   // bottle is the transient refusal that still must preserve caller state.
   entry.item_id = ITEM_BluePotion;
+  // rando-exempt: self-check fixture; the whole g_ram is restored at
+  // `cleanup:` before this function returns.
   link_bottle_info[0] = 2;  // one empty bottle: the potion prepares
   TABLET_CHECK(Rando_PrepareGrant(7000, ITEM_BluePotion, 0x2e, &reparsed) ==
                     kRandoGrantResult_Accepted,

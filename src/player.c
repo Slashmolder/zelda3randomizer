@@ -2076,6 +2076,12 @@ void Link_ReceiveItem(uint8 item, int chest_position) {  // 8799ad
       // owned flag would strand Link after an otherwise successful grant.
       if (receipt_method == 3)
         ItemReceipt_CompleteMethod3WithoutAnimation(item);
+      // Methods 0/1 deliberately do NOT clear flag_is_link_immobilized here.
+      // The saturated fallback is contractually LOSSLESS -- it must not disturb
+      // caller action state (ItemReceipt_LosslessSelfCheck pins that) -- and the
+      // flag belongs to whoever set it. A caller that immobilizes Link and
+      // relies on receipt teardown to release him must handle the no-receipt
+      // outcome itself; see the boss-heart drop in sprite_main.c.
     }
     return;
   }
@@ -3950,7 +3956,10 @@ void Link_APress_LiftCarryThrow() {  // 87b1ca
         some_animation_timer_steps = kLiftTab1[player_handler_timer];
         if (player_handler_timer == 6) {
           BYTE(dung_secrets_unk1) = 0;
-          Point16U pt;
+          // Defense in depth: both handlers now write *pt on every path, but
+          // this is read unconditionally, so a future early return must not be
+          // able to reintroduce a spawn at uninitialized coordinates.
+          Point16U pt = { link_x_coord, link_y_coord };
           uint8 what = (player_is_indoors) ? Dungeon_LiftAndReplaceLiftable(&pt) : Overworld_HandleLiftableTiles(&pt);
           link_player_handler_state = 24;
           flag_is_sprite_to_pick_up = 1;

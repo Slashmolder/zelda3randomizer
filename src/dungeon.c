@@ -5851,8 +5851,15 @@ uint8 Dungeon_LiftAndReplaceLiftable(Point16U *pt) {  // 81d9ec
     dung_misc_objs_index = attr * 2;
     uint16 pos4 = dung_object_tilemap_pos[attr];
     uint8 pot_result = Rando_PotBreakHook(dungeon_room_index, pos4);
-    if (pot_result == kRandoPot_Retry)
+    if (pot_result == kRandoPot_Retry) {
+      // The caller (Link_APress_LiftCarryThrow) spawns a throwable from *pt
+      // WITHOUT checking this return, so leaving it unwritten spawned an object
+      // at uninitialized stack coordinates. Write the block position exactly as
+      // the success path does before bailing; the 0 return still tells any
+      // caller that does check that nothing was lifted.
+      ManipBlock_Something(pt);
       return 0;
+    }
     if (pot_result == kRandoPot_Suppress)
       BYTE(dung_secrets_unk1) = 0;
     else

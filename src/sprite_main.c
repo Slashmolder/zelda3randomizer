@@ -6967,6 +6967,15 @@ void Sprite_HeartContainer(int k) {  // 85ef47
       Link_ReceiveItem(0x3e, 0);
     } else if (!Sprite_GrantResultIsTerminal(result)) {
       return;
+    } else {
+      // A method-0 grant relies on the RECEIPT to clear immobilization (see the
+      // comment above). When the ancilla pool is saturated Link_ReceiveItem
+      // takes its lossless quiet fallback and no receipt is ever created, so
+      // nothing releases Link: the heart is banked and the player is frozen
+      // after the boss dies. The flag is ours -- we are the ones who left Link
+      // immobilized for the falling heart -- so release it on the terminal
+      // path. The fallback deliberately does not, to stay lossless.
+      flag_is_link_immobilized = 0;
     }
     sprite_state[k] = 0;
     dung_savegame_state_bits |= 0x8000;
