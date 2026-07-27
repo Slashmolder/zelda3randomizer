@@ -16,15 +16,18 @@ as REFUTED in this file rather than quietly "fixed".
 
 ## 2. SEVERE sites
 
-- [ ] 2.1 `sprite.c` `SpriteExplode_SpawnEA` — no `flag_is_link_immobilized`
+- [x] 2.1 `sprite.c` `SpriteExplode_SpawnEA` — no `flag_is_link_immobilized`
       held across frames pending a refusal; preflight before locking
-- [ ] 2.2 `sprite.c` `Sprite_DoTheDeath` / `Sprite_ManuallySetDeathFlagUW` — a
-      refused death either completes the despawn or leaves the enemy fully
-      re-killable; never a state where screen-clear can't be satisfied
-- [ ] 2.3 `player.c` `Link_ReceiveItem` quiet fallback — clear
+- [x] 2.2 `sprite.c` `Sprite_DoTheDeath` / `Sprite_ManuallySetDeathFlagUW` —
+      DOWNGRADED by 1.1 and closed. The permanent refusal that made the
+      undespawned-enemy state unrecoverable can no longer occur; the remaining
+      transient refusal leaves the enemy alive and re-killable with the menu
+      available, which is the recoverable arm this task asked for. Re-derived:
+      this site never immobilizes, so it does not block its own recovery
+- [x] 2.3 `player.c` `Link_ReceiveItem` quiet fallback — clear
       `flag_is_link_immobilized` for receipt methods 0/1 as the vanilla receipt
       teardown does (method 2 deliberately excluded)
-- [ ] 2.4 `dungeon.c` `Dungeon_LiftAndReplaceLiftable` — write `*pt` on the
+- [x] 2.4 `dungeon.c` `Dungeon_LiftAndReplaceLiftable` — write `*pt` on the
       retry return path (and/or make the caller honor the return code)
 
 ## 3. MODERATE sites
@@ -67,10 +70,10 @@ as REFUTED in this file rather than quietly "fixed".
 
 ## 5. Validation
 
-- [ ] 5.1 MSVC + WSL `gcc -Werror` clean
-- [ ] 5.2 `--rando-selftest` all groups OK, including the new checks
-- [ ] 5.3 `run_rando_validation.py full` PASS
-- [ ] 5.4 Corpus regen: 0 digest changes (runtime-only) — no `kGeneratorVersion`
+- [x] 5.1 MSVC + WSL `gcc -Werror` clean
+- [x] 5.2 `--rando-selftest` all groups OK, including the new checks
+- [x] 5.3 `run_rando_validation.py full` PASS
+- [x] 5.4 Corpus regen: 0 digest changes (runtime-only) — no `kGeneratorVersion`
       bump
 - [ ] 5.5 Each fix negative-tested: revert it, its check must fail
 

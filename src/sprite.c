@@ -794,7 +794,15 @@ static bool Rando_ApplyExplosionGrantOutcome(int k, RandoGrantResult result) {
     return false;
   sprite_state[k] = 4;
   sprite_delay_main[k] = 33;
-  flag_is_link_immobilized = 1;
+  // Re-arm WITHOUT immobilizing. A blocked grant is retried on a timer, and the
+  // only refusal that can still reach here is a transient one the PLAYER must
+  // clear -- a potion with no empty bottle, cleared by drinking, which needs the
+  // menu. Holding flag_is_link_immobilized across those frames locked out the
+  // menu and made the retry unbreakable: the loop and its own cure were mutually
+  // exclusive. Releasing Link does not stop the retry; the sprite re-enters on
+  // its own delay. (openspec fix-grant-refusal-contract: "a pending retry never
+  // blocks its own recovery".)
+  flag_is_link_immobilized = 0;
   return true;
 }
 
@@ -904,9 +912,10 @@ int Sprite_GrantRetrySelfCheck(void) {
   sprite_state[k] = 9;
   sprite_delay_main[k] = 0x55;
   flag_is_link_immobilized = 0;
+  flag_is_link_immobilized = 1;  // a blocked retry must RELEASE, not hold
   if (!Rando_ApplyExplosionGrantOutcome(k, kRandoGrantResult_Retryable) ||
       sprite_state[k] != 4 || sprite_delay_main[k] != 33 ||
-      flag_is_link_immobilized != 1) {
+      flag_is_link_immobilized != 0) {
     result = 11;
     goto done;
   }
