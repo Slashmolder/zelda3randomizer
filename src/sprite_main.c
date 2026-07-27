@@ -151,6 +151,14 @@ static RandoGrantResult Sprite_GrantAnimatedOrVanilla(
         kRandoGrantPresentation_Animated, receipt_method, chest_position);
   }
   if (result == kRandoGrantResult_NotActive) {
+    // Link_ReceiveItem gained a rando acceptance gate in the same commit that
+    // introduced this helper, so it can now return having granted NOTHING (a
+    // bottle code with no compatible slot). Reporting Accepted regardless made
+    // callers consume their source for free -- the Bottle Merchant would take
+    // 100 rupees and mark itself sold out without handing over a bottle.
+    // Report the refusal instead so the caller can keep its source.
+    if (!ItemReceipt_CanAccept(vanilla_lttp_code))
+      return kRandoGrantResult_Retryable;
     item_receipt_method = receipt_method;
     Link_ReceiveItem(vanilla_lttp_code, chest_position);
     return kRandoGrantResult_Accepted;
@@ -19001,9 +19009,15 @@ void CutsceneAgahnim_Agahnim(int k) {  // 9dd23f
     break;
   case 6:  // linger then terminate
     if (!sprite_delay_aux4[k]) {
+      // Release Link BEFORE any retry: a pending refusal must not block its own
+      // recovery (the only refusal that can still reach here is transient -- a
+      // potion needing an empty bottle -- and the cure is the menu).
       flag_is_link_immobilized = 0;
+      // Honor the return. The enemy check is granted inside; consuming the
+      // sprite first dropped it with nothing left to retry.
+      if (!Sprite_ManuallySetDeathFlagUW(k))
+        break;
       sprite_state[k] = 0;
-      Sprite_ManuallySetDeathFlagUW(k);
       dung_savegame_state_bits |= 0x4000;
     }
     break;
@@ -21917,8 +21931,11 @@ void Sprite_A1_Freezor(int k) {  // 9e981d
   case 3: {  // melting
     static const uint8 kFreezor_Melting_Gfx[4] = { 6, 5, 4, 7 };
     if (!sprite_delay_main[k]) {
-      Sprite_ManuallySetDeathFlagUW(k);
-      sprite_state[k] = 0;
+      // Honor the return: consuming the sprite on a refused grant dropped the
+      // enemy check with nothing left to retry. Lingering one more frame is
+      // harmless -- the melt graphic is driven by sprite_delay_main, not state.
+      if (Sprite_ManuallySetDeathFlagUW(k))
+        sprite_state[k] = 0;
     }
     sprite_graphics[k] = kFreezor_Melting_Gfx[sprite_delay_main[k] >> 3];
     break;

@@ -1068,6 +1068,12 @@ bool ItemReceipt_CanAllocate(void) {
 
 typedef struct ItemReceiptActionSnapshot {
   uint8 flag_immobilized;
+  // Paired with link_disable_sprite_damage below: the 0x20 (crystal) grant
+  // branch clears BOTH, and restoring only the damage byte would leave Link
+  // permanently invulnerable with no cape to explain it. Not reachable today
+  // (GrantInventory's only failure return precedes that branch), but 3.5 in
+  // this same change is a dead return that went live -- so pair them here.
+  uint8 cape_mode;
   uint8 flag_sprite_pickup;
   uint8 flag_ancilla_pickup;
   uint8 flag_sprite_pickup_cached;
@@ -1098,6 +1104,7 @@ typedef struct ItemReceiptActionSnapshot {
 static ItemReceiptActionSnapshot ItemReceipt_CaptureActionState(void) {
   ItemReceiptActionSnapshot s;
   s.flag_immobilized = flag_is_link_immobilized;
+  s.cape_mode = link_cape_mode;
   s.flag_sprite_pickup = flag_is_sprite_to_pick_up;
   s.flag_ancilla_pickup = flag_is_ancilla_to_pick_up;
   s.flag_sprite_pickup_cached = flag_is_sprite_to_pick_up_cached;
@@ -1128,6 +1135,7 @@ static ItemReceiptActionSnapshot ItemReceipt_CaptureActionState(void) {
 
 static void ItemReceipt_RestoreActionState(const ItemReceiptActionSnapshot *s) {
   flag_is_link_immobilized = s->flag_immobilized;
+  link_cape_mode = s->cape_mode;
   flag_is_sprite_to_pick_up = s->flag_sprite_pickup;
   flag_is_ancilla_to_pick_up = s->flag_ancilla_pickup;
   flag_is_sprite_to_pick_up_cached = s->flag_sprite_pickup_cached;
@@ -1218,7 +1226,12 @@ bool ItemReceipt_GrantWithoutAnimation(uint8 item) {
   ItemReceiptActionSnapshot action = ItemReceipt_CaptureActionState();
   uint8 saved_receipt_method = item_receipt_method;
   uint8 saved_receive_index = link_receiveitem_index;
-  item_receipt_method = 0;
+  // Preserve method 2. ItemReceipt_GrantInventory reads item_receipt_method:
+  // a method-2 (Wish Pond) receipt of 0x27/0x28/0x31 deliberately does NOT bump
+  // the bomb/arrow counter. Forcing 0 here made the quiet path grant capacity
+  // vanilla withholds. Every other method behaves identically at 0.
+  if (item_receipt_method != 2)
+    item_receipt_method = 0;
   if (!ItemReceipt_GrantInventory(item)) {
     ItemReceipt_RestoreActionState(&action);
     item_receipt_method = saved_receipt_method;
@@ -1750,10 +1763,21 @@ bool AncillaAdd_ItemReceipt(uint8 ain, uint8 yin, int chest_pos) {  // 8985e8
     }
   }
 
-  flag_is_link_immobilized = (link_receiveitem_index == 0x20) ? 2 : 1;
-
-  if (!ItemReceipt_GrantInventory((uint8)j))
+  // Reject BEFORE taking the lock. This return was unreachable until the
+  // rando acceptance term (ItemReceipt_CanAccept, a bottle with no compatible
+  // slot) made ItemReceipt_GrantInventory able to fail for real. Running it
+  // after Ancilla_AddAncilla + the immobilize set leaks a half-built 0x22
+  // receipt -- ancilla_item_to_link, ancilla_step and the timers are all set
+  // below -- so Ancilla22_ItemReceipt would then run on the previous
+  // occupant's fields with Link locked. The sole caller happens to pre-check
+  // the same predicate today, so this is latent; the predicate is DUPLICATED,
+  // not shared, and a second caller would make it a hard freeze.
+  if (!ItemReceipt_GrantInventory((uint8)j)) {
+    ancilla_type[ancilla] = 0;
     return false;
+  }
+
+  flag_is_link_immobilized = (link_receiveitem_index == 0x20) ? 2 : 1;
 
   uint8 gfx = kReceiveItemGfx[j];
   if (gfx == 0xff) {

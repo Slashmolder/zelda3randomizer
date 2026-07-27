@@ -1994,8 +1994,15 @@ static RandoGrantResult Rando_TryGrantAbsorbableKeyCheck(int k, int type_index) 
           return result;
       }
     }
+    // The !IsLocationChecked term is load-bearing and was lost in the
+    // transaction rework: without it a SECOND key absorbed in room 0x87
+    // resolves to AlreadyChecked, which the caller treats as terminal and
+    // skips its vanilla `link_num_keys += 1` -- silently swallowing every
+    // later non-enemy-drop key in that room. Returning NotActive instead
+    // lets the vanilla key grant run, which is what the original guard did.
     if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
-        dungeon_room_index == 0x87) {
+        dungeon_room_index == 0x87 &&
+        !Rando_IsLocationChecked(LOC_Tower_of_Hera_Basement_Cage)) {
       return Rando_GrantLocation(
           LOC_Tower_of_Hera_Basement_Cage, ITEM_SmallKey_TowerOfHera, 0x24,
           kRandoGrantPresentation_Quiet, 0, 0);
@@ -2084,9 +2091,20 @@ void Sprite_HandleAbsorptionByPlayer(int k) {  // 86d13c
   after_getkey:
     sprite_N[k] = sprite_subtype[k];
     dung_savegame_state_bits |= kAbsorbBigKey[sprite_die_action[k]] << 8;
+    // Return deliberately ignored: the vanilla state bits above are already
+    // committed and are what the RAM compare depends on, so the sprite cannot
+    // linger. A refused grant here therefore drops its enemy check. Only a
+    // TRANSIENT refusal can reach this since 57e72dc1 (a potion with no empty
+    // bottle on a big-key absorb), and re-ordering vanilla state around a rando
+    // grant is a worse trade than the narrow loss. Recorded, not silently kept.
     Sprite_ManuallySetDeathFlagUW(k);
     break;
   case 14:
+    // rando-exempt: vanilla Pikit shield return — restores the shield the sprite
+    // stole, not a randomized grant. It was previously passing check_audit_guard
+    // only by PROXIMITY to an unrelated Link_ReceiveItem 12 lines up (the
+    // heuristic its own docstring warns is a false-negative source); a comment
+    // added above shifted that out of the window and exposed it. Explicit now.
     link_shield_type = sprite_subtype[k];
     // Shield needs to have the right palette after pikit
     if (enhanced_features0 & kFeatures0_MiscBugFixes)
@@ -5403,6 +5421,19 @@ void SpriteDeath_Func4(int k) {  // 86fa25
     if (Rando_GrantResultIsBlocked(result)) {
       // Keep the completed enemy in the death handler so the event and falling
       // prize are retried after capacity becomes available.
+      //
+      // KNOWN LIMITATION (audited 2026-07-26, deliberately not restructured):
+      // this re-enters Sprite_DoTheDeath from the top via SpriteActive_Main's
+      // `sprite_delay_main == 0` arm, so the generic prize roll runs AGAIN. If
+      // that roll takes its ResolvePrizeDrop/PrepareEnemyDrop branch it rewrites
+      // sprite_type[k], and this `0xa2` arm -- the only thing that spawns
+      // Kholdstare's boss prize -- is never reached again, losing the prize even
+      // after the block clears. Making the retry resume at this branch instead
+      // of the top needs per-sprite pending state in a boss death path that
+      // cannot be exercised by any automated check, so it is recorded rather
+      // than patched blind. Reachability is narrow: it needs a transient
+      // refusal (a potion with no empty bottle) on Kholdstare's enemy check --
+      // the PERMANENT refusal that made this likely is gone as of 57e72dc1.
       sprite_state[k] = 6;
       sprite_delay_main[k] = 0;
       return;

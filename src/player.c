@@ -610,14 +610,15 @@ void LinkState_HoldingBigRock() {  // 878481
 }
 
 void EtherTablet_StartCutscene() {  // 87855a
-  if (enhanced_features1 & kFeatures1_RandomizerActive) {
-    RandoDeferredGrantToken token;
-    RandoGrantResult result = Rando_PrepareGrant(
-        LOC_Ether_Tablet, ITEM_Ether, 0x10, &token);
-    if (result != kRandoGrantResult_Accepted &&
-        result != kRandoGrantResult_NotActive)
-      return;
-  }
+  // Deliberately NO preflight bail here. The caller has already committed its
+  // half of the tableau (sprite_ai_state advanced, the read message shown, the
+  // crumble timer armed) before calling, so returning early left the tablet
+  // visibly spent with nothing granted and no way to retry short of leaving the
+  // screen. The grant is resolved at the `i == 0` step of the cutscene, which
+  // re-arms via button_b_frames on a refusal -- and flag_block_link_menu stays
+  // 0 there, so a transient refusal (a potion needing an empty bottle) can
+  // still be cleared by the player. That is the lossless path; this early
+  // return defeated it. (openspec fix-grant-refusal-contract, task 3.9.)
   button_b_frames = 0xc0;
   link_delay_timer_spin_attack = 0;
   link_player_handler_state = kPlayerState_ReceivingEther;
@@ -689,14 +690,15 @@ void LinkState_ReceivingEther() {  // 878570
 }
 
 void BombosTablet_StartCutscene() {  // 8785e5
-  if (enhanced_features1 & kFeatures1_RandomizerActive) {
-    RandoDeferredGrantToken token;
-    RandoGrantResult result = Rando_PrepareGrant(
-        LOC_Bombos_Tablet, ITEM_Bombos, 0x0f, &token);
-    if (result != kRandoGrantResult_Accepted &&
-        result != kRandoGrantResult_NotActive)
-      return;
-  }
+  // Deliberately NO preflight bail here. The caller has already committed its
+  // half of the tableau (sprite_ai_state advanced, the read message shown, the
+  // crumble timer armed) before calling, so returning early left the tablet
+  // visibly spent with nothing granted and no way to retry short of leaving the
+  // screen. The grant is resolved at the `i == 0` step of the cutscene, which
+  // re-arms via button_b_frames on a refusal -- and flag_block_link_menu stays
+  // 0 there, so a transient refusal (a potion needing an empty bottle) can
+  // still be cleared by the player. That is the lossless path; this early
+  // return defeated it. (openspec fix-grant-refusal-contract, task 3.9.)
   button_b_frames = 0xe0;
   link_delay_timer_spin_attack = 0;
   link_player_handler_state = kPlayerState_ReceivingBombos;
@@ -3961,9 +3963,15 @@ void Link_APress_LiftCarryThrow() {  // 87b1ca
           // able to reintroduce a spawn at uninitialized coordinates.
           Point16U pt = { link_x_coord, link_y_coord };
           uint8 what = (player_is_indoors) ? Dungeon_LiftAndReplaceLiftable(&pt) : Overworld_HandleLiftableTiles(&pt);
-          link_player_handler_state = 24;
-          flag_is_sprite_to_pick_up = 1;
-          Sprite_SpawnThrowableTerrain((what & 0xf) + 1, pt.x, pt.y);
+          // 0 means the handler lifted nothing -- under rando that is a refused
+          // grant, and carrying a phantom object while the tile stays on screen
+          // duplicates it. Rando-gated so the vanilla path stays bit-identical
+          // (vanilla spawns unconditionally and the RAM compare depends on it).
+          if (what != 0 || !(enhanced_features1 & kFeatures1_RandomizerActive)) {
+            link_player_handler_state = 24;
+            flag_is_sprite_to_pick_up = 1;
+            Sprite_SpawnThrowableTerrain((what & 0xf) + 1, pt.x, pt.y);
+          }
           filtered_joypad_L &= ~kJoypadL_A;
         }
         return;

@@ -3928,15 +3928,22 @@ static bool Ancilla29_CommitStoredRandoGrant(
   link_disable_sprite_damage = 0;
   flag_is_link_immobilized = 0;
   flag_block_link_menu = 0;
+  // Free THIS slot before delivering: the vanilla receipt allocates from the
+  // same 5-slot pool (Ancilla_AllocInit scans 0..4), so leaving it occupied can
+  // silently degrade delivery to the quiet fallback -- losing the receipt and,
+  // for a Direct plan, the confirmation icon entirely. Same inversion fixed for
+  // boss prizes in a5ef5eb0; restored below when delivery did not happen.
+  uint8 saved_ancilla_type = ancilla_type[k];
+  ancilla_type[k] = 0;
   RandoGrantResult result = Rando_CommitPreparedGrant(
       &token, presentation, 3, 0);
   if (out_result != NULL)
     *out_result = result;
   if (result == kRandoGrantResult_Accepted ||
       result == kRandoGrantResult_AlreadyChecked) {
-    ancilla_type[k] = 0;
     Ancilla29_ClearRandoGrantToken(k);
   } else if (result == kRandoGrantResult_Retryable) {
+    ancilla_type[k] = saved_ancilla_type;
     // Capacity/resource pressure can change on a later frame. Preserve the
     // exact tablet state and frozen token so collision can retry losslessly.
     flag_custom_spell_anim_active = saved_custom_spell;
@@ -3946,6 +3953,7 @@ static bool Ancilla29_CommitStoredRandoGrant(
     flag_is_link_immobilized = saved_immobilized;
     flag_block_link_menu = saved_menu_block;
   } else {
+    ancilla_type[k] = saved_ancilla_type;
     // Invalid/corrupt tokens and vanished placements cannot become valid by
     // colliding again. Fail closed (no grant/check mutation) but release every
     // tablet-owned lock and discard the poisoned ancilla/token so the player
@@ -4354,17 +4362,25 @@ void Ancilla36_Flute(int k) {  // 88cfaa
     } else {
       CheckPlayerCollOut coll_out;
       if (Ancilla_CheckLinkCollision(k, 2, &coll_out) && !related_to_hookshot && link_auxiliary_state == 0) {
+        // Free the slot before delivering (see the tablet site above and
+        // a5ef5eb0): the receipt competes for the same 5-slot pool, and a dig
+        // on the overworld easily has sparkles/dust live.
+        uint8 saved_ancilla_type = ancilla_type[k];
+        ancilla_type[k] = 0;
         RandoGrantResult grant = Rando_GrantLocation(
             LOC_Flute_Spot, ITEM_OcarinaInactive, 0x14,
             kRandoGrantPresentation_Animated, 0, 0);
         if (grant == kRandoGrantResult_NotActive) {
-          ancilla_type[k] = 0;
           item_receipt_method = 0;
           Link_ReceiveItem(0x14, 0);
-        } else if (grant == kRandoGrantResult_Accepted ||
-                   grant == kRandoGrantResult_AlreadyChecked) {
-          ancilla_type[k] = 0;
+        } else if (grant == kRandoGrantResult_Retryable) {
+          // Transient only (a potion needing an empty bottle). Put the dug-up
+          // item back so it stays collectable.
+          ancilla_type[k] = saved_ancilla_type;
         }
+        // Accepted / AlreadyChecked / Invalid all leave the slot freed: an
+        // Invalid plan can never become valid by colliding again, and keeping
+        // the ancilla alive would leave it floating and re-colliding forever.
         return;
       }
     }

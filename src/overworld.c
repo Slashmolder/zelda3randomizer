@@ -3995,8 +3995,11 @@ uint8 Overworld_LiftingSmallObj(uint16 a, uint16 pos, uint16 y, Point16U pt) {  
   // replacement tile (y) and set the 0xFF no-spawn sentinel.
   uint8 terrain_result = Rando_TerrainRevealHook(overworld_screen_index, pos);
   if (terrain_result == kRandoTerrain_Retry) {
-    uint16 t = a * 4 + (pt.x & 8 ? 2 : 0) + (pt.y & 8 ? 1 : 0);
-    return kMap8DataToTileAttr[GetMap16toMap8Table()[t] & 0x1ff];
+    // Return the "nothing was lifted" sentinel (0), as the dungeon counterpart
+    // does. Returning the success expression made a refused grant
+    // indistinguishable from a real lift, so the caller carried the object away
+    // while the tile stayed on screen -- a duplicated, re-liftable bush/rock.
+    return 0;
   }
   if (terrain_result == kRandoTerrain_Suppress) {
     BYTE(dung_secrets_unk1) = 0xff;
@@ -4043,8 +4046,11 @@ uint8 SmashRockPile_fromLift(uint16 a, uint16 pos, uint16 y, Point16U pt) {  // 
   uint16 secret;
   uint8 terrain_result = Rando_TerrainRevealHook(overworld_screen_index, pos);
   if (terrain_result == kRandoTerrain_Retry) {
-    uint16 t = a * 4 + (pt.x & 8 ? 2 : 0) + (pt.y & 8 ? 1 : 0);
-    return kMap8DataToTileAttr[GetMap16toMap8Table()[t] & 0x1ff];
+    // Return the "nothing was lifted" sentinel (0), as the dungeon counterpart
+    // does. Returning the success expression made a refused grant
+    // indistinguishable from a real lift, so the caller carried the object away
+    // while the tile stayed on screen -- a duplicated, re-liftable bush/rock.
+    return 0;
   }
 
   big_rock_starting_address = pos;
