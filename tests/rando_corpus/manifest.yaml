@@ -1,6 +1,24 @@
 # Regression-corpus manifest (tasks.md §12.1).
 #
-# Each entry: { settings: {<key>: <value>, ...}, seed_u64: <int>, expected_digest: <sha256_hex> }
+# Each entry:
+#   settings:                {<key>: <value>, ...}   required
+#   seed:                    "<uint64 as quoted str>" required (legacy: seed_u64)
+#   label:                   "<name>"                 required in practice; anchors
+#                                                     bump_rando_corpus.py's per-entry
+#                                                     digest rewrite
+#   expected_digest:         <sha256_hex>             required
+#   expected_sphere_digest:  <sha256_hex>             optional
+#   timeout_s:               <positive int>           optional; RAISES this row's
+#                                                     wall-clock ceiling to
+#                                                     max(--timeout, timeout_s).
+#
+# `timeout_s` exists because per-row generation cost spans ~4 orders of magnitude
+# (a default open/fast_ganon row is ~0.1s; a door-shuffle row at the strict default
+# accessibility tier can be 80s+ of single-threaded CPU), so one global ceiling
+# cannot fit both ends. Pin the few known-slow rows here instead of loosening
+# --timeout for all of them. NOTE the failure modes are NOT interchangeable: a
+# row that TIMES OUT never compared a digest at all, so a timeout is never
+# grounds for rebaselining expected_digest.
 #
 # The corpus is regenerated on every (Linux, macOS, Windows) CI runner against
 # the binary at the listed generator_version; any byte-diff in expected_digest
@@ -1130,9 +1148,28 @@ entries:
     label: "npc-souls-chains-pod-seam"
     expected_digest: "3808f534d29c45f1d1f01cb2255f4669688d7363d892ebadc8281b33a35134ae"
     expected_sphere_digest: "453cf7a6dc23c82422b268e0a6984d91f7097672fbe8625564aef74445845e1d"
+  # SLOW ROW -- the most expensive entry in the corpus, by ~2x. Its cost is
+  # structural, not a regression: door shuffle at the DEFAULT (strict `items`)
+  # accessibility tier needs 5 door-layout attempts for this seed, and the
+  # first 4 are rejected only after each burns a full 256-attempt
+  # Place_AssumedFill (1028 placement attempts total, per ZELDA3_RANDO_PROFILE).
+  # Verified identical work (5 door attempts / 1028 fills / same digest) on
+  # builds at kGeneratorVersion 152 and 159, so nothing crept -- measured
+  # 2026-07-26 at 73-83s of single-threaded CPU on an idle 16-thread Windows
+  # host, and 119.7s wall under this runner's own default --jobs 8. That is
+  # 0.3s under the 120s default ceiling, i.e. a coin flip: it was reported as
+  # "generator error: ... timed out" on some runs, which reads like a digest
+  # failure but never compares a digest at all. Pinned rather than raising
+  # --timeout globally, which would slacken the ceiling for 240 fast rows.
+  # 600s (not 300s) because this row is NOT skipped in public CI, which runs it
+  # on 4-vCPU hosted ubuntu/macOS/Windows runners — slower per core than the
+  # host those numbers came from, so it was very likely flaking there too. The
+  # ceiling only bounds a hang; the door loop is bounded (16 attempts x 256
+  # fills), so a generous value costs nothing on a passing run.
   - settings: { mode.state: open, goal: ganon, npc_souls: true, door_shuffle: basic }
     seed: "0x4E50430000000007"
     label: "npc-souls-door-no-degrade"
+    timeout_s: 600
     expected_digest: "40574ecbbd8235378114b9dbcac01f04a052f7de1e2b516a2ede9bf148e39960"
     expected_sphere_digest: "a1c12e6db393bed63a8cd5106cdd2c34a819cfd938a07c6cb4c9ce63349e7fa3"
   - settings: { mode.state: retro, goal: ganon, dungeon_items.small_keys: wild, npc_souls: true }
@@ -1264,9 +1301,13 @@ entries:
   # with credited key-source rows active). pot=keys (not all) keeps the row
   # inside the per-row runtime budget while still exercising the same path:
   # npc_souls forces the collect model; key pots are credited source rows.
+  # SLOW ROW -- 68.7s under --jobs 8 (2026-07-26), i.e. under 2x the 120s
+  # default ceiling. Pinned alongside npc-souls-door-no-degrade so a loaded
+  # host cannot turn it into a timeout that reads like a digest failure.
   - settings: { mode.state: open, door_shuffle: basic, npc_souls: true, pot_shuffle: keys, accessibility: none }
     seed: "0x0000000000000208"
     label: "door-npc-souls-pot-keys"
+    timeout_s: 300
     expected_digest: "c6cf84cf5734f9e8418fdc6cea4a3e0e8d1d689b088c1617d6e58e08140cb168"
     expected_sphere_digest: "5a9e5b97506d2e5593633e59fa717da3a8e8ac12ce15b9515460769ea2dc13e0"
 
@@ -1309,9 +1350,13 @@ entries:
     label: "key-rings-all-pot-enemy-keys"
     expected_digest: "d10d8a71336132d5719b5b437cb7435737dfe0312624cae0c5dabfa51ac7cced"
     expected_sphere_digest: "cfa182adfbac5070a4fd6d9c54a5c360bd2a49dee44cec9594f85f1cb67db816"
+  # SLOW ROW -- 58.4s under --jobs 8 (2026-07-26). Same rationale as the two
+  # rows above; the next-slowest corpus row is 33.8s, so these three are the
+  # whole tail.
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, door_shuffle: basic, key_rings: random }
     seed: "0x4B45595200000008"
     label: "key-rings-random-door-basic"
+    timeout_s: 300
     expected_digest: "59979715b46671616a5748abede6f9935f0ae15f6566ec68ff2346d414946a0b"
     expected_sphere_digest: "684c03c726161ef2eb717db439a43f35b7b7afaed31e011edeb283ef6cd66267"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, dungeon_chains: true, key_rings: random }

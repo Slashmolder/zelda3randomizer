@@ -1771,6 +1771,39 @@ seconds locally) and the bumper is idempotent.
    in the same commit. The commit message states the new version
    and the reason.
 
+### Reading a corpus failure: TIMEOUT vs digest mismatch
+
+`run_rando_corpus.py` fails a row two ways, and they call for opposite
+responses. Check which one you got before doing anything else:
+
+- **`FAIL [n] <label>: placement_digest mismatch`** — the row completed and
+  produced a different placement than the manifest records. This is real:
+  either a regression, or an intended logic change that needs a rebaseline
+  via the bumping procedure above.
+- **`TIMEOUT [n] <label>: generator exceeded Ns wall clock`** — the row never
+  finished, so **its placement was never compared**. This says nothing about
+  correctness; it says the host was too slow or too loaded. **Never rebaseline
+  a digest in response to a timeout.**
+
+The summary line and `--timings-json` (`status: "timed_out"`,
+`summary.timed_out`) both keep the two distinct.
+
+Generation cost per row spans ~4 orders of magnitude, because the retrying
+layout axes multiply: `Rando_PlaceWithEntrances` runs up to 16 door-layout
+attempts (64 for entrance/chains/warp), and each *rejected* attempt burns a
+full 256-attempt `Place_AssumedFill` before it is rejected. A row at the
+**default** accessibility tier — which is the strictest, `items` — therefore
+gets expensive fast on a hard seed. The three slowest rows
+(`npc-souls-door-no-degrade`, `door-npc-souls-pot-keys`,
+`key-rings-random-door-basic`) are pinned with `timeout_s:` in the manifest;
+the next-slowest is under 35s.
+
+If you need to know whether a row got *slower*, compare its deterministic work
+counters, not wall clock — set `ZELDA3_RANDO_PROFILE=1` and the binary dumps
+`door_attempts` / placement `attempts` at exit. Those are load-independent;
+wall clock on this project's dev machines is routinely inflated 2-4x by a
+concurrent build or a sibling agent's sweep.
+
 ### Save / snapshot compatibility across bumps
 
 - **Sidecar slots** (`saves/sram_rando.dat`): the embedded placement

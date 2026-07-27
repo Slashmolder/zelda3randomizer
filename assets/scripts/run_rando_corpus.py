@@ -23,6 +23,28 @@ Usage (activated):
   python assets/scripts/run_rando_corpus.py --binary=./zelda3
   python assets/scripts/run_rando_corpus.py --binary=./zelda3 --skip-pot-shuffle
   python assets/scripts/run_rando_corpus.py --binary=./zelda3 --skip-pot-shuffle --skip-enemy-drop-checks --skip-enemy-souls --skip-terrain-shuffle --skip-ow-warp
+
+Failure taxonomy — a row can fail two very different ways, and the runner keeps
+them distinct because they call for opposite responses:
+
+  FAIL ... placement_digest mismatch
+      The row COMPLETED and produced a different placement than the manifest
+      records. This is a real generation change: either a regression, or an
+      intended logic change that needs a corpus rebaseline.
+
+  TIMEOUT ... generator exceeded Ns wall clock
+      The row never finished, so its placement was NEVER COMPARED. This says
+      nothing about correctness -- it says the host was too slow or too loaded.
+      Do NOT rebaseline a digest in response to a timeout.
+
+Generation cost per row spans ~4 orders of magnitude (a default open/fast_ganon
+row is ~0.1s; a door-shuffle row at the strict default accessibility tier can be
+80s+), because the retrying layout axes multiply: `Rando_PlaceWithEntrances`
+runs up to 16 door-layout attempts, and each rejected attempt burns a full
+256-attempt `Place_AssumedFill`. A single global ``--timeout`` therefore cannot
+fit both ends. Pin an intrinsically expensive row with ``timeout_s:`` in its
+manifest entry (it only ever raises that row's ceiling) instead of loosening
+the global ceiling for all 240+ rows.
 """
 from __future__ import annotations
 
@@ -92,7 +114,46 @@ def validate_entry(entry: dict, idx: int) -> list[str]:
         sd = entry["expected_sphere_digest"]
         if not isinstance(sd, str) or len(sd) != 64:
             errors.append(f"entry {idx}: 'expected_sphere_digest' must be a 64-char hex string")
+    # timeout_s is optional; it raises the per-entry wall-clock ceiling for rows
+    # whose generation cost is intrinsically high (a strict accessibility tier
+    # over a retrying layout axis burns a full assumed fill per layout attempt).
+    # It only ever RAISES the ceiling for that row -- the global --timeout still
+    # applies to every row that does not set it, so a fast row keeps its tight
+    # safety net.
+    if "timeout_s" in entry:
+        ts = entry["timeout_s"]
+        if not isinstance(ts, int) or isinstance(ts, bool) or ts <= 0:
+            errors.append(f"entry {idx}: 'timeout_s' must be a positive integer (seconds)")
     return errors
+
+
+def entry_timeout(entry: dict, default_timeout: int) -> int:
+    """Per-entry wall-clock ceiling: max(manifest timeout_s, global --timeout).
+
+    Taking the max means an explicit `--timeout` on the command line can still
+    raise a pinned row (e.g. when sweeping a loaded machine), while the manifest
+    value protects the row from the default ceiling being too tight for it.
+    """
+    override = entry.get("timeout_s")
+    if isinstance(override, int) and not isinstance(override, bool) and override > 0:
+        return max(default_timeout, override)
+    return default_timeout
+
+
+def _stderr_tail(raw: bytes | str | None, max_lines: int = 6) -> list[str]:
+    """Last few generator stderr lines, indented for the failure report.
+
+    The generator narrates its retry structure on stderr (per-attempt fill
+    results, goal-check rejections). Surfacing the tail turns an opaque
+    timeout/crash into a diagnosis without a re-run.
+    """
+    if not raw:
+        return []
+    text = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else raw
+    lines = [ln.rstrip() for ln in text.splitlines() if ln.strip()]
+    if not lines:
+        return []
+    return [f"    | {ln}" for ln in lines[-max_lines:]]
 
 
 def _setting_truthy(v) -> bool:
@@ -289,6 +350,12 @@ class CorpusResult:
     skipped: bool = False
     skip_reasons: list[str] = field(default_factory=list)
     elapsed_ms: float = 0.0
+    # A wall-clock timeout is a FAILURE but NOT a digest mismatch. Keeping the
+    # two distinguishable is the point: a timeout says "this box was too slow
+    # (or too loaded) for this row", a digest mismatch says "placement changed".
+    # Collapsing them invites a hunt for a placement regression that isn't
+    # there -- or, worse, a "fix" that rebaselines a digest.
+    timed_out: bool = False
 
 
 def _emit_result(result: CorpusResult) -> tuple[int, int]:
@@ -330,6 +397,7 @@ def _run_one_entry_impl(binary: Path, idx: int, entry: dict,
         result.skip_reasons = skip_reasons
         return result
     settings_csv = ",".join(f"{k}={v}" for k, v in settings.items())
+    timeout = entry_timeout(entry, timeout)
 
     with tempfile.TemporaryDirectory() as td:
         out_json = Path(td) / "out.json"
@@ -341,8 +409,36 @@ def _run_one_entry_impl(binary: Path, idx: int, entry: dict,
                  f"--out-spoiler={out_json}"],
                 check=True, capture_output=True, timeout=timeout,
             )
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
-            result.lines.append(f"  FAIL [{idx}] {label}: generator error: {e}")
+        except subprocess.TimeoutExpired as e:
+            # Distinct from a digest mismatch on purpose -- see CorpusResult.
+            result.lines.append(
+                f"  TIMEOUT [{idx}] {label}: generator exceeded {timeout}s "
+                f"wall clock (NOT a digest mismatch -- placement was never "
+                f"compared)"
+            )
+            result.lines.append(
+                f"    this row's cost is wall-clock only; a loaded machine or a "
+                f"concurrent build/sweep inflates it. Re-run it alone before "
+                f"suspecting placement:"
+            )
+            result.lines.append(
+                f"      {binary} --generate-seed --settings={settings_csv} "
+                f"--seed={seed} --out-spoiler=out.json"
+            )
+            result.lines.append(
+                f"    if it is legitimately this slow, pin the row with "
+                f"`timeout_s: <seconds>` in the manifest entry rather than "
+                f"raising --timeout for all rows."
+            )
+            result.lines.extend(_stderr_tail(e.stderr))
+            result.failed = True
+            result.timed_out = True
+            return result
+        except subprocess.CalledProcessError as e:
+            result.lines.append(
+                f"  FAIL [{idx}] {label}: generator exited {e.returncode}"
+            )
+            result.lines.extend(_stderr_tail(e.stderr))
             result.failed = True
             return result
         if not out_json.exists():
@@ -381,8 +477,20 @@ def _run_one_entry_impl(binary: Path, idx: int, entry: dict,
                     [str(binary), f"--reveal-spoiler={reveal_path}"],
                     check=True, capture_output=True, timeout=timeout,
                 )
-            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
-                result.lines.append(f"  FAIL [{idx}] {label}: reveal failed: {e}")
+            except subprocess.TimeoutExpired as e:
+                result.lines.append(
+                    f"  TIMEOUT [{idx}] {label}: reveal exceeded {timeout}s "
+                    f"wall clock (NOT a digest mismatch)"
+                )
+                result.lines.extend(_stderr_tail(e.stderr))
+                result.failed = True
+                result.timed_out = True
+                return result
+            except subprocess.CalledProcessError as e:
+                result.lines.append(
+                    f"  FAIL [{idx}] {label}: reveal exited {e.returncode}"
+                )
+                result.lines.extend(_stderr_tail(e.stderr))
                 result.failed = True
                 return result
             # On success the file has been overwritten with full JSON.
@@ -515,7 +623,16 @@ def _binary_provenance(binary: Path) -> dict:
 
 
 def _result_to_json(result: CorpusResult) -> dict:
-    status = "skipped" if result.skipped else "failed" if result.failed else "passed"
+    if result.skipped:
+        status = "skipped"
+    elif result.timed_out:
+        # Reported separately from "failed" so a timings consumer can tell a
+        # slow/loaded host from a placement change without parsing messages.
+        status = "timed_out"
+    elif result.failed:
+        status = "failed"
+    else:
+        status = "passed"
     return {
         "index": result.idx,
         "label": result.label,
@@ -544,8 +661,13 @@ def _print_slowest(results: list[CorpusResult]) -> None:
                      reverse=True)[:10]
     print("\nrun_rando_corpus: slowest rows (worker elapsed; telemetry only)")
     for result in slowest:
-        status = "FAIL" if result.failed else "OK"
-        print(f"  {result.elapsed_ms:10.1f} ms  {status:4s}  "
+        if result.timed_out:
+            status = "TIMEOUT"
+        elif result.failed:
+            status = "FAIL"
+        else:
+            status = "OK"
+        print(f"  {result.elapsed_ms:10.1f} ms  {status:7s}  "
               f"[{result.idx}] {result.label}")
 
 
@@ -608,6 +730,9 @@ def run_activated(binary: Path, manifest: dict, skip_pot_shuffle: bool = False,
             "passed": sum(not result.failed and not result.skipped
                           for result in completed_results),
             "failed": sum(result.failed for result in completed_results),
+            # Subset of `failed`: rows that ran out of wall clock rather than
+            # producing a wrong digest.
+            "timed_out": sum(result.timed_out for result in completed_results),
             "skipped": sum(result.skipped for result in completed_results),
             "elapsed_ms": round((time.perf_counter() - started_perf) * 1000.0, 3),
         }
@@ -691,9 +816,24 @@ def run_activated(binary: Path, manifest: dict, skip_pot_shuffle: bool = False,
     completed_results = [result for result in results_by_index if result is not None]
     _print_slowest(completed_results)
     if failures:
+        timeouts = sum(result.timed_out for result in completed_results)
+        digest_failures = failures - timeouts
         print(f"\nrun_rando_corpus: {failures} of {len(entries) - skipped} "
               f"run entries FAILED ({skipped} skipped).")
-        persist("failed", f"{failures} corpus row(s) failed", completed=True)
+        # The summary line is where a timeout most easily masquerades as a
+        # placement regression. Break the count out so nobody goes hunting for
+        # a digest change that never happened.
+        if timeouts:
+            print(f"  {timeouts} of those were TIMEOUTS (wall clock ran out; "
+                  f"placement was never compared) and "
+                  f"{digest_failures} were real failures.")
+            print("  A timeout is NOT evidence of a placement regression. "
+                  "Check machine load / concurrent builds first, then re-run "
+                  "the row alone; only rebaseline a digest for a row that "
+                  "actually completed and disagreed.")
+        persist("failed",
+                f"{digest_failures} corpus row(s) failed, "
+                f"{timeouts} timed out", completed=True)
         return 1
     if skipped:
         print(f"\nrun_rando_corpus: all {len(entries) - skipped} run entries OK "
@@ -766,9 +906,16 @@ def main(argv: list[str]) -> int:
                         help="number of corpus entries to run concurrently "
                              "(default: min(8, CPU count)).")
     parser.add_argument("--timeout", type=int, default=120,
-                        help="per-entry generator timeout in seconds "
-                             "(default: 120 -- legit hard door-layout seeds "
-                             "run ~55s; 60s flaked under contention).")
+                        help="default per-entry generator timeout in seconds "
+                             "(default: 120). A row may raise its own ceiling "
+                             "with `timeout_s:` in the manifest; the effective "
+                             "value is max(--timeout, timeout_s). Measured "
+                             "2026-07-26 on an idle 16-thread Windows host: the "
+                             "slowest door-shuffle rows cost 75-85s of "
+                             "single-threaded CPU, so 120s is under 2x headroom "
+                             "for them and a concurrent build or sweep pushes "
+                             "them over -- pin those rows rather than raising "
+                             "this for everything.")
     parser.add_argument("--timings-json", type=Path, default=None,
                         help="optional per-row timing/provenance JSON path; "
                              "updated after each completed row so failures "
