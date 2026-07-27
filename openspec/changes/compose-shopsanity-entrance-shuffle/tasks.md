@@ -13,8 +13,17 @@ the risky one; everything before it is mechanical.
       0x6D, while *entrance id* 0x6E belongs to thief_hideout (row 0x79).
       NOTE: many non-shop entries are also multi-row (pond_of_happiness has 8);
       only the shop entries need splitting, the rest stay grouped.
-- [ ] 1.1b Add the derived `door_rows` and an optional `shop_loc_base` to
-      `entrance_registry.yaml`.
+- [x] 1.1b Added the derived `door_rows` to all 40 entries of
+      `entrance_registry.yaml` (70 rows total), inserted programmatically and
+      bounded to the `interiors:` block so the `excluded:` /
+      `overworld_surface_not_caves:` / `dungeons:` blocks are untouched. Inert
+      until the generator reads it.
+- [x] 1.1c Derived each split door's region and VALIDATED the method: all eight
+      cave-resident shop doors resolve to exactly the region
+      `location_registry.yaml` gives that shop. Table in design D9. The sweep
+      also surfaced pre-existing region drift on other entries — spun out as its
+      own audit, deliberately not touched here.
+- [ ] 1.2b Add `shop_loc_base` to the shop entries.
 - [ ] 1.2 Split entries 21, 23, 32 by door row per design D1, **appending** the
       new entries at indices 40-45 so 0-39 keep their positions (design D2).
       Give each split entry its own `region_name` and, for shop entries, the

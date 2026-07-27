@@ -164,7 +164,52 @@ These are not obvious from the shuffle code alone and each needs handling:
   against `Rando_EntranceAddedEdgeCapacity()` in `OwWarp_SelfCheck`. It goes
   51 -> 57; confirm the capacity covers it.
 
-## D9. Coupled exits are safe by construction
+## D9. Per-door regions, and a region-drift finding
+
+Each split entry's `region_name` is derived, not guessed. Method: take the
+entry's door row, read its overworld area from `kOverworld_Entrance_Area`, and
+look the screen up in `assets/rando/ow_graph.gen.yaml`
+(`components[].screen -> zone`).
+
+The method was **validated before being trusted**: all eight cave-resident shop
+doors resolve to exactly the region `location_registry.yaml` already assigns
+that shop's slots, single-valued, with no mismatch. So the derived values for
+the split are:
+
+| door row | ALTTPR door | screen | region |
+|---|---|---|---|
+| `0x57` | `0x58` | `0x35` | `LightWorld_South` (LW Lake Hylia shop) |
+| `0x59` | `0x5A` | `0x53` | `DarkWorld_NorthWest` (no shop) |
+| `0x6D` | `0x6E` | `0x45` | `DarkWorld_DeathMountain_East` (DW Death Mountain shop) |
+| `0x56` | `0x57` | `0x42` | `DarkWorld_NorthWest` (Lumberjack) |
+| `0x5F` | `0x60` | `0x58` | `DarkWorld_NorthWest` (Outcasts) |
+| `0x6E` | `0x6F` | `0x56` | `DarkWorld_NorthEast` (Potion) |
+| `0x73` | `0x74` | `0x75` | `DarkWorld_South` (DW Lake Hylia) |
+| `0x45` | `0x46` | `0x18` | `LightWorld_NorthWest` (Kakariko shop) |
+| `0x75` | `0x76` | `0x02` | `LightWorld_NorthWest` (no shop) |
+| `0x74` | `0x75` | `0x5A` | `DarkWorld_NorthWest` (DW Forest shop) |
+
+This exposes that the pre-split entries were already carrying regions their own
+doors do not support: entry 21 declares `LightWorld_NorthWest` while its three
+doors sit in `LightWorld_South`, `DarkWorld_NorthWest` and
+`DarkWorld_DeathMountain_East`; entry 20 declares `LightWorld_NorthWest` for a
+door in `DarkWorld_NorthWest`. That was invisible because
+`Entrance_SelfCheck`'s region cross-validation only runs for entries that have
+locations, and all four shop entries had none. Giving them their shops' slot ids
+brings them under that check, so the split is guarded going in.
+
+**Out of scope but recorded:** the same sweep flags roughly a dozen further
+entries, including several SINGLE-door ones (`archery_game`,
+`warped_pond_of_wishing`, both `refill_cave_1_*`, `kakariko_library`,
+`mimic_cave`) whose declared region matches none of their doors. If real, those
+mis-bind locations under cave-entrance shuffle today, independently of shops.
+The screen-to-zone lookup is only a hypothesis for non-shop doors — an overworld
+screen can host several logic regions (ledges, the Death Mountain east/west
+split) — so they are NOT changed here; they are spun out as their own audit.
+Multi-door entries whose region matches one of their doors are a known
+approximation of the coarse pool, not necessarily a bug.
+
+## D10. Coupled exits are safe by construction
 
 The cave "cached exit" is not rando state: `Dungeon_LoadEntrance` copies the
 live overworld arrival (area, Link x/y, camera, scroll targets) into the `*_exit`

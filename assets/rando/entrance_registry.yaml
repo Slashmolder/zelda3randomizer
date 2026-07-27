@@ -79,6 +79,7 @@ interiors:
     name: "Treasure Shell Game"
     rooms: [0x100]
     entrance_ids: [0x3C]
+    door_rows: [0x3B]
     region: LightWorld_NorthWest
     locations: []
     notes: "Lost Woods Gamble take-any host in Retro; no vanilla item location."
@@ -87,6 +88,7 @@ interiors:
     name: "Snitch House"
     rooms: [0x101]
     entrance_ids: [0x3E, 0x3F]
+    door_rows: [0x3D, 0x3E]
     region: LightWorld_NorthWest
     locations: []
     notes: "Two entrance-ids (Snitch House 1/2) -> same room 0x101."
@@ -95,6 +97,7 @@ interiors:
     name: "Sick Kid's House"
     rooms: [0x102]
     entrance_ids: [0x40]
+    door_rows: [0x3F]
     region: LightWorld_NorthWest
     locations: [168]
     notes: "Sick Kid (id 168) Npc grant lives in this interior. Not in chest table (Npc pickup); room from kEntranceNames 0x40."
@@ -103,6 +106,7 @@ interiors:
     name: "Kakariko Tavern / Pub / Inn"
     rooms: [0x103]
     entrance_ids: [0x42, 0x43, 0x44]
+    door_rows: [0x41, 0x42, 0x43]
     region: LightWorld_NorthWest
     locations: [153]
     notes: "Three entrance-ids (Pub South/North, Inn) -> room 0x103. Chest 'Kakariko Tavern' (id 153) decoded to 0x103 via chest table."
@@ -111,6 +115,7 @@ interiors:
     name: "Sahasrahla's Hut"
     rooms: [0x105]
     entrance_ids: [0x45]
+    door_rows: [0x44]
     region: LightWorld_NorthEast
     locations: [142, 143, 144]
     notes: "Three chests decoded to room 0x105. The 'Sahasrahla' NPC (id 145) is an OVERWORLD-surface grant outside the hut — NOT placed in this interior; see excluded notes."
@@ -119,6 +124,7 @@ interiors:
     name: "Kakariko Library / Storage Shed"
     rooms: [0x107]
     entrance_ids: [0x49, 0x4A]
+    door_rows: [0x48, 0x49]
     region: LightWorld_South
     locations: []
     notes: "Empty interior. FLAG: the 'Library' location (id 186) is the book pulled from UNDER the library building on the overworld surface via Pegasus Boots — it is NOT inside room 0x107. Listed in overworld_surface_not_caves. Two entrance-ids -> 0x107. Region nominal."
@@ -127,6 +133,7 @@ interiors:
     name: "Chicken House (Kakariko Sweeper Lady's House)"
     rooms: [0x108]
     entrance_ids: [0x4B]
+    door_rows: [0x4A]
     region: LightWorld_NorthWest
     locations: [154]
     notes: "Chest 'Chicken House' (id 154) decoded to 0x108. Vanilla entrance name for 0x4B is 'Kakariko Sweeper Lady's House' (same room/interior)."
@@ -135,6 +142,7 @@ interiors:
     name: "Potion Shop (Witch's Hut)"
     rooms: [0x109]
     entrance_ids: [0x4C]
+    door_rows: [0x4B]
     region: LightWorld_NorthEast
     locations: [147]
     notes: "Potion Shop (id 147) Npc = the Witch trade. Region LightWorld_NorthEast per registry. Not in chest table; room from kEntranceNames 0x4C."
@@ -144,6 +152,7 @@ interiors:
     name: "Village of Outcasts Chest Game / Orphanage"
     rooms: [0x106]
     entrance_ids: [0x47, 0x48]
+    door_rows: [0x46, 0x47]
     region: DarkWorld_NorthWest
     can_enter: "HAS_ITEM(MoonPearl) OR CanPearlBypass() OR CanBunnyRevival(world)"
     locations: [215, 217]
@@ -153,6 +162,7 @@ interiors:
     name: "The Bomb Shop / Retirement Center"
     rooms: [0x11C]
     entrance_ids: [0x53, 0x54]
+    door_rows: [0x52, 0x53]
     region: DarkWorld_NorthWest
     can_enter: "HAS_ITEM(MoonPearl) OR CanPearlBypass() OR CanBunnyRevival(world)"
     locations: [216]
@@ -163,6 +173,7 @@ interiors:
     name: "Aginah's Cave"
     rooms: [0x10A]
     entrance_ids: [0x4D]
+    door_rows: [0x4C, 0x70]
     region: LightWorld_South
     can_enter: "CanBombThings()"
     locations: [175]
@@ -172,6 +183,7 @@ interiors:
     name: "Floodgate / Watergate"
     rooms: [0x10B]
     entrance_ids: [0x4E]
+    door_rows: [0x4D]
     region: LightWorld_South
     locations: [173]
     notes: "Chest 'Floodgate Chest' (id 173) decoded to 0x10B."
@@ -180,6 +192,7 @@ interiors:
     name: "Ice Rod Cave / Good Bee Cave"
     rooms: [0x120]
     entrance_ids: [0x56, 0x84]
+    door_rows: [0x6A, 0x7F]
     region: LightWorld_South
     locations: [180]
     notes: "Chest 'Ice Rod Cave' (id 180) decoded to 0x120. Entrance 0x56 'Good Bee Cave' and 0x84 'Ice Rod Cave' BOTH load room 0x120 — they are the SAME interior in vanilla room terms. 'Good Bee' (id NOT in registry as separate chest) is a take-any/bee location; flagged."
@@ -188,6 +201,7 @@ interiors:
     name: "Mini Moldorm Cave"
     rooms: [0x123]
     entrance_ids: [0x6C]
+    door_rows: [0x7C]
     region: LightWorld_South
     can_enter: "CanBombThings()"
     locations: [176, 177, 178, 179, 185]
@@ -198,6 +212,7 @@ interiors:
     name: "Mimic Cave / DM Maze 0011 / Fairy Cave 2"
     rooms: [0x10C]
     entrance_ids: [0x4F, 0x50]
+    door_rows: [0x4E, 0x4F]
     region: LightWorld_DeathMountain_East
     locations: [197]
     notes: "Chest 'Mimic Cave' (id 197) decoded to 0x10C. Two entrance-ids -> 0x10C."
@@ -206,6 +221,7 @@ interiors:
     name: "Byrna Gauntlet (Spike Cave)"
     rooms: [0x117]
     entrance_ids: [0x41]
+    door_rows: [0x40]
     region: DarkWorld_DeathMountain_West
     can_enter: "HAS_ITEM(MoonPearl) AND HAS_ITEM(Hammer) AND CanLiftRocks()"
     locations: [229]
@@ -216,6 +232,7 @@ interiors:
     name: "Mire Shed (Swamp of Evil Heart Piece Hall)"
     rooms: [0x10D]
     entrance_ids: [0x5F]
+    door_rows: [0x5E]
     region: DarkWorld_Mire
     can_enter: "HAS_ITEM(MoonPearl) OR CanPearlBypass()"
     locations: [206, 207]
@@ -226,6 +243,7 @@ interiors:
     name: "Hype Cave (Storyteller 1 / Fairy Cave 3)"
     rooms: [0x11E]
     entrance_ids: [0x3D, 0x55]
+    door_rows: [0x3C, 0x54]
     region: DarkWorld_South
     can_enter: "HAS_ITEM(MoonPearl) OR CanPearlBypass() OR CanBunnyRevival(world)"
     locations: [222, 223, 224, 225, 227]
@@ -236,6 +254,7 @@ interiors:
     name: "Hall of the Invisibility Cape (King's Tomb)"
     rooms: [0x113]
     entrance_ids: [0x5B]
+    door_rows: [0x5A]
     region: LightWorld_NorthWest
     can_enter: "HAS_ITEM(Boots) AND (CanLiftDarkRocks() OR CanBootsClip() OR CanOneFrameClipOW() OR (CanSuperSpeed() AND CanSpinSpeed()))"
     locations: [152]
@@ -246,6 +265,7 @@ interiors:
     name: "Thief Hideout (Pegasus Rocks)"
     rooms: [0x124]
     entrance_ids: [0x6D, 0x6E]
+    door_rows: [0x78, 0x79]
     region: LightWorld_NorthWest
     can_enter: "HAS_ITEM(Boots) OR (OP_REGION_REACHABLE(LightWorld_South) AND CanLiftRocks())"
     locations: [165]
@@ -256,6 +276,7 @@ interiors:
     name: "General Store 1"
     rooms: [0x110]
     entrance_ids: [0x57]
+    door_rows: [0x74]
     region: DarkWorld_NorthWest
     locations: []
     notes: "Empty (shop only)."
@@ -264,6 +285,7 @@ interiors:
     name: "General Store 2 / Storyteller Cave 2"
     rooms: [0x112]
     entrance_ids: [0x58, 0x5A]
+    door_rows: [0x57, 0x59, 0x6D]
     region: LightWorld_NorthWest
     locations: []
     notes: "Empty. Retro TakeAny host room. Two entrance-ids -> 0x112. Region nominal (multiple LW/DW take-any caves redirect here in Retro)."
@@ -272,6 +294,7 @@ interiors:
     name: "Archery Game"
     rooms: [0x111]
     entrance_ids: [0x59]
+    door_rows: [0x58]
     region: DarkWorld_South
     can_enter: "HAS_ITEM(MoonPearl) OR CanPearlBypass() OR CanBunnyRevival(world)"
     locations: []
@@ -281,6 +304,7 @@ interiors:
     name: "General Store 3"
     rooms: [0x10F]
     entrance_ids: [0x60]
+    door_rows: [0x56, 0x5F, 0x6E, 0x73]
     region: DarkWorld_NorthWest
     can_enter: "HAS_ITEM(MoonPearl) OR CanPearlBypass() OR CanBunnyRevival(world)"
     locations: []
@@ -290,6 +314,7 @@ interiors:
     name: "Pond of Wishing / Storyteller Cave 3"
     rooms: [0x114]
     entrance_ids: [0x5C, 0x62]
+    door_rows: [0x5B, 0x61]
     region: LightWorld_NorthEast
     can_enter: "HAS_ITEM(Flippers) OR (OP_REGION_REACHABLE(DarkWorld_Mire) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()))"
     locations: [149, 150]
@@ -299,6 +324,7 @@ interiors:
     name: "Pond of Happiness / Fairy Cave 4"
     rooms: [0x115]
     entrance_ids: [0x5D, 0x5E]
+    door_rows: [0x55, 0x5C, 0x5D, 0x6B, 0x6C, 0x6F, 0x71, 0x80]
     region: LightWorld_South
     locations: []
     notes: "Empty (upgrade fountain). Two entrance-ids -> 0x115."
@@ -307,6 +333,7 @@ interiors:
     name: "Warped Pond of Wishing"
     rooms: [0x116]
     entrance_ids: [0x63]
+    door_rows: [0x62]
     region: DarkWorld_NorthEast
     can_enter: "HAS_ITEM(MoonPearl) OR CanPearlBypass() OR CanBunnyRevival(world)"
     locations: []
@@ -316,6 +343,7 @@ interiors:
     name: "Chest Shell Game 2"
     rooms: [0x118]
     entrance_ids: [0x67]
+    door_rows: [0x66]
     region: LightWorld_NorthWest
     locations: []
     notes: "Empty (minigame). Kakariko Gamble Game take-any host (dest 0x46/0x11F) in Retro."
@@ -324,6 +352,7 @@ interiors:
     name: "Blind's Old Hideout (Thieves' Town overworld door)"
     rooms: [0x119, 0x11D]
     entrance_ids: [0x61]
+    door_rows: [0x60]
     region: LightWorld_NorthWest
     locations: [160, 161, 162, 163, 164]
     notes: "Light-world Kakariko Blind's Hideout chain, not the Dark World NW Thieves' Town dungeon entrance. F12 in back room: current room 0x11D, previous room 0x119, cached exit screen 0x18. The front room has four chests; the bomb-wall back room has one chest and six pots. All Blind's Hideout chests are bound here so they follow entrance 0x61 under cave shuffle."
@@ -332,6 +361,7 @@ interiors:
     name: "Storyteller Cave 4"
     rooms: [0x11A]
     entrance_ids: [0x68]
+    door_rows: [0x67]
     region: DarkWorld_NorthEast
     can_enter: "HAS_ITEM(MoonPearl) OR CanPearlBypass() OR CanBunnyRevival(world)"
     locations: []
@@ -341,6 +371,7 @@ interiors:
     name: "Refill Cave 0001 (Graveyard Ledge side)"
     rooms: [0x11B]
     entrance_ids: [0x51]
+    door_rows: [0x50]
     region: LightWorld_NorthWest
     can_enter: "(HAS_ITEM(MagicMirror) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND OP_REGION_REACHABLE(DarkWorld_NorthWest)) OR CanBootsClip() OR CanOneFrameClipOW() OR (CanSuperSpeed() AND CanSpinSpeed())"
     locations: [171]
@@ -350,6 +381,7 @@ interiors:
     name: "Refill Cave 0002 (Cave 45 side)"
     rooms: [0x11B]
     entrance_ids: [0x52]
+    door_rows: [0x51]
     region: LightWorld_South
     can_enter: "(HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(DarkWorld_South)) OR CanBootsClip() OR CanOneFrameClipOW()"
     locations: [183]
@@ -359,6 +391,7 @@ interiors:
     name: "Kakariko's Lame Shop / Village House 1"
     rooms: [0x11F]
     entrance_ids: [0x46, 0x6B]
+    door_rows: [0x45, 0x75]
     region: LightWorld_NorthWest
     locations: []
     notes: "Empty. Retro TakeAny host room (dest 0x46). Two entrance-ids -> 0x11F."
@@ -367,6 +400,7 @@ interiors:
     name: "Chez Smithies (Blacksmith Hut)"
     rooms: [0x121]
     entrance_ids: [0x64]
+    door_rows: [0x63]
     region: LightWorld_NorthWest
     locations: []
     notes: "Empty interior. The 'Blacksmith' (id 220) and 'Purple Chest' (id 221) grants are OVERWORLD-surface NPC interactions, NOT inside this room — excluded."
@@ -375,6 +409,7 @@ interiors:
     name: "Fortune Teller 1/2"
     rooms: [0x122]
     entrance_ids: [0x65, 0x66]
+    door_rows: [0x64, 0x65, 0x72]
     region: LightWorld_NorthWest
     locations: []
     notes: "Empty (fortune teller). Two entrance-ids -> 0x122."
@@ -383,6 +418,7 @@ interiors:
     name: "Storyteller Cave 5/6"
     rooms: [0x10E]
     entrance_ids: [0x69, 0x6A]
+    door_rows: [0x68, 0x69]
     region: DarkWorld_NorthEast
     can_enter: "HAS_ITEM(MoonPearl) OR CanPearlBypass() OR CanBunnyRevival(world)"
     locations: []
@@ -392,6 +428,7 @@ interiors:
     name: "Thief Hideout 3 / Refill Cave 3"
     rooms: [0x125]
     entrance_ids: [0x6F, 0x70]
+    door_rows: [0x7A, 0x7B]
     region: LightWorld_South
     can_enter: "CanLiftRocks() OR (OP_REGION_REACHABLE(DarkWorld_South) AND CanLiftRocks() AND (HAS_ITEM(MoonPearl) OR CanPearlBypass()))"
     locations: []
@@ -401,6 +438,7 @@ interiors:
     name: "Fairy Cave 5 (Link's House side)"
     rooms: [0x126]
     entrance_ids: [0x71]
+    door_rows: [0x76, 0x77]
     region: LightWorld_South
     can_enter: "HAS_ITEM(Boots)"
     locations: []
@@ -410,6 +448,7 @@ interiors:
     name: "Fairy Cave 5 (Checkerboard Cave side)"
     rooms: [0x126]
     entrance_ids: [0x72]
+    door_rows: [0x7D]
     region: LightWorld_South
     can_enter: "CanLiftRocks() AND HAS_ITEM(MagicMirror) AND OP_REGION_REACHABLE(DarkWorld_Mire)"
     locations: [184]
@@ -419,6 +458,7 @@ interiors:
     name: "Heart Piece Cave 3 / Hammer Pegs Cave"
     rooms: [0x127]
     entrance_ids: [0x83]
+    door_rows: [0x7E]
     region: DarkWorld_NorthWest
     can_enter: "HAS_ITEM(Hammer) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass() OR CanBunnyRevival(world)) AND (CanLiftDarkRocks() OR ((CanFakeFlippers() OR HAS_ITEM(Flippers)) AND (CanOneFrameClipOW() OR CanBootsClip())))"
     locations: [218]
