@@ -535,6 +535,23 @@ bool Settings_EffectiveShuffleCaveEntrances(const RandoSettings *s);
 // entrance shuffle is edge-based and does NOT mis-bind dungeon pots.
 bool Settings_PotShuffleForcedOff(const RandoSettings *s);
 
+// add-rando-shopsanity — true when cave-entrance shuffle FORCES shopsanity off.
+// Four shop interiors (rooms 0x10F/0x110/0x112/0x11F) ARE cave-pool members and
+// their kCaveInteriors location_ids omit the shop slot ids, so the slots keep
+// their vanilla overworld regions while the runtime reaches the interior through
+// a shuffled door. Unlike the pot case the shop ids DO fit under
+// kEntranceRegionOverrideMax, but region-rebinding still cannot make it sound: a
+// shuffled destination interior is reached through the door rows of a single
+// source interior, so rooms hosting several shops can serve only one of them.
+// apply_derived_rules normalizes shopsanity off under this; placement, runtime
+// and the spoiler all read the normalized field, so they cannot disagree.
+bool Settings_ShopsanityForcedOff(const RandoSettings *s);
+
+// True when the 27 regular shop slots are live fill locations: shopsanity is
+// requested AND not forced off. Read this — never the raw s->shopsanity — in
+// placement, spoiler and runtime code; the placer sees un-normalized settings.
+bool Settings_ShopsanityActive(const RandoSettings *s);
+
 // Door shuffle forces in-dungeon keys and has a generated door x pot bridge.
 // This is the effective pot tier the door prover/runtime should see; keeping it
 // here prevents generation and active-slot reinstall from drifting.

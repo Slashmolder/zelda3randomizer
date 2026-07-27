@@ -44,7 +44,19 @@
 //   0x66a-0x66b kRam_EnemyShuffleLiveKey (uint16) — room/area key for the
 //                                         resolved sheet set above.
 //   0x66c       kRam_EnemyShuffleLiveContext (1 byte) — 1 dungeon, 2 overworld.
-//   0x66d-0x66f reserved                 (3 bytes forward-compat headroom)
+//   0x66d       kRam_RandoOverworldDoor  (1 byte) — rando: the overworld door
+//                                         the player last entered, as ALTTPR's
+//                                         PreviousOverworldDoor (door row index
+//                                         + 1); 0 = none. Shopsanity's shop
+//                                         identity key — `which_entrance` cannot
+//                                         serve, since four shops share entrance
+//                                         id 0x60 and two share 0x58. Persisted
+//                                         in g_ram (not a C static) so a
+//                                         snapshot replay-restore keeps the
+//                                         shop the player is standing in
+//                                         resolvable, matching ALTTPR's own
+//                                         RAM-resident PreviousOverworldDoor.
+//   0x66e-0x66f reserved                 (2 bytes forward-compat headroom)
 //   0x670+      spotlight_* (DO NOT USE — see the `spotlight_*` declarations in variables.h)
 //
 // Verified clean in audit.md §0.7 (Phase 0 deliverable).
@@ -63,13 +75,14 @@ enum {
   kRam_EnemyShuffleLiveSubset = 0x666,
   kRam_EnemyShuffleLiveKey = 0x66a,
   kRam_EnemyShuffleLiveContext = 0x66c,
+  kRam_RandoOverworldDoor = 0x66d,
 
   // Inclusive ownership bounds for randomizer-only WRAM. Keep these explicit:
   // the headless initialization + vanilla-snapshot guard and its independent parser use
   // them as the contract for every byte that must remain untouched in vanilla
   // snapshots, including padding inside multi-byte cells.
   kRam_RandoOwnedBegin = 0x659,
-  kRam_RandoOwnedEnd = 0x66c,
+  kRam_RandoOwnedEnd = 0x66d,
 };
 
 enum {

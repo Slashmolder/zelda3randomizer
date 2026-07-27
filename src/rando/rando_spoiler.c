@@ -309,7 +309,7 @@ static uint16 collect_shop_rows(const RandoSpoiler *s, SpoilerShopRow *out, uint
     out[n].type = d->type;
     out[n].region_id = d->region_id;
     out[n].has_price = d->type == LOCTYPE_Shop &&
-                       s->settings != NULL && s->settings->shopsanity != 0;
+                       Settings_ShopsanityActive(s->settings);
     out[n].price = out[n].has_price ? Rando_ShopPrice(s->seed_u64, loc) : 0;
     n++;
   }
@@ -632,6 +632,13 @@ static bool write_spoiler_json_stream(const RandoSpoiler *s, FILE *f) {
           (uint8)((canon[29] & kGrassShuffleAxis_Mask) >> kGrassShuffleAxis_Shift));
   fprintf(f, "    \"rock_shuffle\": %u,\n",
           (uint8)((canon[29] & kRockShuffleAxis_Mask) >> kRockShuffleAxis_Shift));
+  // add-rando-shopsanity — shares canon[29] with the terrain axes and was
+  // missing from this echo. It matters now that cave-entrance shuffle forces
+  // the axis off: without the field a player has only canonical_hex to tell
+  // whether their shopsanity request survived. canon[] is post-normalization,
+  // so this is already the EFFECTIVE value.
+  fprintf(f, "    \"shopsanity\": %s,\n",
+          (canon[29] & kShopsanityAxis_Enabled) ? "true" : "false");
   KeyRingSelection key_rings;
   bool key_rings_selection_valid =
       KeyRings_Resolve(s->settings, s->seed_u64, &key_rings);

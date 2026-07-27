@@ -310,6 +310,29 @@ static void apply_derived_rules(RandoSettings *s) {
   if (Settings_PotShuffleForcedOff(s)) {
     s->pot_shuffle = kPotShuffle_Off;
   }
+
+  // add-rando-shopsanity — shops do NOT compose with cave-entrance shuffle.
+  // Four shop interiors ARE in the cave pool (rooms 0x10F/0x110/0x112/0x11F =
+  // kCaveInteriors 23/20/21/32) and their location_ids lists omit the shop slot
+  // ids, so Entrance_ApplyRegionOverrides never rebinds them: a shop slot would
+  // be evaluated from its VANILLA overworld region while the runtime reaches
+  // that interior through the shuffled door. Adding the ids to those lists does
+  // NOT fix it (the ids do fit under kEntranceRegionOverrideMax, unlike the
+  // cave/house pot ids) — a shuffled destination interior is reached through the
+  // door rows of a SINGLE source interior, so room 0x10F can serve only one of
+  // its four shops and room 0x112 only one of its two, however they are keyed.
+  // Rebinding regions for slots the runtime can never hand over would just trade
+  // an unsound region for an unreachable location. ALTTPR avoids this by giving
+  // each shop its own region/entrance and re-deriving the door byte per seed;
+  // matching that would mean splitting those two interiors into 4 and 2 pool
+  // entries (the registry already allows interiors to share a room), which moves
+  // every cave-shuffle permutation — deliberately out of scope here.
+  // Normalize the axis off so the settings_hash equals the actually-generated
+  // (shop-less) seed; placement, runtime and the spoiler all read s->shopsanity
+  // AFTER this normalization, so hash, placement, runtime and spoiler agree.
+  if (Settings_ShopsanityForcedOff(s)) {
+    s->shopsanity = 0;
+  }
   s->enemy_drop_checks = Settings_EffectiveEnemyDropChecks(s);
   // add-enemy-souls — the enemies tier degrades to Bosses under door shuffle
   // (species-blind oracle + vanilla-graph soul requirements; see
@@ -340,6 +363,21 @@ bool Settings_EffectiveShuffleCaveEntrances(const RandoSettings *s) {
 
 bool Settings_PotShuffleForcedOff(const RandoSettings *s) {
   return s != NULL && Settings_EffectiveShuffleCaveEntrances(s);
+}
+
+bool Settings_ShopsanityForcedOff(const RandoSettings *s) {
+  return s != NULL && Settings_EffectiveShuffleCaveEntrances(s);
+}
+
+// True when the 27 regular shop slots are live fill locations. The placer
+// consumes RAW (non-normalized) settings — Settings_CanonicalSerialize runs
+// apply_derived_rules only on a private copy — so every shopsanity consumer
+// MUST re-derive "forced off" itself rather than trust a normalized
+// s->shopsanity, exactly as Settings_PotKeysActive does for pots. Single source
+// of truth for the placer, the spoiler and the runtime gate, so they can't
+// drift apart.
+bool Settings_ShopsanityActive(const RandoSettings *s) {
+  return s != NULL && s->shopsanity != 0 && !Settings_ShopsanityForcedOff(s);
 }
 
 uint8 Settings_DoorPotTier(const RandoSettings *s) {

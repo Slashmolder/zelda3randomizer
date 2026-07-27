@@ -1285,6 +1285,103 @@ static void MaybeRunShopProbeAndExit(int argc, char **argv, const char *config_f
   exit(0);
 }
 
+// --rando-shop-doorwalk[=<sidecar_path>] — shopsanity reachability audit.
+//
+// Walks every real overworld door row exactly the way Overworld_UseEntrance
+// does (which_entrance = kOverworld_Entrance_Id[lx], then the interior room =
+// kEntranceData_rooms[which_entrance]) and asks the LIVE resolver what that
+// door yields. This is deliberately independent of --rando-shop-probe, which
+// feeds each shop table row its own door id back and therefore validates the
+// table only against itself — it cannot see a door column holding values no
+// real door ever produces. Reports the shop locations no door reaches and the
+// ones several doors collide on. Read-only.
+static void MaybeRunShopDoorWalkAndExit(int argc, char **argv, const char *config_file) {
+  bool found = false;
+  bool allow_missing_assets = false;
+  for (int i = 0; i < argc; ++i) {
+    if (strcmp(argv[i], "--rando-shop-doorwalk") == 0) found = true;
+    if (strcmp(argv[i], "--allow-missing-assets") == 0) allow_missing_assets = true;
+  }
+  if (!found) return;
+
+  ParseConfigFile(config_file);
+  if (!LoadAssetsIfPresent()) {
+    // The walk IS the vanilla entrance tables; without them there is nothing to
+    // check. Assetless profiles pass --allow-missing-assets to skip rather than
+    // fail, the same convention the other artifact-dependent guards use.
+    fprintf(stderr, "--rando-shop-doorwalk: %s (needs zelda3_assets.dat — the "
+                    "walk is driven by the vanilla entrance tables)\n",
+            allow_missing_assets ? "SKIPPED" : "FAILED");
+    exit(allow_missing_assets ? 0 : 1);
+  }
+
+  // A shop slot may legitimately answer to SEVERAL doors when they all load the
+  // same interior (room 0x11F has two). What must never happen is one slot
+  // answering from two DIFFERENT rooms — that is room-key aliasing, and it is a
+  // live hazard here because interior rooms are 0x1xx while plenty of ordinary
+  // rooms share their low byte. So the invariant is: every slot is reached, and
+  // every slot is reached from exactly one room.
+  enum { kShopLocFirst = 237, kShopLocCount = 27 };
+  int hits[kShopLocCount];
+  uint16 room_of[kShopLocCount];
+  int rooms_seen[kShopLocCount];
+  memset(hits, 0, sizeof(hits));
+  memset(rooms_seen, 0, sizeof(rooms_seen));
+  for (int i = 0; i < kShopLocCount; i++) room_of[i] = 0xFFFFu;
+
+  uint32 ndoors = kOverworld_Entrance_Id_SIZE;
+  uint32 nrooms = kEntranceData_rooms_SIZE / 2u;
+  for (uint32 lx = 0; lx < ndoors; lx++) {
+    uint8 ent = kOverworld_Entrance_Id[lx];
+    if (ent >= nrooms) continue;
+    uint16 room = kEntranceData_rooms[ent];
+    for (uint8 pos = 1; pos <= 3; pos++) {
+      // The door id the entry hook would have captured for this row: ALTTPR's
+      // PreviousOverworldDoor == row index + 1. Identity only — the liveness
+      // gating in Rando_ShopSlotCheckInfo would need a generated slot on disk.
+      uint16 loc = Rando_ShopSlotLocForDoor(room, (uint8)(lx + 1), pos);
+      if (loc < kShopLocFirst || loc >= kShopLocFirst + kShopLocCount)
+        continue;
+      if (pos == 1) {
+        fprintf(stderr, "[DOORWALK] door lx=0x%02X (ALTTPR door 0x%02X) "
+                        "which_entrance=0x%02X room=0x%03X -> shop loc %u\n",
+                lx, lx + 1, ent, room, loc);
+      }
+      int s = loc - kShopLocFirst;
+      hits[s]++;
+      if (room_of[s] == 0xFFFFu) {
+        room_of[s] = room;
+        rooms_seen[s] = 1;
+      } else if (room_of[s] != room) {
+        rooms_seen[s]++;
+        fprintf(stderr, "[DOORWALK]   ALIAS: loc %u also reached from room 0x%03X "
+                        "(first saw room 0x%03X)\n",
+                loc, room, room_of[s]);
+      }
+    }
+  }
+
+  int unreachable = 0, aliased = 0;
+  fprintf(stderr, "[DOORWALK] --- shop locations no real door reaches ---\n");
+  for (int i = 0; i < kShopLocCount; i++) {
+    if (hits[i] == 0) {
+      unreachable++;
+      fprintf(stderr, "[DOORWALK]   loc %u UNREACHABLE\n", kShopLocFirst + i);
+    }
+  }
+  fprintf(stderr, "[DOORWALK] --- shop locations reached from several rooms ---\n");
+  for (int i = 0; i < kShopLocCount; i++) {
+    if (rooms_seen[i] > 1) {
+      aliased++;
+      fprintf(stderr, "[DOORWALK]   loc %u reached from %d distinct rooms\n",
+              kShopLocFirst + i, rooms_seen[i]);
+    }
+  }
+  fprintf(stderr, "[DOORWALK] summary: %d/%d unreachable, %d room-aliased\n",
+          unreachable, kShopLocCount, aliased);
+  exit(unreachable == 0 && aliased == 0 ? 0 : 3);
+}
+
 // Comparator for qsort over uint64 samples — ascending order.
 static int bench_cmp_u64(const void *a, const void *b) {
   uint64_t lhs = *(const uint64_t *)a;
@@ -1667,6 +1764,10 @@ int main(int argc, char** argv) {
         strcmp(argv[i], "--generate-seed") == 0 ||
         strcmp(argv[i], "--generate-slot") == 0 ||
         strcmp(argv[i], "--print-assets-hash") == 0 ||
+        strcmp(argv[i], "--rando-shop-probe") == 0 ||
+        strncmp(argv[i], "--rando-shop-probe=", 19) == 0 ||
+        strcmp(argv[i], "--rando-shop-doorwalk") == 0 ||
+        strncmp(argv[i], "--rando-shop-doorwalk=", 22) == 0 ||
         strncmp(argv[i], "--vanilla-ram-check=", 20) == 0) {
       g_headless_mode = 1;
       break;
@@ -1739,6 +1840,7 @@ int main(int argc, char** argv) {
   MaybeRunGenerateSlotAndExit(argc, argv, config_file);
   MaybeRunRevealSpoilerAndExit(argc, argv, config_file);
   MaybeRunShopProbeAndExit(argc, argv, config_file);
+  MaybeRunShopDoorWalkAndExit(argc, argv, config_file);
 
   // Dev/verification: decode the overworld map (asset 66/67/68/93) to PPM files
   // and exit. Used to visually verify the Map Tracker background decoder.

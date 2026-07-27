@@ -414,7 +414,9 @@ static inline bool Rando_LocationWorldStateActive(const RandoLocationDef *loc,
   if (wsf == 0) return true;
   if (settings->world_state < 32 &&
       (wsf & (1u << settings->world_state)) != 0) return true;
-  return loc->type == LOCTYPE_Shop && settings->shopsanity != 0;
+  // Settings_ShopsanityActive, not the raw field: the placer consumes
+  // un-normalized settings, and cave-entrance shuffle forces the axis off.
+  return loc->type == LOCTYPE_Shop && Settings_ShopsanityActive(settings);
 }
 
 extern const RandoLocationDef kRandoLocations[];

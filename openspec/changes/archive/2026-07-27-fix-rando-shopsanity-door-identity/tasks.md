@@ -1,0 +1,73 @@
+# Tasks
+
+## 1. Guard first (red before green)
+
+- [x] 1.1 Add `--rando-shop-doorwalk`: walk every `kOverworld_Entrance_Id` row
+      through the engine's `lx -> which_entrance -> room` chain and ask the live
+      `Rando_ShopSlotCheckInfo` what it yields; fail non-zero on any unreachable
+      or multiply-reached shop slot.
+- [x] 1.2 Register the shop probe + door-walk flags as headless so a setup
+      failure cannot pop a modal dialog on the developer's desktop.
+- [x] 1.3 Confirm the guard FAILS on unmodified main (recorded: 15/27
+      unreachable, 6 collided).
+
+## 2. Shop identity keyed by the overworld door
+
+- [x] 2.1 Add `kRam_RandoOverworldDoor` (0x66d) to the `features.h` reserved
+      compat block and document it in the layout comment.
+- [x] 2.2 Capture the entered door id (`lx + 1`) at the overworld entry hook in
+      `src/overworld.c`, alongside the existing take-any capture; clear it on
+      the fall-hole / non-door paths that already clear the take-any id.
+- [x] 2.3 Rewrite `shop_lookup` to take the door id; mark rooms `0x0FF`,
+      `0x110`, `0x11F` `room_only`; keep `0x10F` and `0x112` door-keyed.
+- [x] 2.4 Update the shop call sites in `src/sprite_main.c` to pass the captured
+      door id instead of `which_entrance`.
+- [x] 2.5 Correct the provenance comment above `kRandoShopSlots` — record that
+      the door column is ALTTPR's `PreviousOverworldDoor` (`lx + 1`), NOT the
+      entrance id, and cite `doorframefixes.asm`.
+- [x] 2.6 Re-run the door-walk: expect 0 unreachable, 0 collided.
+
+## 3. Normalize the axis off under cave-entrance shuffle
+
+- [x] 3.1 Add `Settings_ShopsanityForcedOff` to `rando_settings.{c,h}`,
+      parallel to `Settings_PotShuffleForcedOff`.
+- [x] 3.2 Clear `s->shopsanity` in `apply_derived_rules` when it fires, with a
+      comment recording why region-rebinding alone cannot fix the composition.
+- [x] 3.3 Verify the repro seed
+      (`shopsanity=True,shuffle_cave_entrances=True`) now generates with no
+      shop-class placements and serializes the axis off.
+
+## 4. Validation
+
+- [x] 4.1 `--rando-selftest` green.
+- [x] 4.2 MSVC build clean; WSL `gcc -Werror` build clean.
+- [x] 4.3 Bump `kGeneratorVersion`; regenerate the corpus and confirm the
+      movement is SCOPED — shopsanity seeds move, `shopsanity=false` seeds stay
+      byte-identical.
+- [x] 4.4 CI guards: `check_audit_guard.py --strict`, `check_determinism.py`,
+      `check_codegen_wiring.py`, `check_grant_consumers.py`.
+- [x] 4.5 Independent fresh-eyes review before declaring done. Found 5 new
+      issues beyond the self-caught init-order guard; all fixed:
+      door-walk not wired into any validation profile (it needed a sidecar —
+      made sidecar-free via a gate-free resolver and wired into
+      `run_rando_validation.py`), the shop debug dump still printing the
+      superseded key, the PC settings UI missing the forced-off coupling, the
+      spoiler settings echo missing `shopsanity`, and save-and-quit not
+      retiring the door byte.
+
+## 5. Docs & spec
+
+- [x] 5.1 Update `docs/randomizer.md` for the new composition rule.
+- [x] 5.2 Reconcile the spec delta against as-built source (room-only scope
+      corrected to the one door-less shop after self-review).
+- [ ] 5.3 Archive the change on the branch, then squash-merge to main
+      (deliberately left for the owner — gated on the playtest below).
+
+## 6. Owner playtest (cannot be automated)
+
+- [ ] 6.1 Enter each of the four room-`0x10F` Dark World shops and confirm each
+      offers its own three slots.
+- [ ] 6.2 Enter both room-`0x112` shops (DW Death Mountain, LW Lake Hylia) and
+      confirm they differ.
+- [ ] 6.3 Save-and-quit / snapshot-replay inside a shop and confirm the slots
+      still resolve (the persisted door id).

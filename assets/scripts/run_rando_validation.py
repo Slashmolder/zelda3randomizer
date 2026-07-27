@@ -342,6 +342,12 @@ def runtime_common(runner: Runner, binary: Path, object_dir: Path,
     runner.run("door self-test", [str(binary), "--door-selftest"], env=env)
     runner.run("initialization + snapshot WRAM ownership",
                script("check_init_order.py", "--binary", str(binary)))
+    # Shop identity is keyed on the overworld door; this walks every real door
+    # row through the resolver and fails on an unreachable or room-aliased shop
+    # slot. Asset-driven, so it self-skips on an assetless checkout.
+    runner.run("shopsanity door-identity walk",
+               [str(binary), "--rando-shop-doorwalk", "--allow-missing-assets"],
+               env=env)
     corpus_args = ["--binary", str(binary), "--timings-json", str(corpus_timings)]
     if not corpus_local:
         corpus_args += ["--skip-pot-shuffle", "--skip-enemy-drop-checks",

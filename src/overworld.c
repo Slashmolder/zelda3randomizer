@@ -3660,6 +3660,8 @@ void Overworld_GetPitDestination() {  // 9bb860
     which_entrance = 0x7B;
     byte_7E010F = 0;
     g_rando_takeany_door_id = 0;
+    if (enhanced_features1 & kFeatures1_RandomizerActive)
+      g_ram[kRam_RandoOverworldDoor] = 0;  // a pit is not an overworld door
     g_rando_entrance_exit_room = 0;
     g_rando_entrance_force_cached = 0;
     Rando_RecordEnteredFallhole();
@@ -3693,6 +3695,8 @@ void Overworld_GetPitDestination() {  // 9bb860
       which_entrance = 130;
       byte_7E010F = 0;
       g_rando_takeany_door_id = 0;  // fall-hole is never a take-any (Slice 3b)
+      if (enhanced_features1 & kFeatures1_RandomizerActive)
+        g_ram[kRam_RandoOverworldDoor] = 0;  // nor an overworld door (shop key)
       g_rando_entrance_exit_room = 0;  // Phase C — clear stale dungeon-coupling room
       g_rando_entrance_force_cached = 0;
       return;
@@ -3701,6 +3705,8 @@ void Overworld_GetPitDestination() {  // 9bb860
   which_entrance = kFallHole_Entrances[i];
   byte_7E010F = 0;
   g_rando_takeany_door_id = 0;  // fall-hole is never a take-any (Slice 3b)
+  if (enhanced_features1 & kFeatures1_RandomizerActive)
+    g_ram[kRam_RandoOverworldDoor] = 0;  // nor an overworld door (shop key)
   // Phase C Stage 2 — a fall-hole is not a shuffled dungeon DOOR, so any pending
   // dungeon-coupling source room from a prior door entry must not leak into this
   // interior's exit. (Stage 3: also clear the cross cave→dungeon force-cached flag,
@@ -3800,6 +3806,16 @@ after:
     // host room. See src/rando/rando.c / add-rando-retro-takeany/design.md §D1.
     g_rando_takeany_door_id = 0;
     if (enhanced_features1 & kFeatures1_RandomizerActive) {
+      // add-rando-shopsanity — record the entered door as ALTTPR's
+      // PreviousOverworldDoor (row index + 1; z3randomizer doorframefixes.asm
+      // StoreLastOverworldDoorID). This is the shop identity key:
+      // `which_entrance` cannot serve, because four Dark World shops share
+      // entrance id 0x60 (room 0x10F) and two share 0x58 (room 0x112). Stored
+      // in g_ram so a snapshot replay-restore — which restores g_ram but not C
+      // statics — keeps the shop the player is standing in resolvable. Gated on
+      // the rando bit because this byte is inside the rando-owned WRAM range
+      // (kRam_RandoOwned*), which must stay untouched in vanilla snapshots.
+      g_ram[kRam_RandoOverworldDoor] = (uint8)(lx + 1);
       uint8 host = Rando_TakeAnyHostByDoorIndex((uint8)lx);
       if (host) {
         g_rando_takeany_door_id = (uint8)(lx + 1);

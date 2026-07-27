@@ -1417,9 +1417,13 @@ static void Panel_Shuffles() {
                   "randomizer checks. junk = filler only; all = anything.");
     }
 
-    // add-rando-shopsanity — shop slots as one-time purchase checks. No
-    // disable-coupling: composes with every other axis (design.md D8).
+    // add-rando-shopsanity — shop slots as one-time purchase checks. Disabled
+    // whenever generation forces them off (Settings_ShopsanityForcedOff:
+    // cave-entrance shuffle, which reaches four shop interiors through doors
+    // their slots are not bound to). Same shape as the pot block above.
     {
+      bool shops_off = Settings_ShopsanityForcedOff(s);
+      ImGui::BeginDisabled(shops_off);
       bool shops = s->shopsanity != 0;
       if (ImGui::Checkbox("Shopsanity", &shops)) {
         s->shopsanity = shops ? 1 : 0;
@@ -1428,6 +1432,9 @@ static void Panel_Shuffles() {
       HelpTooltip("Shop slots sell one-time checks at seed-random prices, in "
                   "every world state. A purchased slot restocks its normal "
                   "item at its normal price.");
+      ImGui::EndDisabled();
+      if (shops_off)
+        ImGui::TextDisabled("Shopsanity is unavailable while Cave entrance shuffle is on.");
     }
 
     // add-rando-bonk-sanity — dash-bonk bee hives / apple trees as checks.

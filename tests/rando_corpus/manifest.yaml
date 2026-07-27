@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 157  # bump_rando_corpus.py --apply
+generator_version: 158  # bump_rando_corpus.py --apply
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -1348,7 +1348,10 @@ entries:
   # --- add-rando-shopsanity — the 27 regular shop slots as open fill
   # locations (seed-derived prices are spoiler/runtime-only and do not enter
   # these digests). One row per world state, plus the cave-entrance and
-  # completionist (locations-tier) compositions.
+  # completionist (locations-tier) compositions. The cave-entrance row pins the
+  # NORMALIZATION: four shop interiors are cave-pool members whose location_ids
+  # omit the shop slots, so the axis is forced off there and this row must equal
+  # the same seed with shopsanity absent.
   - settings: { mode.state: open, goal: fast_ganon, shopsanity: true }
     seed: "0x53484F5000000001"
     label: "shopsanity-open-fast-ganon"
@@ -1371,9 +1374,9 @@ entries:
     expected_sphere_digest: "8a8c683dd92f2ad143e6167ab0a99ed86d39ab060e68c4427fd408ec89eec9f2"
   - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, shopsanity: true }
     seed: "0x53484F5000000005"
-    label: "shopsanity-entrance-caves-composes"
-    expected_digest: "647011de617bb5c85c93cf83375826fe7b648c8936dce1eed1a11c8b66a35959"
-    expected_sphere_digest: "e9e2492ad370a047045563a98468c80b2115ec274868fdffad3a9ab7ed6e3ebf"
+    label: "shopsanity-entrance-caves-forced-off"
+    expected_digest: "b07d612ab33ea757159da221c95de32ad96ef34f296831270a8088a01c97eed2"
+    expected_sphere_digest: "a6fe0f54535b4216abba2040d7ab9edf4a14bea52d887e6b40d56d270c1baa21"
   - settings: { mode.state: open, goal: fast_ganon, shopsanity: true, traps: insanity }
     seed: "0x53484F5000000007"
     label: "shopsanity-traps-shops-excluded"

@@ -1850,55 +1850,87 @@ RandoGrantResult Rando_ChestGrant(uint16 dungeon_room, uint8 chest_ordinal,
 // `which_entrance` holds while the player stands in the cave.
 //
 // NOTE: low-byte room is ambiguous (0x0F backs four DW shops; 0x12 backs DW
-// Death-Mountain + LW Lake-Hylia), so for most shops the door (== vanilla
-// `which_entrance` / ALTTPR `PreviousOverworldDoor`) disambiguates.
+// Death-Mountain + LW Lake-Hylia), so for those the DOOR disambiguates.
 //
-// EXCEPTION — room-only-match shops: ALTTPR's shop identifier (z3randomizer
-// `shopkeeper.asm`, ShopTable match loop) checks `ShopType & 0x0040`; when set,
-// it matches on RoomIndex ALONE and SKIPS the door compare. That bit comes from
-// the Shop's `config & 0xFC` (PHP `Shop::getBytes`): the Light World Death
-// Mountain Shop is constructed with `config = 0x43` (= 0x03 | 0x40) per
+// The door column is ALTTPR's `PreviousOverworldDoor`, which
+// `z3randomizer/doorframefixes.asm` (`StoreLastOverworldDoorID`:
+// `TXA : INC : STA.l PreviousOverworldDoor`) defines as the overworld door ROW
+// INDEX + 1. It is NOT the entrance id — that same routine loads the entrance
+// id separately from `$9BBB73,X` into `EntranceIndex`. The two quantities
+// coincide for only 3 of the 9 shops, so keying this table on the engine's
+// `which_entrance` cannot work: the four room-0x10F doors all carry entrance id
+// 0x60 and the two room-0x112 doors both carry 0x58. (That mistake shipped
+// once; `--rando-shop-doorwalk` is the guard that now pins it down. It measured
+// 15 of the 27 slots unreachable and 6 reached from several doors at once.)
+// The live door id is captured at the overworld entry hook into
+// g_ram[kRam_RandoOverworldDoor].
+//
+// ROOM-ONLY shops: ALTTPR's shop identifier (z3randomizer `shopkeeper.asm`,
+// ShopTable match loop) checks `ShopType & 0x0040`; when set, it matches on
+// RoomIndex ALONE and SKIPS the door compare. That bit comes from the Shop's
+// `config & 0xFC` (PHP `Shop::getBytes`): the Light World Death Mountain Shop
+// is constructed with `config = 0x43` (= 0x03 | 0x40) per
 // `../alttp_vt_randomizer/app/Region/Standard/LightWorld/DeathMountain/East.php`,
 // so its `door_id = 0x00` is deliberately ignored. Keying that shop on the door
 // would silently fail (0x00 also = the "no entrance" reset value), so it is
-// flagged room_only and matched on room (0xFF) alone — exactly as the ROM does.
-typedef struct { uint8 room; uint8 door; uint16 loc_base; bool room_only; } RandoShopSlot;
+// flagged room_only and matched on room alone — exactly as the ROM does.
+//
+// Every OTHER shop stays door-keyed even where its room hosts only one shop.
+// Room-only matching there would be a superset of upstream: room 0x11F is
+// loaded by TWO overworld doors (entrance ids 0x46 and 0x6B) and ALTTPR
+// declares a shop for the first only, so the second must keep vanilla shop
+// behavior. It would also make the slot obtainable from a door the logic does
+// not bind it to, putting runtime reachability ahead of the modeled region.
+typedef struct { uint16 room; uint8 door; uint16 loc_base; bool room_only; } RandoShopSlot;
 static const RandoShopSlot kRandoShopSlots[] = {
-  // room  door   base  room_only   shop (LOC ids base..base+2)
-  { 0x0F, 0x6F, 237, false },  // Dark World Potion Shop          (237/238/239)
-  { 0x10, 0x75, 240, false },  // Dark World Forest Shop          (240/241/242)
-  { 0x0F, 0x57, 243, false },  // Dark World Lumberjack Hut       (243/244/245)
-  { 0x0F, 0x60, 246, false },  // Dark World Village of Outcasts  (246/247/248)
-  { 0x0F, 0x74, 249, false },  // Dark World Lake Hylia Shop      (249/250/251)
-  { 0x12, 0x6E, 252, false },  // Dark World Death Mountain Shop  (252/253/254)
-  { 0xFF, 0x00, 255, true  },  // Light World Death Mountain Shop (255/256/257) — config 0x43 -> room-only
-  { 0x1F, 0x46, 258, false },  // Light World Kakariko Shop       (258/259/260)
-  { 0x12, 0x58, 261, false },  // Light World Lake Hylia Shop     (261/262/263)
+  // room   door   base  room_only   shop (LOC ids base..base+2)
+  { 0x10F, 0x6F, 237, false },  // Dark World Potion Shop          (237/238/239)
+  { 0x110, 0x75, 240, false },  // Dark World Forest Shop          (240/241/242)
+  { 0x10F, 0x57, 243, false },  // Dark World Lumberjack Hut       (243/244/245)
+  { 0x10F, 0x60, 246, false },  // Dark World Village of Outcasts  (246/247/248)
+  { 0x10F, 0x74, 249, false },  // Dark World Lake Hylia Shop      (249/250/251)
+  { 0x112, 0x6E, 252, false },  // Dark World Death Mountain Shop  (252/253/254)
+  { 0x0FF, 0x00, 255, true  },  // Light World Death Mountain Shop (255/256/257) — config 0x43 -> room-only
+  { 0x11F, 0x46, 258, false },  // Light World Kakariko Shop       (258/259/260)
+  { 0x112, 0x58, 261, false },  // Light World Lake Hylia Shop     (261/262/263)
 };
 
-static uint16 shop_lookup(uint8 room, uint8 entrance, uint8 pos) {
+// `door` is ALTTPR's PreviousOverworldDoor (overworld door row index + 1) — see
+// the table comment above; callers read it from g_ram[kRam_RandoOverworldDoor].
+static uint16 shop_lookup(uint16 room, uint8 door, uint8 pos) {
   if (pos > 2) return 0xFFFFu;  // shops have exactly 3 slots
   for (uint32 i = 0; i < sizeof(kRandoShopSlots) / sizeof(kRandoShopSlots[0]); i++) {
     if (kRandoShopSlots[i].room != room) continue;  // room must always match
     // Room-only shops match on the room alone (ShopType & 0x40); others also
-    // require the door (entrance) to match, since their room is shared.
-    if (kRandoShopSlots[i].room_only || kRandoShopSlots[i].door == entrance) {
+    // require the door to match, since their room is shared by several shops.
+    if (kRandoShopSlots[i].room_only || kRandoShopSlots[i].door == door) {
       return (uint16)(kRandoShopSlots[i].loc_base + pos);
     }
   }
   return 0xFFFFu;  // not a known shop slot — vanilla item grants
 }
 
+// add-rando-shopsanity — the shop table resolution ALONE, with none of the
+// active-slot / placement / already-checked gating Rando_ShopSlotCheckInfo
+// applies. Exists so the --rando-shop-doorwalk audit can ask "which shop does
+// this (room, door) name?" without a generated slot on disk, which is what lets
+// it run as an ordinary validation-profile step. Returns 0xFFFF for a non-shop
+// tuple. Never use this to decide a grant — it answers identity, not liveness.
+uint16 Rando_ShopSlotLocForDoor(uint16 room, uint8 door, uint8 pos_plus1) {
+  if (pos_plus1 < 1 || pos_plus1 > 3) return 0xFFFFu;
+  return shop_lookup(room, door, (uint8)(pos_plus1 - 1));
+}
+
 // add-rando-shopsanity — forward decl (implementation lives below with the
 // other active-slot readers; the dispatch is defined before those globals).
 static bool rando_shopsanity_active(void);
 
-RandoGrantResult Rando_ShopGrant(uint8 room, uint8 entrance, uint8 pos,
+RandoGrantResult Rando_ShopGrant(uint16 room, uint8 door, uint8 pos,
                                  uint8 vanilla_lttp_code,
                                  RandoGrantPresentation presentation,
                                  uint8 receipt_method,
                                  uint8 chest_position) {
-  uint16 loc_id = shop_lookup(room, entrance, pos);
+  uint16 loc_id = shop_lookup(room, door, pos);
   // Plain Retro keeps its repeatable vanilla-identity shop economy. Under
   // shopsanity, a checked slot also becomes a vanilla restock purchase.
   if (loc_id == 0xFFFFu || !rando_shopsanity_active() ||
@@ -1909,8 +1941,8 @@ RandoGrantResult Rando_ShopGrant(uint8 room, uint8 entrance, uint8 pos,
 }
 
 RandoGrantResult Rando_CommitRepeatableShopIdentity(
-    uint8 room, uint8 entrance, uint8 pos, uint8 vanilla_lttp_code) {
-  uint16 loc_id = shop_lookup(room, entrance, pos);
+    uint16 room, uint8 door, uint8 pos, uint8 vanilla_lttp_code) {
+  uint16 loc_id = shop_lookup(room, door, pos);
   if (loc_id == 0xFFFFu)
     return kRandoGrantResult_NotActive;
   uint16 placed;
@@ -4879,7 +4911,7 @@ static uint64 rando_trap_decoy_seed(void) {
 static bool rando_shopsanity_active(void) {
   return (enhanced_features1 & kFeatures1_RandomizerActive) &&
          g_rando_active_settings_valid &&
-         g_rando_active_settings.shopsanity != 0;
+         Settings_ShopsanityActive(&g_rando_active_settings);
 }
 
 // add-rando-bonk-sanity — resolve a DASH wake of a placed bonk sprite to its
@@ -4904,7 +4936,7 @@ uint16 Rando_BonkCheckLocForWake(uint8 area, uint16 block, uint8 sprite_type_id)
   return 0xFFFFu;
 }
 
-bool Rando_ShopSlotCheckInfo(uint8 room, uint8 entrance, uint8 pos_plus1,
+bool Rando_ShopSlotCheckInfo(uint16 room, uint8 door, uint8 pos_plus1,
                              uint16 *out_loc, uint16 *out_item,
                              uint16 *out_price) {
   // pos_plus1 is ShopKeeper_SpawnShopItem's stored slot (pos+1, 0 = unset).
@@ -4913,7 +4945,7 @@ bool Rando_ShopSlotCheckInfo(uint8 room, uint8 entrance, uint8 pos_plus1,
   // bound (belt and braces; this gate also filters pos_plus1 == 0 "unset").
   if (pos_plus1 < 1 || pos_plus1 > 3) return false;
   if (!rando_shopsanity_active()) return false;
-  uint16 loc = shop_lookup(room, entrance, (uint8)(pos_plus1 - 1));
+  uint16 loc = shop_lookup(room, door, (uint8)(pos_plus1 - 1));
   if (loc == 0xFFFFu) return false;
   if (Rando_IsLocationChecked(loc)) return false;  // bought → vanilla restock
   uint16 placed = Placement_Lookup(loc, 0xFFFFu);
@@ -6036,6 +6068,12 @@ void Rando_DeactivateSlot(void) {
   // shop after a slot switch. (Within a slot it is set/cleared by
   // Overworld_UseEntrance; clearing it here is the slot-boundary backstop.)
   g_rando_takeany_door_id = 0;
+  // add-rando-shopsanity — same slot-boundary reasoning for the persisted
+  // overworld-door shop key. It lives in g_ram (so a snapshot replay-restore
+  // keeps the shop the player is standing in resolvable), which means it does
+  // NOT reset with the C statics above; without this a door id captured in the
+  // previous slot could mis-key a shop in the next one.
+  g_ram[kRam_RandoOverworldDoor] = 0;
   g_rando_active_world_state = kWorldState_Open;
   g_rando_show_item_tracker = false;
   g_rando_show_location_tracker = false;
@@ -10369,20 +10407,20 @@ static void Rando_GrantTransactionSelfCheck(void) {
     g_rando_active_settings_valid = true;
     g_rando_active_settings.shopsanity = 0;
     GRANT_TX_CHECK(Rando_ShopGrant(
-                         0x0f, 0x6f, 2, 0x28,
+                         0x10f, 0x6f, 2, 0x28,
                          kRandoGrantPresentation_None, 0, 0) ==
                          kRandoGrantResult_NotActive,
                      "plain Retro shop entered shopsanity transaction", 239);
     g_rando_active_settings.shopsanity = 1;
     link_bomb_filler = 0;
     GRANT_TX_CHECK(Rando_ShopGrant(
-                         0x0f, 0x6f, 2, 0x28,
+                         0x10f, 0x6f, 2, 0x28,
                          kRandoGrantPresentation_None, 0, 0) ==
                          kRandoGrantResult_Accepted &&
                        Rando_IsLocationChecked(239) && link_bomb_filler != 0,
                      "shopsanity transaction failed", 239);
     GRANT_TX_CHECK(Rando_ShopGrant(
-                         0x0f, 0x6f, 2, 0x28,
+                         0x10f, 0x6f, 2, 0x28,
                          kRandoGrantPresentation_None, 0, 0) ==
                          kRandoGrantResult_NotActive,
                      "checked shopsanity slot did not become vanilla restock", 239);
@@ -10392,19 +10430,19 @@ static void Rando_GrantTransactionSelfCheck(void) {
     link_bomb_filler = 0;
     g_last_dispatched_item_id = 0xffffu;
     GRANT_TX_CHECK(Rando_CommitRepeatableShopIdentity(
-                         0x0f, 0x6f, 2, 0x28) ==
+                         0x10f, 0x6f, 2, 0x28) ==
                          kRandoGrantResult_Accepted &&
                        Rando_IsLocationChecked(239) && link_bomb_filler == 0 &&
                        g_last_dispatched_item_id == ITEM_Bombs10 &&
                        Rando_CommitRepeatableShopIdentity(
-                         0x0f, 0x6f, 2, 0x28) ==
+                         0x10f, 0x6f, 2, 0x28) ==
                          kRandoGrantResult_Accepted &&
                        link_bomb_filler == 0,
                      "repeatable shop identity applied or failed", 239);
     memset(g_rando_checked_bitmap, 0, sizeof(g_rando_checked_bitmap));
     event_entries[2].item_id = ITEM_Bombs1;
     GRANT_TX_CHECK(Rando_CommitRepeatableShopIdentity(
-                         0x0f, 0x6f, 2, 0x27) ==
+                         0x10f, 0x6f, 2, 0x27) ==
                          kRandoGrantResult_Invalid &&
                        !Rando_IsLocationChecked(239),
                      "same-code nonidentity shop placement was accepted", 239);
@@ -10470,7 +10508,7 @@ static void Rando_GrantTransactionSelfCheck(void) {
     memset(g_rando_checked_bitmap, 0, sizeof(g_rando_checked_bitmap));
     link_item_bombs = 50;
     GRANT_TX_CHECK(Rando_CommitRepeatableShopIdentity(
-                         0x0f, 0x6f, 2, 0x28) ==
+                         0x10f, 0x6f, 2, 0x28) ==
                          kRandoGrantResult_Accepted &&
                        Rando_IsLocationChecked(239),
                      "at-cap shop identity did not mark its row", 239);
@@ -10696,8 +10734,22 @@ void Rando_DumpShopCheckDebug(void) {
             g_rando_effective_crystals_ganon, g_rando_effective_crystals_tower,
             g_rando_active_settings.world_state,
             rando_shopsanity_active() ? 1 : 0);
-    fprintf(f, "[SHOPDBG] cur_room=%02X which_entrance=%02X\n",
-            BYTE(dungeon_room_index), which_entrance);
+    // Print the quantities that ACTUALLY resolve a shop: the full 16-bit room
+    // and the captured overworld door. which_entrance is kept only because it
+    // is what a reader coming from the vanilla code expects to see — it is NOT
+    // the key (four shops share entrance id 0x60, two share 0x58), and the low
+    // room byte alone cannot tell 0x00F from 0x10F.
+    fprintf(f, "[SHOPDBG] cur_room=%03X door=%02X (which_entrance=%02X, not the key)\n",
+            dungeon_room_index, g_ram[kRam_RandoOverworldDoor], which_entrance);
+    {
+      uint16 live = Rando_ShopSlotLocForDoor(dungeon_room_index,
+                                             g_ram[kRam_RandoOverworldDoor], 1);
+      if (live == 0xFFFFu)
+        fprintf(f, "[SHOPDBG] current (room,door) names no shop\n");
+      else
+        fprintf(f, "[SHOPDBG] current (room,door) names shop slots %u-%u\n",
+                live, live + 2);
+    }
     for (uint32 i = 0; i < sizeof(kRandoShopSlots) / sizeof(kRandoShopSlots[0]); i++) {
       for (uint8 pos = 0; pos < 3; pos++) {
         uint16 loc = (uint16)(kRandoShopSlots[i].loc_base + pos);
@@ -10711,7 +10763,7 @@ void Rando_DumpShopCheckDebug(void) {
                                           &ci_loc, &ci_item, &ci_price);
         uint8 gfx = 0, big = 0, fl = 0;
         int icon = ci ? Rando_GetShopCheckIcon(loc, &gfx, &big, &fl) : -1;
-        fprintf(f, "[SHOPDBG] loc=%u room=%02X door=%02X pos=%u placed=%d "
+        fprintf(f, "[SHOPDBG] loc=%u room=%03X door=%02X pos=%u placed=%d "
                    "checked=%d checkinfo=%d item=%d price=%u icon=%d gfx=%02X\n",
                 loc, kRandoShopSlots[i].room, kRandoShopSlots[i].door, pos,
                 placed == 0xFFFFu ? -1 : (int)placed,

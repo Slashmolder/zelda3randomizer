@@ -138,7 +138,7 @@ axis via `item_pool`.
 | `enemy_drop_checks` | `off`, `keys`, `dungeon`, `all` | `off` (experimental; `keys` turns vanilla forced enemy key drops into checks, `dungeon` also turns eligible ordinary dungeon enemies into checks, and `all` adds eligible overworld, GT-miniboss, finite scripted-spawn, and reviewed underworld enemy checks; active only when effective small keys are Wild/Retro or Dungeon; vanilla small keys force `off`; enemy shuffle degrades `dungeon`/`all` to `keys`; entrance shuffle degrades `all` to `dungeon`; see [Enemy drop checks](#enemy-drop-checks-experimental)) |
 | `dungeon_chains` | `true`, `false` | `false` (experimental; main dungeon doors route through dungeon chains ending in bosses; see [Dungeon chains](#dungeon-chains-experimental)) |
 | `grass_shuffle` | `off`, `junk`, `all` | `off` (experimental; turns overworld bushes and cuttable grass into checks — `junk` = filler only, `all` = anything including progression; see [Grass & rock shuffle](#grass--rock-shuffle-experimental)) |
-| `shopsanity` | `true`, `false` | `false` (experimental; the 27 regular shop slots become one-time purchase checks at seed-random prices, in every world state; a bought slot permanently restocks its vanilla item at its vanilla price; see [Shopsanity](#shopsanity-experimental)) |
+| `shopsanity` | `true`, `false` | `false` (experimental; the 27 regular shop slots become one-time purchase checks at seed-random prices, in every world state; a bought slot permanently restocks its vanilla item at its vanilla price; **normalized off under `shuffle_cave_entrances`**; see [Shopsanity](#shopsanity-experimental)) |
 | `bonk_shuffle` | `off`, `junk`, `all` | `off` (experimental; the stage-stable placed bonk trees — dormant bee hives and apple trees — become one-time checks; `junk` = filler only, `all` = anything; the first wake grants the check and suppresses that wake, later wakes swarm/drop apples as vanilla; both wake methods collect — a Pegasus Boots dash bonk or a Quake-medallion rumble (one Quake can collect several on-screen checks) — and placement logic matches: a bonk check is in logic with the Boots OR with Quake plus a sword — or Quake alone under swordless, whose runtime permits sword-free medallion casts; requires the local `bonk.gen.yaml` registry or bonk seeds refuse to generate/activate) |
 | `rock_shuffle` | `off`, `junk`, `all` | `off` (experimental; turns liftable rocks — Glove and Titan's Mitt — into checks; `junk` = filler only, `all` = anything; see [Grass & rock shuffle](#grass--rock-shuffle-experimental)) |
 | `instant_flute` | `true`, `false` | `true` (seed-burned QoL: flute pickups are immediately bird-woken; `false` restores the separate activation route) |
@@ -824,9 +824,29 @@ portal admits Mitt-only arrivals that cannot cross the gap to its door).
 
 Out of scope (unchanged by the axis): the 2 Capacity Upgrade slots
 (identity-placed), Retro's Take-Any caves and its unlimited generic-key
-column, the Bomb Shop, and the witch's powder trade. The axis composes with
-every other setting — including Retro, where the take-any/economy machinery
-runs alongside the shop checks — and has no derived-rule normalization.
+column, the Bomb Shop, and the witch's powder trade.
+
+**Composition — forced off by cave-entrance shuffle.** The axis composes with
+every other setting, including Retro (where the take-any/economy machinery runs
+alongside the shop checks), with one exception: `shuffle_cave_entrances`. Four
+shop interiors are members of the cave-entrance pool, and their pool entries do
+not list the shop slots, so a shuffled seed would evaluate each slot from its
+*vanilla* overworld region while the player actually reaches that interior
+through a different door. Binding the slots to the shuffled region cannot repair
+it either — a shuffled destination is reached through the doors of a single
+source interior, so the rooms that host several shops (four share one room, two
+share another) could serve only one of them whatever the binding. So when
+cave-entrance shuffle is in effect (Open and Standard), `shopsanity` is
+normalized **off**: the seed generates without shop checks and its settings hash
+matches a plain no-shopsanity seed. Retro and Inverted are unaffected, because
+cave-entrance shuffle is itself inert there.
+
+A shop is identified at runtime by the **overworld door** the player walked
+through (ALTTPR's `PreviousOverworldDoor`), not by the interior's entrance id:
+four Dark World shops share one entrance id and two share another, so the
+entrance id cannot tell them apart. `--rando-shop-doorwalk` audits this by
+walking every real overworld door through the live resolver and failing if any
+shop slot is unreachable or answers from more than one room.
 
 ### Overworld warp shuffle (experimental)
 

@@ -2322,6 +2322,13 @@ void CopySaveToWRAM() {  // 8ccfbb
   main_module_index = 5;
   submodule_index = 0;
   which_entrance = 0;
+  // add-rando-shopsanity — the overworld-door shop key is the companion of
+  // which_entrance, so it retires with it. Save-and-quit respawns at a start
+  // point, never through a door, and no start-point room is a shop room, so
+  // this is consistency rather than a live fault; leaving a door id behind
+  // would still be a stale signal for the next reader.
+  if (enhanced_features1 & kFeatures1_RandomizerActive)
+    g_ram[kRam_RandoOverworldDoor] = 0;
   nmi_disable_core_updates = 0;
   hud_palette = 0;
 }

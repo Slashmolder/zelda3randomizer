@@ -49,7 +49,13 @@
 //      discovery persistence. Placement is corpus-byte-identical to 155
 //      (243/243 digests unchanged; display/runtime only) — the bump
 //      satisfies the mechanical §13.6 source gate, not a placement change.
-#define kGeneratorVersion 157u  // tracker-player-knowledge (digest-neutral)
+// 158: shopsanity door identity + cave-entrance composition. The 27 shop slots
+//      are now forced off under effective cave-entrance shuffle
+//      (Settings_ShopsanityForcedOff), so exactly the one corpus row combining
+//      both axes moves; every other seed is byte-identical. The companion shop
+//      identity fix (key on ALTTPR's PreviousOverworldDoor instead of
+//      which_entrance) is runtime-only and moves no digest.
+#define kGeneratorVersion 158u  // shopsanity door identity + cave composition
 // The share-string binary layout packs version into 1 byte
 // (rando_share.h: ShareString.version is uint8). Compile-time enforce
 // kGeneratorVersion ≤ 255 so silent truncation can't ship.
@@ -680,13 +686,13 @@ RandoGrantResult Rando_ChestGrant(uint16 dungeon_room, uint8 chest_ordinal,
 
 // Explicit shop transaction. Shopsanity-off slots and checked shopsanity
 // slots return NotActive so repeat purchases restock with the vanilla item.
-RandoGrantResult Rando_ShopGrant(uint8 room, uint8 entrance, uint8 pos,
+RandoGrantResult Rando_ShopGrant(uint16 room, uint8 door, uint8 pos,
                                  uint8 vanilla_lttp_code,
                                  RandoGrantPresentation presentation,
                                  uint8 receipt_method,
                                  uint8 chest_position);
 RandoGrantResult Rando_CommitRepeatableShopIdentity(
-    uint8 room, uint8 entrance, uint8 pos, uint8 vanilla_lttp_code);
+    uint16 room, uint8 door, uint8 pos, uint8 vanilla_lttp_code);
 
 // add-rando-random-crystals — the active slot's RESOLVED crystal
 // requirements (0..7), cached at slot activation from the seed-taking
@@ -723,9 +729,15 @@ uint16 Rando_BonkCheckLocForWake(uint8 area, uint16 block, uint8 sprite_type_id)
 // entry exists, and the location is not yet checked. Outputs (each optional):
 // location id, placed registry item, derived price. False = the vanilla shop
 // path applies (axis off, non-shop caller, or bought -> vanilla restock).
-bool Rando_ShopSlotCheckInfo(uint8 room, uint8 entrance, uint8 pos_plus1,
+bool Rando_ShopSlotCheckInfo(uint16 room, uint8 door, uint8 pos_plus1,
                              uint16 *out_loc, uint16 *out_item,
                              uint16 *out_price);
+
+// Shop table resolution alone — no active-slot, placement or already-checked
+// gating. For the --rando-shop-doorwalk identity audit, which must run without
+// a generated slot on disk. 0xFFFF = not a shop tuple. Answers identity, not
+// liveness: never decide a grant with this.
+uint16 Rando_ShopSlotLocForDoor(uint16 room, uint8 door, uint8 pos_plus1);
 
 // add-rando-shopsanity — icon resolution for an unchecked check slot (same
 // shared resolver as field items, NOT client-toggle gated). Returns:

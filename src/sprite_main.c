@@ -26572,7 +26572,7 @@ void NiceThiefUnderRock(int k) {  // 9ef14f
 
 static bool ShopItem_ShopsanityCheckSlot(int k, uint8 vanilla_code) {
   uint16 price;
-  if (!Rando_ShopSlotCheckInfo(BYTE(dungeon_room_index), which_entrance,
+  if (!Rando_ShopSlotCheckInfo(dungeon_room_index, g_ram[kRam_RandoOverworldDoor],
                                sprite_subtype[k], NULL, NULL, &price))
     return false;
   SpriteDraw_ShopItem(k);  // routes to the check-slot draw
@@ -26585,7 +26585,7 @@ static bool ShopItem_ShopsanityCheckSlot(int k, uint8 vanilla_code) {
       ShopItem_PlayBeep(k);
     } else {
       RandoGrantResult result = Rando_ShopGrant(
-          BYTE(dungeon_room_index), which_entrance,
+          dungeon_room_index, g_ram[kRam_RandoOverworldDoor],
           (uint8)(sprite_subtype[k] - 1), vanilla_code,
           kRandoGrantPresentation_Animated, 0, 0);
       if (result == kRandoGrantResult_Accepted) {
@@ -26836,7 +26836,7 @@ void ShopItem_HandleReceipt(int k, uint8 item) {  // 9ef366
       // payment succeed. The helper validates tuple + generated receive code;
       // shopsanity checked restocks and absent rows remain no-ops.
       (void)Rando_CommitRepeatableShopIdentity(
-          BYTE(dungeon_room_index), which_entrance,
+          dungeon_room_index, g_ram[kRam_RandoOverworldDoor],
           (uint8)(sprite_subtype[k] - 1), item);
     }
     Sprite_ShowMessageUnconditional(kShopKeeper_GiveItemMsgs[j - 7]);
@@ -26989,7 +26989,7 @@ void SpriteDraw_ShopItem(int k) {  // 9ef4ce
   // lookalike; checked slots fall through to the vanilla rows = restock).
   if (sprite_subtype2[k] >= 7 && sprite_subtype2[k] <= 13) {
     uint16 loc, price;
-    if (Rando_ShopSlotCheckInfo(BYTE(dungeon_room_index), which_entrance,
+    if (Rando_ShopSlotCheckInfo(dungeon_room_index, g_ram[kRam_RandoOverworldDoor],
                                 sprite_subtype[k], &loc, NULL, &price)) {
       SpriteDraw_ShopCheckSlot(k, loc, price);
       return;

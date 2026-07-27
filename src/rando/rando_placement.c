@@ -818,7 +818,7 @@ static bool location_is_prepinned(const RandoLocationDef *loc,
   // fill targets in every world state (Rando_LocationWorldStateActive is the
   // matching filter override). ShopUpgrade stays unconditionally pinned above.
   if (loc->type == LOCTYPE_Shop)
-    return settings->shopsanity == 0;
+    return !Settings_ShopsanityActive(settings);
   uint16 vi = loc->vanilla_item_id;
   // An ACTIVE empty pot (vanilla_item_id == ITEM_Nothing, present only under
   // tier All; both callers filter INACTIVE pots before reaching here) is pinned
@@ -2699,7 +2699,7 @@ static bool place_assumed_fill_attempt(const RandoSettings *settings,
       // rejection below keeps its clear message.
       if (loc->type == LOCTYPE_Prize_Crystal || loc->type == LOCTYPE_Prize_Pendant ||
           loc->type == LOCTYPE_Prize_Event   || loc->type == LOCTYPE_Medallion ||
-          (loc->type == LOCTYPE_Shop && settings->shopsanity == 0) ||
+          (loc->type == LOCTYPE_Shop && !Settings_ShopsanityActive(settings)) ||
           loc->type == LOCTYPE_ShopUpgrade   || loc->type == LOCTYPE_TakeAny) {
         char msg[160];
         snprintf(msg, sizeof msg,
