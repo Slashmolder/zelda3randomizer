@@ -1448,10 +1448,12 @@ Markers now follow the dungeon, not the prize:
   seed — relocating it would give away the shuffled topology.
 - With `prize_shuffle` off (or no slot loaded) the pause map is exactly vanilla,
   markers disappearing on pickup and all.
-- **Known gap:** the overworld *music* near a dungeon still announces its
-  VANILLA prize type (vanilla plays a different track by a pendant dungeon than
-  a crystal one, and nothing randomizes it yet), so a careful listener can still
-  infer more than the map shows. Tracked as a follow-up.
+- Prize shuffle never moves a pendant into a crystal dungeon or vice versa — it
+  permutes the three pendants among the three pendant dungeons and the seven
+  crystals among the seven crystal dungeons. So the red X is hiding *which*
+  pendant or *which* crystal a dungeon holds, never whether it is one or the
+  other. (That also means the overworld music, which at most distinguishes those
+  two kinds of area, gives nothing away.)
 
 This gating is unconditional (it applies to race and casual seeds alike) and
 has no toggle; the spoiler-reveal flow remains the way to see a seed's layout.

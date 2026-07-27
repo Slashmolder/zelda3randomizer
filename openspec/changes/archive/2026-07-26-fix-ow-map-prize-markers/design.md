@@ -190,7 +190,18 @@ and the claim is verified with a corpus regen rather than asserted.
 
 ## Follow-ups (not this change)
 
-- **Overworld dungeon-area music leaks prize type.** Upstream's
+- ~~**Overworld dungeon-area music leaks prize type.**~~ **RETIRED — the
+  premise was wrong; investigated 2026-07-26, do not re-open.** Two
+  independent reasons. (1) `PrizeShuffle_Run` permutes pendants only among
+  the three pendant dungeons and crystals only among the seven crystal
+  dungeons, so a dungeon's prize TYPE is invariant and a type-encoding
+  surface cannot leak or mislead. (2) The upstream evidence never applied:
+  ALTTPR targets JP 1.0 and this fork is US 1.0, so its `music_addresses`
+  are JP file offsets — reading them in the US ROM yields 0x00/0x01, not
+  the 0x11/0x16 the claim assumed. Upstream needs the rewrite because ITS
+  crystal shuffle can swap pendants and crystals between dungeons; ours
+  cannot. Original (incorrect) note follows for the record.
+- ~~**Overworld dungeon-area music leaks prize type.**~~ Upstream's
   `Prize::writeItem` (`app/Location/Prize.php`) rewrites each dungeon region's
   overworld music to `0x11` (pendant) or `0x16` (crystal) to match the placed
   prize, and randomizes it when the map-on-pickup option is on precisely so it
