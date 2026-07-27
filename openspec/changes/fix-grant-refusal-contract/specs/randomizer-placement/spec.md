@@ -59,6 +59,17 @@ unconditionally.
   written, and the caller does not spawn or position an object from
   uninitialized memory
 
+#### Scenario: Two bounded exceptions are named, not implied
+
+- **WHEN** a transient refusal reaches the big-key absorb site or Kholdstare's
+  death handler
+- **THEN** the enemy check is dropped rather than retried, because at the first
+  the vanilla state bits are already committed and the side-by-side RAM compare
+  depends on them, and at the second the retry re-enters the death handler from
+  the top and its prize roll can rewrite the sprite type. Both are recorded at
+  the source and are bounded losses of one check — never a softlock, never a
+  lost dungeon prize on the shipped path
+
 #### Scenario: A refused kill does not strand the room
 
 - **WHEN** an enemy's death-time grant is refused

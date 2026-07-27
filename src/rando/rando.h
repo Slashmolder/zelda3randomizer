@@ -931,6 +931,11 @@ void Rando_MarkLocationChecked(uint16 location_id);
 // Test the bit for `location_id`. Returns false for OOB or no slot active.
 bool Rando_IsLocationChecked(uint16 location_id);
 
+// True when a vanilla receive code can NEVER be accepted again (a bottle
+// pickup with four bottles owned -- bottle count is monotonic). Callers use
+// it to terminate instead of scheduling a retry that can never succeed.
+bool Rando_ReceiveCodePermanentlyBlocked(uint8 code);
+
 // Structural guard for the dungeon-prize inventory bits (grant group).
 void Rando_PrizeBitSelfCheck(void);
 bool Rando_HasLocationPlacement(uint16 location_id);

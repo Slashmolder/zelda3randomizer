@@ -1068,12 +1068,13 @@ bool ItemReceipt_CanAllocate(void) {
 
 typedef struct ItemReceiptActionSnapshot {
   uint8 flag_immobilized;
-  // Paired with link_disable_sprite_damage below: the 0x20 (crystal) grant
-  // branch clears BOTH, and restoring only the damage byte would leave Link
-  // permanently invulnerable with no cape to explain it. Not reachable today
-  // (GrantInventory's only failure return precedes that branch), but 3.5 in
-  // this same change is a dead return that went live -- so pair them here.
-  uint8 cape_mode;
+  // NOTE: link_cape_mode is deliberately NOT captured here. Pairing it with
+  // link_disable_sprite_damage looks right (the 0x20 crystal branch clears
+  // both) but this snapshot is restored on the SUCCESS path too, so restoring
+  // cape_mode un-does that branch's intentional cape cancel -- leaving the cape
+  // active after its poof played and the bunny timer armed. The pre-existing
+  // disable_sprite_damage restore has the same shape and is the real defect;
+  // fixing it means excluding both when the 0x20 branch ran, not adding more.
   uint8 flag_sprite_pickup;
   uint8 flag_ancilla_pickup;
   uint8 flag_sprite_pickup_cached;
@@ -1104,7 +1105,6 @@ typedef struct ItemReceiptActionSnapshot {
 static ItemReceiptActionSnapshot ItemReceipt_CaptureActionState(void) {
   ItemReceiptActionSnapshot s;
   s.flag_immobilized = flag_is_link_immobilized;
-  s.cape_mode = link_cape_mode;
   s.flag_sprite_pickup = flag_is_sprite_to_pick_up;
   s.flag_ancilla_pickup = flag_is_ancilla_to_pick_up;
   s.flag_sprite_pickup_cached = flag_is_sprite_to_pick_up_cached;
@@ -1135,7 +1135,6 @@ static ItemReceiptActionSnapshot ItemReceipt_CaptureActionState(void) {
 
 static void ItemReceipt_RestoreActionState(const ItemReceiptActionSnapshot *s) {
   flag_is_link_immobilized = s->flag_immobilized;
-  link_cape_mode = s->cape_mode;
   flag_is_sprite_to_pick_up = s->flag_sprite_pickup;
   flag_is_ancilla_to_pick_up = s->flag_ancilla_pickup;
   flag_is_sprite_to_pick_up_cached = s->flag_sprite_pickup_cached;

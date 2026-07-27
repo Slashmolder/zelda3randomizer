@@ -244,7 +244,7 @@ def source_steps(kind: str, base_sha: str | None, head_sha: str | None) -> list[
         ("Make depfile source guard", script("check_make_depfiles.py")),
         ("grant consumer source guard", script("check_grant_consumers.py")),
         ("knowledge consumer source guard", script("check_knowledge_consumers.py")),
-        ("ancilla slot-ordering guard", script("check_ancilla_slot_ordering.py")),
+        ("ancilla slot-ordering guard", script("check_ancilla_slot_ordering.py") + ["--selftest"]),
         ("workflow/runner validation contract", script("check_validation_contract.py")),
         ("codegen wiring", script("check_codegen_wiring.py")),
         ("corpus version sync", script("check_corpus_version_sync.py")),

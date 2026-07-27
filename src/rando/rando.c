@@ -634,7 +634,7 @@ static RandoBottleFit rando_plan_bottle_fit(const RandoGrantState *state,
 // Live-state form of the permanent case, for the COMMIT path: a plan built when
 // a slot was free can be delivered after the player picked up a fourth bottle,
 // and that late refusal is just as permanent as an early one.
-static bool rando_receive_permanently_blocked(uint8 code) {
+bool Rando_ReceiveCodePermanentlyBlocked(uint8 code) {
   if (!rando_code_is_bottle_pickup(code))
     return false;
   for (int i = 0; i < 4; i++)
@@ -3101,7 +3101,7 @@ RandoGrantResult Rando_CommitPreparedGrant(
   bool deliver = true;
   if (!Rando_CanAcceptGrantPlanNow(plan)) {
     if (plan->disposition != kRandoGrantDisposition_Receive ||
-        !rando_receive_permanently_blocked(plan->receive_code))
+        !Rando_ReceiveCodePermanentlyBlocked(plan->receive_code))
       return plan->disposition == kRandoGrantDisposition_Receive
           ? kRandoGrantResult_Retryable : kRandoGrantResult_Invalid;
     deliver = false;  // consume the check, grant nothing, do not retry

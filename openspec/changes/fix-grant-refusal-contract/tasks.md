@@ -24,9 +24,14 @@ as REFUTED in this file rather than quietly "fixed".
       transient refusal leaves the enemy alive and re-killable with the menu
       available, which is the recoverable arm this task asked for. Re-derived:
       this site never immobilizes, so it does not block its own recovery
-- [x] 2.3 `player.c` `Link_ReceiveItem` quiet fallback — clear
-      `flag_is_link_immobilized` for receipt methods 0/1 as the vanilla receipt
-      teardown does (method 2 deliberately excluded)
+- [x] 2.3 Fixed at the CALLER, not the fallback. Clearing the flag inside
+      `Link_ReceiveItem`'s saturated fallback broke `ItemReceipt_LosslessSelfCheck`,
+      which correctly requires that fallback to leave caller action state
+      untouched — the flag belongs to whoever set it. `Sprite_HeartContainer`
+      (the site whose comment names method 0 "so their receipt clears
+      immobilization") now releases Link on its terminal path. RESIDUAL: the
+      other `flag_is_link_immobilized = 1` sites in `sprite_main.c` were not
+      swept for the saturated-fallback case
 - [x] 2.4 `dungeon.c` `Dungeon_LiftAndReplaceLiftable` — write `*pt` on the
       retry return path (and/or make the caller honor the return code)
 

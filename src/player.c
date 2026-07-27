@@ -610,15 +610,23 @@ void LinkState_HoldingBigRock() {  // 878481
 }
 
 void EtherTablet_StartCutscene() {  // 87855a
-  // Deliberately NO preflight bail here. The caller has already committed its
-  // half of the tableau (sprite_ai_state advanced, the read message shown, the
-  // crumble timer armed) before calling, so returning early left the tablet
-  // visibly spent with nothing granted and no way to retry short of leaving the
-  // screen. The grant is resolved at the `i == 0` step of the cutscene, which
-  // re-arms via button_b_frames on a refusal -- and flag_block_link_menu stays
-  // 0 there, so a transient refusal (a potion needing an empty bottle) can
-  // still be cleared by the player. That is the lossless path; this early
-  // return defeated it. (openspec fix-grant-refusal-contract, task 3.9.)
+  // PREFLIGHT RETAINED. Removing it (task 3.9, first attempt) was a regression:
+  // this cutscene sets flag_block_link_menu / flag_custom_spell_anim_active,
+  // both terms in the menu gate (Module09_00_PlayerControl, Module07_00_
+  // PlayerControl), and the `i == 0` retry path clears NEITHER. A refused grant
+  // therefore froze Link on the ledge with the menu unreachable -- so the one
+  // cure for a transient refusal (drink a potion to free a bottle) could never
+  // be applied. Bailing BEFORE any flag is set keeps the player in control; the
+  // cost is the known cosmetic one (the caller has already advanced its own
+  // state, so the tablet reads as spent until the screen is reloaded).
+  if (enhanced_features1 & kFeatures1_RandomizerActive) {
+    RandoDeferredGrantToken token;
+    RandoGrantResult result = Rando_PrepareGrant(
+        LOC_Ether_Tablet, ITEM_Ether, 0x10, &token);
+    if (result != kRandoGrantResult_Accepted &&
+        result != kRandoGrantResult_NotActive)
+      return;
+  }
   button_b_frames = 0xc0;
   link_delay_timer_spin_attack = 0;
   link_player_handler_state = kPlayerState_ReceivingEther;
@@ -690,15 +698,23 @@ void LinkState_ReceivingEther() {  // 878570
 }
 
 void BombosTablet_StartCutscene() {  // 8785e5
-  // Deliberately NO preflight bail here. The caller has already committed its
-  // half of the tableau (sprite_ai_state advanced, the read message shown, the
-  // crumble timer armed) before calling, so returning early left the tablet
-  // visibly spent with nothing granted and no way to retry short of leaving the
-  // screen. The grant is resolved at the `i == 0` step of the cutscene, which
-  // re-arms via button_b_frames on a refusal -- and flag_block_link_menu stays
-  // 0 there, so a transient refusal (a potion needing an empty bottle) can
-  // still be cleared by the player. That is the lossless path; this early
-  // return defeated it. (openspec fix-grant-refusal-contract, task 3.9.)
+  // PREFLIGHT RETAINED. Removing it (task 3.9, first attempt) was a regression:
+  // this cutscene sets flag_block_link_menu / flag_custom_spell_anim_active,
+  // both terms in the menu gate (Module09_00_PlayerControl, Module07_00_
+  // PlayerControl), and the `i == 0` retry path clears NEITHER. A refused grant
+  // therefore froze Link on the ledge with the menu unreachable -- so the one
+  // cure for a transient refusal (drink a potion to free a bottle) could never
+  // be applied. Bailing BEFORE any flag is set keeps the player in control; the
+  // cost is the known cosmetic one (the caller has already advanced its own
+  // state, so the tablet reads as spent until the screen is reloaded).
+  if (enhanced_features1 & kFeatures1_RandomizerActive) {
+    RandoDeferredGrantToken token;
+    RandoGrantResult result = Rando_PrepareGrant(
+        LOC_Bombos_Tablet, ITEM_Bombos, 0x0f, &token);
+    if (result != kRandoGrantResult_Accepted &&
+        result != kRandoGrantResult_NotActive)
+      return;
+  }
   button_b_frames = 0xe0;
   link_delay_timer_spin_attack = 0;
   link_player_handler_state = kPlayerState_ReceivingBombos;

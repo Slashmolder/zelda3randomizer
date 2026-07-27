@@ -157,8 +157,17 @@ static RandoGrantResult Sprite_GrantAnimatedOrVanilla(
     // callers consume their source for free -- the Bottle Merchant would take
     // 100 rupees and mark itself sold out without handing over a bottle.
     // Report the refusal instead so the caller can keep its source.
-    if (!ItemReceipt_CanAccept(vanilla_lttp_code))
-      return kRandoGrantResult_Retryable;
+    // Rando-gated: this branch IS the vanilla path (result is NotActive when
+    // the feature bit is clear), and changing it would move the side-by-side
+    // RAM compare. And a PERMANENT refusal must terminate, not retry -- the
+    // first version of this check returned Retryable for a 5th bottle and so
+    // reintroduced the very loop class this change exists to remove.
+    if ((enhanced_features1 & kFeatures1_RandomizerActive) &&
+        !ItemReceipt_CanAccept(vanilla_lttp_code)) {
+      return Rando_ReceiveCodePermanentlyBlocked(vanilla_lttp_code)
+                 ? kRandoGrantResult_Accepted
+                 : kRandoGrantResult_Retryable;
+    }
     item_receipt_method = receipt_method;
     Link_ReceiveItem(vanilla_lttp_code, chest_position);
     return kRandoGrantResult_Accepted;
