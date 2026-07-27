@@ -55,7 +55,12 @@
 //      both axes moves; every other seed is byte-identical. The companion shop
 //      identity fix (key on ALTTPR's PreviousOverworldDoor instead of
 //      which_entrance) is runtime-only and moves no digest.
-#define kGeneratorVersion 158u  // shopsanity door identity + cave composition
+// 159: cave-interior region drift — general_store_1 declared a LIGHT world
+//      region for the Dark World Forest Shop's door, and
+//      warped_pond_of_wishing declared DarkWorld_NorthWest for a door at the
+//      Pyramid (DarkWorld_NorthEast). Both are SOURCE regions for entrance
+//      shuffle's region rebinding, so only cave-entrance-shuffle seeds move.
+#define kGeneratorVersion 159u  // cave-interior region drift fix
 // The share-string binary layout packs version into 1 byte
 // (rando_share.h: ShareString.version is uint8). Compile-time enforce
 // kGeneratorVersion ≤ 255 so silent truncation can't ship.

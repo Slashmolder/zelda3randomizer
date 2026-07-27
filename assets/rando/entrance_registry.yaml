@@ -256,7 +256,7 @@ interiors:
     name: "General Store 1"
     rooms: [0x110]
     entrance_ids: [0x57]
-    region: LightWorld_NorthWest
+    region: DarkWorld_NorthWest
     locations: []
     notes: "Empty (shop only)."
 
@@ -307,7 +307,7 @@ interiors:
     name: "Warped Pond of Wishing"
     rooms: [0x116]
     entrance_ids: [0x63]
-    region: DarkWorld_NorthWest
+    region: DarkWorld_NorthEast
     can_enter: "HAS_ITEM(MoonPearl) OR CanPearlBypass() OR CanBunnyRevival(world)"
     locations: []
     notes: "Empty (fairy/fountain)."

@@ -348,6 +348,11 @@ def runtime_common(runner: Runner, binary: Path, object_dir: Path,
     runner.run("shopsanity door-identity walk",
                [str(binary), "--rando-shop-doorwalk", "--allow-missing-assets"],
                env=env)
+    # A cave interior's declared region is the SOURCE region entrance shuffle
+    # rebinds through, but Entrance_SelfCheck only cross-validates it for entries
+    # that HAVE locations — the empty ones are unguarded. Asset-driven, self-skips.
+    runner.run("cave-interior region world consistency",
+               script("gen_entrance_door_rows.py", "--check", "--allow-missing-assets"))
     corpus_args = ["--binary", str(binary), "--timings-json", str(corpus_timings)]
     if not corpus_local:
         corpus_args += ["--skip-pot-shuffle", "--skip-enemy-drop-checks",

@@ -32,6 +32,7 @@ REG = os.path.join(HERE, "..", "rando", "entrance_registry.yaml")
 N_ASSETS = 166
 ASSET_ENTRANCE_ID = 126
 ASSET_ENTRANCE_ROOMS = 11
+ASSET_ENTRANCE_AREA = 124
 
 
 def load_assets(path: str) -> list[bytes]:
@@ -49,15 +50,56 @@ def load_assets(path: str) -> list[bytes]:
     return out
 
 
+def check_world_consistency(interiors, rows_by_entry, area: bytes) -> int:
+    """Fail if an entry's declared region is in the opposite world from its doors.
+
+    Entrance_ApplyRegionOverrides uses an entry's `region` as the SOURCE region:
+    whatever interior the shuffle puts behind that door has its locations rebound
+    to it. A light-world region on a dark-world door therefore claims dark-world
+    content is reachable from the light world.
+
+    Entrance_SelfCheck cross-validates `region` against the entry's own
+    locations, but ONLY for entries that HAVE locations — the empty ones are
+    unguarded, which is where the one real instance of this hid
+    (`general_store_1` declared LightWorld_NorthWest for the Dark World Forest
+    Shop's door). This catches the cross-world case cheaply; a within-world
+    error still needs the location cross-check or an upstream comparison.
+    """
+    bad = 0
+    for idx, it in enumerate(interiors):
+        region = it.get("region")
+        if not region:
+            continue
+        declared_dark = str(region).startswith("DarkWorld")
+        worlds = set()
+        for r in rows_by_entry.get(idx, []):
+            worlds.add((struct.unpack_from("<H", area, r * 2)[0] & 0x40) != 0)
+        if not worlds or declared_dark in worlds:
+            continue
+        bad += 1
+        where = "DARK" if worlds == {True} else ("LIGHT" if worlds == {False} else "MIXED")
+        print(f"  entry {idx:2d} {it['interior_id']:<26} declares {region} "
+              f"but every door is in the {where} world", file=sys.stderr)
+    return bad
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--assets", default="zelda3_assets.dat")
+    ap.add_argument("--check", action="store_true",
+                    help="validate instead of emitting; non-zero exit on a violation")
+    ap.add_argument("--allow-missing-assets", action="store_true",
+                    help="skip (exit 0) when the asset blob is absent, for assetless profiles")
     args = ap.parse_args()
     if not os.path.exists(args.assets):
+        if args.allow_missing_assets:
+            print(f"gen_entrance_door_rows: SKIPPED — {args.assets} not present")
+            return 0
         sys.exit(f"{args.assets} not found — run from a checkout with extracted assets")
 
     assets = load_assets(args.assets)
     ent_id = assets[ASSET_ENTRANCE_ID]
+    area = assets[ASSET_ENTRANCE_AREA]
     rooms_b = assets[ASSET_ENTRANCE_ROOMS]
     rooms = struct.unpack_from("<%dH" % (len(rooms_b) // 2), rooms_b, 0)
 
@@ -79,6 +121,16 @@ def main() -> int:
         idx = eid_to_entry.get(ent_id[lx])
         if idx is not None:
             rows_by_entry.setdefault(idx, []).append(lx)
+
+    if args.check:
+        bad = check_world_consistency(interiors, rows_by_entry, area)
+        if bad:
+            print(f"gen_entrance_door_rows: {bad} interior(s) declare a region in the "
+                  f"wrong world — see above.", file=sys.stderr)
+            return 1
+        print(f"gen_entrance_door_rows: OK — all {len(interiors)} interiors declare a "
+              f"region in the same world as their doors.")
+        return 0
 
     print("# --- door_rows fragment (registry order) ---")
     total = 0

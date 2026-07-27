@@ -16,7 +16,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 158  # bump_rando_corpus.py --apply
+generator_version: 159  # bump_rando_corpus.py --apply
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -431,8 +431,8 @@ entries:
   - settings: { mode.state: standard, goal: fast_ganon, shuffle_cave_entrances: true }
     seed: "0x00000000C0FFEE02"
     label: "c-entrance-caves-standard-fast-ganon"
-    expected_digest: "26f0d4c9bb37a3f9ca8c72c06ce67c0ba6ec964342b3acc2056e6cbd35b699d1"
-    expected_sphere_digest: "7b767b59dcec36cea7b0d37629ed6136496fe7b082de6efffc94fcecccc58444"
+    expected_digest: "cffe21896d881871efe2e3bd4871633403d86179db864e610331e45636a74c03"
+    expected_sphere_digest: "58a1ab9e1f2299b49fa772477f8738db549c8f2350c32d77e3d2ae3888f10112"
   # Phase C Stage 2 — dungeon entrance shuffle (6 single-entrance dungeons via the
   # per-seed edge overlay), and caves+dungeons together.
   - settings: { mode.state: open, goal: fast_ganon, shuffle_dungeon_entrances: true }
@@ -467,8 +467,8 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, shuffle_dungeon_entrances: true, cross_category: true }
     seed: "0x00000000C0FFEE05"
     label: "c-entrance-cross-open-fast-ganon"
-    expected_digest: "72409beb98ff394eafa644050b169796bcfb6c262775ebe88a2f4dfb6dc823d0"
-    expected_sphere_digest: "7489012b112c67af0186be156a0c9035ef36c7f836e16e42d454b0e7e7687011"
+    expected_digest: "4ebd98cc6c123f7edce14007b506443358e78ce9b0c5b2eda6e933c740fa993b"
+    expected_sphere_digest: "3c173305692cbca58574ef5aec2ad6d19fb65d9e576b42b2bece8ff5055530a4"
   # Decoupled / "Insanity" (Stage 4 D.1/D.2): caves + decoupled one-way exit warps.
   # LOGIC + GENERATION only (runtime exit redirect D.3/D.4 not yet wired, so this is
   # a headless-only entry — no playable slot). Reject-and-retry with the full-
@@ -1375,8 +1375,8 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, shopsanity: true }
     seed: "0x53484F5000000005"
     label: "shopsanity-entrance-caves-forced-off"
-    expected_digest: "b07d612ab33ea757159da221c95de32ad96ef34f296831270a8088a01c97eed2"
-    expected_sphere_digest: "a6fe0f54535b4216abba2040d7ab9edf4a14bea52d887e6b40d56d270c1baa21"
+    expected_digest: "f497c759e9eb9a391f42bfbae99bcd940bb1042446fb49e96a2c45ed2d310041"
+    expected_sphere_digest: "0164aab3d1647da59062b183bd7f5c7325183ee4143f6b1d9c89a7a54646437a"
   - settings: { mode.state: open, goal: fast_ganon, shopsanity: true, traps: insanity }
     seed: "0x53484F5000000007"
     label: "shopsanity-traps-shops-excluded"
