@@ -138,7 +138,7 @@ axis via `item_pool`.
 | `enemy_drop_checks` | `off`, `keys`, `dungeon`, `all` | `off` (experimental; `keys` turns vanilla forced enemy key drops into checks, `dungeon` also turns eligible ordinary dungeon enemies into checks, and `all` adds eligible overworld, GT-miniboss, finite scripted-spawn, and reviewed underworld enemy checks; active only when effective small keys are Wild/Retro or Dungeon; vanilla small keys force `off`; enemy shuffle degrades `dungeon`/`all` to `keys`; entrance shuffle degrades `all` to `dungeon`; see [Enemy drop checks](#enemy-drop-checks-experimental)) |
 | `dungeon_chains` | `true`, `false` | `false` (experimental; main dungeon doors route through dungeon chains ending in bosses; see [Dungeon chains](#dungeon-chains-experimental)) |
 | `grass_shuffle` | `off`, `junk`, `all` | `off` (experimental; turns overworld bushes and cuttable grass into checks — `junk` = filler only, `all` = anything including progression; see [Grass & rock shuffle](#grass--rock-shuffle-experimental)) |
-| `shopsanity` | `true`, `false` | `false` (experimental; the 27 regular shop slots become one-time purchase checks at seed-random prices, in every world state; a bought slot permanently restocks its vanilla item at its vanilla price; **normalized off under `shuffle_cave_entrances`**; see [Shopsanity](#shopsanity-experimental)) |
+| `shopsanity` | `true`, `false` | `false` (experimental; the 27 regular shop slots become one-time purchase checks at seed-random prices, in every world state; a bought slot permanently restocks its vanilla item at its vanilla price; composes with `shuffle_cave_entrances`, where a shop can end up behind any door; see [Shopsanity](#shopsanity-experimental)) |
 | `bonk_shuffle` | `off`, `junk`, `all` | `off` (experimental; the stage-stable placed bonk trees — dormant bee hives and apple trees — become one-time checks; `junk` = filler only, `all` = anything; the first wake grants the check and suppresses that wake, later wakes swarm/drop apples as vanilla; both wake methods collect — a Pegasus Boots dash bonk or a Quake-medallion rumble (one Quake can collect several on-screen checks) — and placement logic matches: a bonk check is in logic with the Boots OR with Quake plus a sword — or Quake alone under swordless, whose runtime permits sword-free medallion casts; requires the local `bonk.gen.yaml` registry or bonk seeds refuse to generate/activate) |
 | `rock_shuffle` | `off`, `junk`, `all` | `off` (experimental; turns liftable rocks — Glove and Titan's Mitt — into checks; `junk` = filler only, `all` = anything; see [Grass & rock shuffle](#grass--rock-shuffle-experimental)) |
 | `instant_flute` | `true`, `false` | `true` (seed-burned QoL: flute pickups are immediately bird-woken; `false` restores the separate activation route) |
@@ -831,27 +831,38 @@ Out of scope (unchanged by the axis): the 2 Capacity Upgrade slots
 (identity-placed), Retro's Take-Any caves and its unlimited generic-key
 column, the Bomb Shop, and the witch's powder trade.
 
-**Composition — forced off by cave-entrance shuffle.** The axis composes with
-every other setting, including Retro (where the take-any/economy machinery runs
-alongside the shop checks), with one exception: `shuffle_cave_entrances`. Four
-shop interiors are members of the cave-entrance pool, and their pool entries do
-not list the shop slots, so a shuffled seed would evaluate each slot from its
-*vanilla* overworld region while the player actually reaches that interior
-through a different door. Binding the slots to the shuffled region cannot repair
-it either — a shuffled destination is reached through the doors of a single
-source interior, so the rooms that host several shops (four share one room, two
-share another) could serve only one of them whatever the binding. So when
-cave-entrance shuffle is in effect (Open and Standard), `shopsanity` is
-normalized **off**: the seed generates without shop checks and its settings hash
-matches a plain no-shopsanity seed. Retro and Inverted are unaffected, because
-cave-entrance shuffle is itself inert there.
+**Composition.** The axis composes with every other setting, Retro included
+(where the take-any/economy machinery runs alongside the shop checks) — and,
+since generator version 162, with `shuffle_cave_entrances` as well.
+
+Eight of the nine shops sit in cave interiors that are cave-entrance shuffle
+pool members, so under that axis **a shop can be behind any door, and a shop's
+door can lead anywhere** — ALTTPR's behavior. Each of those eight shops is its
+own pool entry, keyed by its overworld door row, carrying its three slot ids and
+the logic region of *its own* door; the shuffle then rebinds those three slots
+to whichever door reaches them in that seed. The ninth shop (Light World Death
+Mountain, room `0x0FF`) is not a cave interior and never shuffles.
+
+(Earlier versions normalized `shopsanity` **off** under cave-entrance shuffle.
+That was because the four shop-hosting interiors were single pool entries
+spanning several doors — one room alone backs four shops through one entrance
+id — so a shuffled seed would have evaluated each slot from its *vanilla*
+region while the player reached the interior through a different door, and no
+binding could repair it while one entry had to serve four shops. Splitting the
+pool by door row removed the obstacle. Nothing normalizes the axis off now.)
 
 A shop is identified at runtime by the **overworld door** the player walked
 through (ALTTPR's `PreviousOverworldDoor`), not by the interior's entrance id:
 four Dark World shops share one entrance id and two share another, so the
-entrance id cannot tell them apart. `--rando-shop-doorwalk` audits this by
-walking every real overworld door through the live resolver and failing if any
-shop slot is unreachable or answers from more than one room.
+entrance id cannot tell them apart. Which shop that door hosts is **derived from
+the seed's entrance layout** rather than read from a fixed column — the shop is
+whatever the permutation put behind the door — which is how ALTTPR's ROM writer
+does it too. With cave-entrance shuffle off the layout is the identity and this
+is exactly the vanilla door column. `--rando-shop-doorwalk` audits both cases by
+walking every real overworld door through the live resolver — once against the
+vanilla table and again against several generated layouts (including decoupled
+and Crossed) — and failing if any shop slot is unreachable, answers from more
+than one room, or has its three columns split across different shops.
 
 ### Overworld warp shuffle (experimental)
 
@@ -2181,6 +2192,8 @@ Current `kGeneratorVersion` is in `src/rando/rando.h` (search for `#define kGene
 
 | 155→157 | **Player-knowledge tracker gating** (`tracker-player-knowledge`) — the live tracker flood becomes knowledge-limited (`Logic_ComputeReachabilityMasked`; the full-knowledge entry is renamed `Logic_ComputeReachabilityFullKnowledge` and reserved for generation/selftests), backed by per-slot discovery state in sidecar v13 + a snapshot TLV. Display/runtime only — the mask is an explicit parameter no generation path passes. | **All 243 corpus placement digests 0-changed** — only the manifest `generator_version` re-stamps. The bump satisfies the mechanical §13.6 source gate (`src/rando/**` changed), not a placement change; the regen against the v155 baseline *is* the proof the mask never reaches the placer. Version 156 is skipped: concurrent in-flight `main` work claimed it, so this branch leapfrogs to avoid a same-version collision at merge. |
 | 159→160 | **Hints v2, configurable hint policy, and NPC reward previews** (`enhance-rando-hints-v2`, `add-configurable-hint-options`, `add-rando-npc-reward-previews`) — deterministic hint-plan identity, selectable tile/paid/mix policy, journal/race surfaces, and optional vendor/reward dialogue previews are integrated under the current 2/2 schema. Sidecar v14 appends the 40-byte hint identity/discovery block (238→278 bytes), and snapshot TLV type 11 carries its exact 41-byte replay payload. | Display, spoiler, and runtime presentation only: placement, logic, and sphere construction are unchanged. **All 243 corpus placement and sphere digests are 0-changed**; only the manifest `generator_version` re-stamps to 160. |
+| 160→161 | **Cave-entrance pool split by overworld door row** (`compose-shopsanity-entrance-shuffle` phase 2a) — the pool's identity unit becomes the door row rather than the interior room, growing it 40→46 entries. The four shop-hosting interiors each carried several doors in one entry (room `0x10F` alone has four, all through entrance id `0x60`), so those doors moved as a unit and shared one region; each door row is now its own entry with its own region and gate. Source lookups switched from entrance id to door row (`Entrance_InteriorOfDoorRow`), and the baked cave-arrival table became keyed by `interior_id` — which fixed a live pre-existing bug where two earlier mid-list splits had shifted eight interiors onto another cave's decoupled arrival. | Pool size changed, so **every** cave-entrance-shuffle permutation changes: 15 of 243 rows moved, all of them carrying `shuffle_cave_entrances`, and zero rows without it. (The Inverted and Retro cave rows are also unchanged — `Entrance_IsActive` normalizes the axis off by world state there.) |
+| 161→162 | **Shopsanity composes with cave-entrance shuffle** (`compose-shopsanity-entrance-shuffle` phase 2b) — each of the eight cave-resident shops binds its three slot ids to its own door-row pool entry, so `Entrance_ApplyRegionOverrides` rebinds them to whichever door reaches them, and the runtime derives shop identity from the same assignment (door row → source entry → permutation → destination entry → its shop) instead of a static door column. `Settings_ShopsanityForcedOff` and its normalization are removed; `Settings_ShopsanityActive` is the whole consumer contract. | Only seeds carrying **both** axes move: 1 existing row plus 2 added ones, 3 digests total. A cave-shuffle seed with shopsanity off is byte-identical — the new region overrides land on locations that are not fill locations there, verified by regeneration rather than assumed. |
 
 The pattern: predicate changes that affect only one region (12→13's
 EP gate) hit a subset of seeds; layout-only changes with default-zero
@@ -2423,7 +2436,7 @@ Items folded into the changes above:
 
 | # | Change | Scope | Status |
 |---|---|---|---|
-| C1 | [`add-rando-entrance-shuffle`](../openspec/changes/archive/2026-06-05-add-rando-entrance-shuffle/) | Entrance shuffle, composable axes (caves / dungeons / coupled / crossed / decoupled); Simple/Restricted/Crossed as built presets. **Coupled cave + dungeon entrance shuffle + Crossed (cross-category) implemented** (Open/Standard), playtest-confirmed. ALL 38 cave interiors + **11 of 12 dungeons** shuffle (everything except Skull Woods; Ganon's Tower is an advanced opt-in, `shuffle_ganons_tower_entrance`). Caves use a per-seed region override, dungeons a per-seed edge overlay; both share the door overlay + coupled exit (capture source room at entry). The generation retry requires FULL reachability, so no entrance seed ships with stranded items. Save = regenerate π from (seed, packed axes, attempt) at slot load — entrance seeds are version-locked (sidecar-v3 slots persist a 24-bit entrance-layout digest and activation refuses on mismatch; pre-v3 slots fall back to a version-drift warning). `RegionRemap` scaffold retired (the archive `REMOVED` its stale baseline requirement). Insanity (full decoupled) is **built and shipped** as a live native-window preset — the cave-arrival table is baked (`src/rando/cave_arrival_baked.h`, preloaded so every door is one-way from launch); cave-decoupled is playtest-confirmed, the dungeon/cross-decoupled arms carry the usual built-but-playtest-pending caveat. Skull Woods + Link's House remain documented partial-coverage deferrals. | ✅ Archived 2026-06-05 |
+| C1 | [`add-rando-entrance-shuffle`](../openspec/changes/archive/2026-06-05-add-rando-entrance-shuffle/) | Entrance shuffle, composable axes (caves / dungeons / coupled / crossed / decoupled); Simple/Restricted/Crossed as built presets. **Coupled cave + dungeon entrance shuffle + Crossed (cross-category) implemented** (Open/Standard), playtest-confirmed. ALL 38 cave interiors + **11 of 12 dungeons** shuffle (everything except Skull Woods; Ganon's Tower is an advanced opt-in, `shuffle_ganons_tower_entrance`). Caves use a per-seed region override, dungeons a per-seed edge overlay; both share the door overlay + coupled exit (capture source room at entry). The generation retry requires FULL reachability, so no entrance seed ships with stranded items. Save = regenerate π from (seed, packed axes, attempt) at slot load — entrance seeds are version-locked (sidecar-v3 slots persist a 24-bit entrance-layout digest and activation refuses on mismatch; pre-v3 slots fall back to a version-drift warning). `RegionRemap` scaffold retired (the archive `REMOVED` its stale baseline requirement). Insanity (full decoupled) is **built and shipped** as a live native-window preset — the cave-arrival table is baked (`src/rando/cave_arrival_baked.h`, preloaded so a door is one-way from launch); cave-decoupled is playtest-confirmed, the dungeon/cross-decoupled arms carry the usual built-but-playtest-pending caveat. **Since the pool split at generator 161, 37 of the 46 door rows are baked**; the other 9 carry no captured arrival and degrade to the *coupled* exit (Link emerges at the door he entered) until an owner capture walkabout fills them in. That is a fidelity gap in decoupled mode only — never a softlock, and coupled mode (the default) is unaffected. Skull Woods + Link's House remain documented partial-coverage deferrals. | ✅ Archived 2026-06-05 |
 
 ### Phase D
 

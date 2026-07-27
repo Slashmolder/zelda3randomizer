@@ -45,6 +45,20 @@ pool **entry** rather than its entrance id, since a permutation mapping one
 entry onto a room-sibling leaves the door table byte unchanged while genuinely
 moving the door.
 
+Any consumer that needs the pool entry a door now **loads** — as opposed to the
+entry the door **belongs to** — SHALL resolve it through the installed entry
+permutation (source endpoint, then assignment, then destination entry), never
+through the loaded entrance id. The id names only the physical room, so among
+room-siblings it identifies the wrong entry. This binds the destination-side
+player-knowledge marking in particular: marking a sibling would credit the
+player with having discovered contents they have not seen, which is exactly what
+the player-knowledge invariant forbids.
+
+Under cross-category shuffle the permutation runs over a **combined** cave and
+dungeon endpoint space, so the same resolution SHALL accept a dungeon door as
+the source of a cave destination, and SHALL yield "no cave" when a cave door's
+image is a dungeon.
+
 #### Scenario: Doors sharing an entrance id shuffle independently
 - **WHEN** a cave-entrance-shuffled seed is generated and two overworld doors
   carry the same vanilla entrance id but belong to different pool entries
@@ -62,6 +76,13 @@ moving the door.
   entry of the same room, leaving the door table's entrance id unchanged
 - **THEN** the auto-tracker still reports that door as a discovered connection
   once the player has walked through it
+
+#### Scenario: Walking through a door reveals only what is behind it
+- **WHEN** the player walks through a door whose destination pool entry shares
+  its room and entrance id with other entries that carry member locations
+- **THEN** only the entry the permutation actually put behind that door is
+  marked discovered, and the room-siblings' locations stay outside the
+  knowledge-limited view
 
 #### Scenario: Growing the pool does not change any persisted format
 - **WHEN** the cave pool's entry count grows

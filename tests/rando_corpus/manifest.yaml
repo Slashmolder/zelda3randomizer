@@ -34,7 +34,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 161  # bump_rando_corpus.py --apply - cave pool split by overworld door row
+generator_version: 162  # bump_rando_corpus.py --apply
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -1393,10 +1393,13 @@ entries:
   # --- add-rando-shopsanity — the 27 regular shop slots as open fill
   # locations (seed-derived prices are spoiler/runtime-only and do not enter
   # these digests). One row per world state, plus the cave-entrance and
-  # completionist (locations-tier) compositions. The cave-entrance row pins the
-  # NORMALIZATION: four shop interiors are cave-pool members whose location_ids
-  # omit the shop slots, so the axis is forced off there and this row must equal
-  # the same seed with shopsanity absent.
+  # completionist (locations-tier) compositions. The cave-entrance rows pin the
+  # COMPOSITION: eight of the nine shops are cave-pool members, one pool entry
+  # per overworld door row, each carrying its own three slot ids, so
+  # Entrance_ApplyRegionOverrides rebinds them to whichever door reaches them.
+  # These rows must differ BOTH from the same seed without shopsanity and from
+  # the same seed without the cave axis; the earlier normalization that forced
+  # shopsanity off here is gone.
   - settings: { mode.state: open, goal: fast_ganon, shopsanity: true }
     seed: "0x53484F5000000001"
     label: "shopsanity-open-fast-ganon"
@@ -1419,9 +1422,36 @@ entries:
     expected_sphere_digest: "8a8c683dd92f2ad143e6167ab0a99ed86d39ab060e68c4427fd408ec89eec9f2"
   - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, shopsanity: true }
     seed: "0x53484F5000000005"
-    label: "shopsanity-entrance-caves-forced-off"
-    expected_digest: "cdc46e521015c0e95d631e446fec16351b964b77668cd26ee6b3c4c25e7123f0"
-    expected_sphere_digest: "41b9ae455ae6d1c751314901b4b67df01ada4a54800873399d7ba36c320f3162"
+    label: "shopsanity-entrance-caves-compose"
+    expected_digest: "57c1e2b461245067f2acf236e912f42481623ebbc6ab5df634739c3be88166f5"
+    expected_sphere_digest: "628c9fe11fae781d57859542e02e27b246d0da859c4cfdc33a02f7f51fc61d94"
+  # Standard: the other world state where cave-entrance shuffle is effective, so
+  # the per-door region rebinding runs against a different region graph (the
+  # castle-escape gating) than the Open row above.
+  - settings: { mode.state: standard, goal: ganon, shuffle_cave_entrances: true, shopsanity: true }
+    seed: "0x53484F5000000008"
+    label: "shopsanity-entrance-caves-standard"
+    expected_digest: "b218f564e867292fd6cc2853a0a59982e9f2e70e9e06f01b7d04b5c2244ee0a3"
+    expected_sphere_digest: "3804b7312611f30e4bc22b90409e1ca67e042ecae78028d2b0f21d84922f5eb2"
+  # Decoupled on: the one-way exit net is an INDEPENDENT permutation layered on
+  # the entry shuffle, and shop identity must keep following the ENTRY net. If a
+  # regression ever resolved a shop through the exit net instead, this row moves
+  # while the coupled row above does not.
+  - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, decoupled: true, shopsanity: true }
+    seed: "0x53484F5000000009"
+    label: "shopsanity-entrance-caves-decoupled"
+    expected_digest: "3248bbe499b033506fc5f5401c9fe5306074f7f8a77fafe7231fbb1359b30b2c"
+    expected_sphere_digest: "a1f4c08e6d5a8a856a920738896e4ec7487b0fb4a265ad63efe243f2a723dbef"
+  # Crossed: the ONE composition whose placement-side shop binding comes from a
+  # different function (Entrance_ApplyCrossOverrides over a combined
+  # cave+dungeon endpoint space, not Entrance_ApplyRegionOverrides). The runtime
+  # arm is covered by --rando-shop-doorwalk's `crossed` walk, which showed a
+  # dungeon door row selling a cave shop; this row is the placement half.
+  - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, shuffle_dungeon_entrances: true, cross_category: true, shopsanity: true }
+    seed: "0x53484F500000000A"
+    label: "shopsanity-entrance-crossed"
+    expected_digest: "700ffe2173cb2afd0a0184082226c1424bbe9fd5744ec888a3ecb05671390ec0"
+    expected_sphere_digest: "7c89c50538050e329032f8430c6392ff71e8b75d0ebc98100fb62b794770b0ec"
   - settings: { mode.state: open, goal: fast_ganon, shopsanity: true, traps: insanity }
     seed: "0x53484F5000000007"
     label: "shopsanity-traps-shops-excluded"

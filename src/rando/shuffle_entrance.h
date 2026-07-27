@@ -164,6 +164,24 @@ uint8 Entrance_CaveRepresentativeId(int interior);
 // tables (the offline validator is skipped in assetless profiles).
 int Entrance_CaveInteriorDoorRows(int interior, const uint8 **out_rows);
 bool Entrance_InteriorDeclaresEntranceId(int interior, uint8 ent_id);
+// The cave interior the door at row `lx` now LOADS under the installed entry
+// permutation `net`/`n` (NULL/0 = no layout ⇒ identity), or -1 for none. `cross`
+// selects the endpoint space (Crossed permutes a combined cave+dungeon pool, so
+// a dungeon door can lead to a cave and vice versa); `vanilla_entrance_id` is
+// the door's PRISTINE id, used only to resolve a dungeon source. This is the
+// one place the door row → source entry → assign → destination entry chain
+// lives; shop identity and destination-side discovery both consume it.
+int Entrance_DestCaveOfDoorRow(const uint8 *net, int n, bool cross, uint16 lx,
+                               uint8 vanilla_entrance_id);
+// add-rando-shopsanity — the shop hosted behind interior `interior`'s door:
+// base location id (slots base..base+2), or 0xFFFF for none. Eight of the nine
+// shops are cave interiors and resolve this way; the ninth (Light World Death
+// Mountain, room 0x0FF) is not a cave and keeps a static room-only table row.
+uint16 Entrance_CaveShopLocBase(int interior);
+// The interior ROOM a pool entry loads, or 0xFFFF out of range. The shop
+// resolver compares it against the live room so a stale captured door id fails
+// closed rather than naming that row's shop.
+uint16 Entrance_CaveInteriorRoom(int interior);
 // D.3 capture helpers: total cave-interior count (decoupled pool size) + name.
 int Entrance_CaveInteriorCount(void);
 const char *Entrance_CaveInteriorName(int interior);

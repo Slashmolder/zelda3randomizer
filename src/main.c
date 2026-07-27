@@ -1293,7 +1293,7 @@ static void MaybeRunShopProbeAndExit(int argc, char **argv, const char *config_f
   exit(0);
 }
 
-// --rando-shop-doorwalk[=<sidecar_path>] — shopsanity reachability audit.
+// --rando-shop-doorwalk — shopsanity reachability audit.
 //
 // Walks every real overworld door row exactly the way Overworld_UseEntrance
 // does (which_entrance = kOverworld_Entrance_Id[lx], then the interior room =
@@ -1303,6 +1303,98 @@ static void MaybeRunShopProbeAndExit(int argc, char **argv, const char *config_f
 // table only against itself — it cannot see a door column holding values no
 // real door ever produces. Reports the shop locations no door reaches and the
 // ones several doors collide on. Read-only.
+//
+// Two arms. The VANILLA arm pins that shop identity derived from the entrance
+// layout reduces exactly to the historical static door column when no layout is
+// installed. The SHUFFLED arm installs real generated cave-entrance layouts and
+// re-walks: since the door overlay is installed onto asset 126, the SAME walk
+// code reads the shuffled table, so both arms exercise one code path. That arm
+// is the guard for shop-identity-from-the-layout — under a permutation each
+// shop must still be reachable, from exactly one room, and no two shops may
+// collapse onto one door.
+enum { kShopWalkLocFirst = 237, kShopWalkLocCount = 27 };
+
+// Returns 0 on success, or the number of violations. `label` names the arm.
+static int ShopDoorWalk_Once(const char *label) {
+  // A shop slot may legitimately answer to SEVERAL doors when they all belong
+  // to one pool entry (aginah_cave has two rows, room 0x11F has two doors).
+  // What must never happen is one slot answering from two DIFFERENT rooms —
+  // that is room-key aliasing, a live hazard because interior rooms are 0x1xx
+  // while plenty of ordinary rooms share their low byte. So the invariant is:
+  // every slot is reached, and every slot is reached from exactly one room.
+  int hits[kShopWalkLocCount];
+  uint16 room_of[kShopWalkLocCount];
+  int rooms_seen[kShopWalkLocCount];
+  int split = 0;
+  memset(hits, 0, sizeof(hits));
+  memset(rooms_seen, 0, sizeof(rooms_seen));
+  for (int i = 0; i < kShopWalkLocCount; i++) room_of[i] = 0xFFFFu;
+
+  uint32 ndoors = kOverworld_Entrance_Id_SIZE;
+  uint32 nrooms = kEntranceData_rooms_SIZE / 2u;
+  for (uint32 lx = 0; lx < ndoors; lx++) {
+    uint8 ent = kOverworld_Entrance_Id[lx];
+    if (ent >= nrooms) continue;
+    uint16 room = kEntranceData_rooms[ent];
+    uint16 first_of_row = 0xFFFFu;
+    for (uint8 pos = 1; pos <= 3; pos++) {
+      // The door id the entry hook would have captured for this row: ALTTPR's
+      // PreviousOverworldDoor == row index + 1. Identity only — the liveness
+      // gating in Rando_ShopSlotCheckInfo would need a generated slot on disk.
+      uint16 loc = Rando_ShopSlotLocForDoor(room, (uint8)(lx + 1), pos);
+      if (loc < kShopWalkLocFirst || loc >= kShopWalkLocFirst + kShopWalkLocCount)
+        continue;
+      if (pos == 1) {
+        first_of_row = loc;
+        fprintf(stderr, "[DOORWALK:%s] door lx=0x%02X (ALTTPR door 0x%02X) "
+                        "which_entrance=0x%02X room=0x%03X -> shop loc %u\n",
+                label, lx, lx + 1, ent, room, loc);
+      } else if (first_of_row == 0xFFFFu ||
+                 loc != (uint16)(first_of_row + (pos - 1))) {
+        // One door presents ONE shop's three consecutive slots. Columns coming
+        // from different shops (or appearing only past column 1) would mean the
+        // resolver consulted something other than a single destination entry.
+        split++;
+        fprintf(stderr, "[DOORWALK:%s]   SPLIT SHOP: door 0x%02X pos %u -> %u, "
+                        "but pos 1 -> %d\n", label, lx + 1, pos, loc,
+                first_of_row == 0xFFFFu ? -1 : (int)first_of_row);
+      }
+      int s = loc - kShopWalkLocFirst;
+      hits[s]++;
+      if (room_of[s] == 0xFFFFu) {
+        room_of[s] = room;
+        rooms_seen[s] = 1;
+      } else if (room_of[s] != room) {
+        rooms_seen[s]++;
+        fprintf(stderr, "[DOORWALK:%s]   ALIAS: loc %u also reached from room "
+                        "0x%03X (first saw room 0x%03X)\n",
+                label, loc, room, room_of[s]);
+      }
+    }
+  }
+
+  int unreachable = 0, aliased = 0;
+  fprintf(stderr, "[DOORWALK:%s] --- shop locations no real door reaches ---\n", label);
+  for (int i = 0; i < kShopWalkLocCount; i++) {
+    if (hits[i] == 0) {
+      unreachable++;
+      fprintf(stderr, "[DOORWALK:%s]   loc %u UNREACHABLE\n", label, kShopWalkLocFirst + i);
+    }
+  }
+  fprintf(stderr, "[DOORWALK:%s] --- shop locations reached from several rooms ---\n", label);
+  for (int i = 0; i < kShopWalkLocCount; i++) {
+    if (rooms_seen[i] > 1) {
+      aliased++;
+      fprintf(stderr, "[DOORWALK:%s]   loc %u reached from %d distinct rooms\n",
+              label, kShopWalkLocFirst + i, rooms_seen[i]);
+    }
+  }
+  fprintf(stderr, "[DOORWALK:%s] summary: %d/%d unreachable, %d room-aliased, "
+                  "%d split-shop doors\n",
+          label, unreachable, kShopWalkLocCount, aliased, split);
+  return unreachable + aliased + split;
+}
+
 static void MaybeRunShopDoorWalkAndExit(int argc, char **argv, const char *config_file) {
   bool found = false;
   bool allow_missing_assets = false;
@@ -1323,71 +1415,41 @@ static void MaybeRunShopDoorWalkAndExit(int argc, char **argv, const char *confi
     exit(allow_missing_assets ? 0 : 1);
   }
 
-  // A shop slot may legitimately answer to SEVERAL doors when they all load the
-  // same interior (room 0x11F has two). What must never happen is one slot
-  // answering from two DIFFERENT rooms — that is room-key aliasing, and it is a
-  // live hazard here because interior rooms are 0x1xx while plenty of ordinary
-  // rooms share their low byte. So the invariant is: every slot is reached, and
-  // every slot is reached from exactly one room.
-  enum { kShopLocFirst = 237, kShopLocCount = 27 };
-  int hits[kShopLocCount];
-  uint16 room_of[kShopLocCount];
-  int rooms_seen[kShopLocCount];
-  memset(hits, 0, sizeof(hits));
-  memset(rooms_seen, 0, sizeof(rooms_seen));
-  for (int i = 0; i < kShopLocCount; i++) room_of[i] = 0xFFFFu;
+  int bad = ShopDoorWalk_Once("vanilla");
 
-  uint32 ndoors = kOverworld_Entrance_Id_SIZE;
-  uint32 nrooms = kEntranceData_rooms_SIZE / 2u;
-  for (uint32 lx = 0; lx < ndoors; lx++) {
-    uint8 ent = kOverworld_Entrance_Id[lx];
-    if (ent >= nrooms) continue;
-    uint16 room = kEntranceData_rooms[ent];
-    for (uint8 pos = 1; pos <= 3; pos++) {
-      // The door id the entry hook would have captured for this row: ALTTPR's
-      // PreviousOverworldDoor == row index + 1. Identity only — the liveness
-      // gating in Rando_ShopSlotCheckInfo would need a generated slot on disk.
-      uint16 loc = Rando_ShopSlotLocForDoor(room, (uint8)(lx + 1), pos);
-      if (loc < kShopLocFirst || loc >= kShopLocFirst + kShopLocCount)
-        continue;
-      if (pos == 1) {
-        fprintf(stderr, "[DOORWALK] door lx=0x%02X (ALTTPR door 0x%02X) "
-                        "which_entrance=0x%02X room=0x%03X -> shop loc %u\n",
-                lx, lx + 1, ent, room, loc);
-      }
-      int s = loc - kShopLocFirst;
-      hits[s]++;
-      if (room_of[s] == 0xFFFFu) {
-        room_of[s] = room;
-        rooms_seen[s] = 1;
-      } else if (room_of[s] != room) {
-        rooms_seen[s]++;
-        fprintf(stderr, "[DOORWALK]   ALIAS: loc %u also reached from room 0x%03X "
-                        "(first saw room 0x%03X)\n",
-                loc, room, room_of[s]);
-      }
+  // Shuffled arm. Several seeds, plus a Crossed one (where a shop's pool entry
+  // can land behind a DUNGEON door, so the source resolves by entrance id
+  // rather than by row) and a Standard-world one. Each installs a real layout,
+  // re-walks, and tears down so the next starts from the pristine table.
+  static const struct { const char *name; uint64 seed; uint8 axes; uint8 world; }
+  kArms[] = {
+    { "caves#1",  0xC0FFEE0000000001ull, kEntranceAxis_ShuffleCaves, kWorldState_Open },
+    { "caves#2",  0xC0FFEE0000000002ull, kEntranceAxis_ShuffleCaves, kWorldState_Open },
+    { "caves#3",  0x0123456789ABCDEFull, kEntranceAxis_ShuffleCaves, kWorldState_Standard },
+    { "decoup",   0xDEADBEEFCAFEBABEull,
+      (uint8)(kEntranceAxis_ShuffleCaves | kEntranceAxis_Decoupled), kWorldState_Open },
+    { "crossed",  0xA5A5A5A5A5A5A5A5ull,
+      (uint8)(kEntranceAxis_ShuffleCaves | kEntranceAxis_ShuffleDungeons |
+              kEntranceAxis_CrossCategory), kWorldState_Open },
+  };
+  for (size_t a = 0; a < sizeof(kArms) / sizeof(kArms[0]); a++) {
+    if (!Rando_EntranceInstallLayoutForAudit(kArms[a].seed, kArms[a].axes, 0,
+                                             kArms[a].world)) {
+      fprintf(stderr, "[DOORWALK:%s] FAILED: no entrance layout installed\n",
+              kArms[a].name);
+      bad++;
+      continue;
     }
+    bad += ShopDoorWalk_Once(kArms[a].name);
+    Rando_EntranceTeardownLayoutForAudit();
   }
 
-  int unreachable = 0, aliased = 0;
-  fprintf(stderr, "[DOORWALK] --- shop locations no real door reaches ---\n");
-  for (int i = 0; i < kShopLocCount; i++) {
-    if (hits[i] == 0) {
-      unreachable++;
-      fprintf(stderr, "[DOORWALK]   loc %u UNREACHABLE\n", kShopLocFirst + i);
-    }
-  }
-  fprintf(stderr, "[DOORWALK] --- shop locations reached from several rooms ---\n");
-  for (int i = 0; i < kShopLocCount; i++) {
-    if (rooms_seen[i] > 1) {
-      aliased++;
-      fprintf(stderr, "[DOORWALK]   loc %u reached from %d distinct rooms\n",
-              kShopLocFirst + i, rooms_seen[i]);
-    }
-  }
-  fprintf(stderr, "[DOORWALK] summary: %d/%d unreachable, %d room-aliased\n",
-          unreachable, kShopLocCount, aliased);
-  exit(unreachable == 0 && aliased == 0 ? 0 : 3);
+  // Teardown must restore the vanilla table exactly — otherwise a later arm (or
+  // real gameplay after a slot switch) would walk a contaminated base.
+  bad += ShopDoorWalk_Once("post-teardown");
+
+  fprintf(stderr, "[DOORWALK] TOTAL violations across all arms: %d\n", bad);
+  exit(bad == 0 ? 0 : 3);
 }
 
 // Comparator for qsort over uint64 samples — ascending order.

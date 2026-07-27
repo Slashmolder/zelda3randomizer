@@ -617,7 +617,15 @@ static bool write_live_shop_inventory(uint8 *buf) {
 
   for (uint8 pos = 0; pos < 3; pos++) {
     uint16 item, price;
-    if (!Rando_ShopSlotCheckInfo(BYTE(dungeon_room_index), which_entrance,
+    // The shop key is the FULL 16-bit room plus the CAPTURED overworld door
+    // (ALTTPR's PreviousOverworldDoor), which is what every other call site
+    // passes. Neither substitute works: the low room byte aliases ordinary
+    // rooms onto interior rooms (0x0F never matches interior 0x10F), and
+    // which_entrance cannot separate shops at all — four Dark World shops
+    // share id 0x60 and two share 0x58. The Take-Any lookup above genuinely
+    // takes a uint8 room, so its BYTE() is correct; this one is not.
+    if (!Rando_ShopSlotCheckInfo(dungeon_room_index,
+                                 g_ram[kRam_RandoOverworldDoor],
                                  (uint8)(pos + 1), NULL, &item, &price) ||
         item >= ITEM__COUNT)
       continue;

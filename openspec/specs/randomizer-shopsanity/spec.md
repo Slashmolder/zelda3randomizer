@@ -88,41 +88,47 @@ The runtime SHALL draw an unchecked check slot's placed item by resolving item �
 
 ### Requirement: Shopsanity composition rules
 
-The axis SHALL be normalized off when cave-entrance shuffle is in effect, and
-SHALL otherwise compose without derived-rule normalization against every other
-axis: door shuffle, dungeon chains, pot/terrain/enemy-check families, souls (no
-shopkeeper is soul-gated), and boss/drop/enemy shuffles. Shop slots SHALL be
-excluded from the trap-masquerade eligible set. Customizer manifests SHALL be
-able to pin shop slots when the axis is on and SHALL refuse shop-slot pins when
-it is off. The spoiler SHALL emit shop rows with their prices (JSON `shops[]`
-gains `"price"`; the text `Shops:` section prints the price per slot) in every
-world state where shop-class placements exist, leaving axis-off non-Retro
-spoilers byte-identical.
+The axis SHALL compose without derived-rule normalization against every other
+axis, including cave-entrance shuffle: door shuffle, dungeon chains,
+pot/terrain/enemy-check families, souls (no shopkeeper is soul-gated), and
+boss/drop/enemy shuffles. Shop slots SHALL be excluded from the trap-masquerade
+eligible set. Customizer manifests SHALL be able to pin shop slots when the axis
+is on and SHALL refuse shop-slot pins when it is off. The spoiler SHALL emit
+shop rows with their prices (JSON `shops[]` carries `"price"`; the text `Shops:`
+section prints the price per slot) and SHALL emit the effective `shopsanity`
+value in its settings echo, in every world state where shop-class placements
+exist, leaving axis-off non-Retro spoilers byte-identical.
 
-Four shop interiors (rooms `0x10F`, `0x110`, `0x112`, `0x11F`) ARE members of
-the cave-entrance shuffle pool, and their `kCaveInteriors` entries do not list
-the shop slot ids, so `Entrance_ApplyRegionOverrides` does not rebind them.
-Under cave-entrance shuffle a shop slot would therefore be evaluated from its
-vanilla overworld region while the runtime reaches that interior through a
-different door. Because a shuffled destination interior is reached through the
-door rows of a single source interior, the rooms hosting several shops cannot
-serve all their slots however they are keyed; rebinding regions alone cannot
-make the composition sound. The axis SHALL therefore be forced off under
-effective cave-entrance shuffle by a single predicate that canonical
-serialization, placement, runtime and the spoiler all consult, so the
-`settings_hash` describes the seed actually generated.
+Eight of the nine shops live in cave interiors that are members of the
+cave-entrance shuffle pool. Each such shop SHALL occupy its **own** pool entry,
+keyed by its overworld door row, and SHALL carry its three slot ids as that
+entry's locations, so that `Entrance_ApplyRegionOverrides` rebinds those slots to
+the region of whichever door now reaches them. The ninth shop (Light World Death
+Mountain, room `0x0FF`) is not a cave interior and never shuffles.
 
-#### Scenario: Cave-entrance shuffle forces the axis off
-- **WHEN** a seed requests `shopsanity=true` together with
+That binding SHALL be enforced rather than assumed: an entry that names a shop
+without listing the shop's three slot ids SHALL fail the build, both in the
+table generator and in the runtime self-check, because such an entry would hand
+the player a slot whose logic region was never rebound. The rebinding itself
+SHALL be asserted directly against the override store, since spoilers report
+each location's static logic region for every location type and therefore
+cannot distinguish a rebound slot from an unbound one.
+
+The earlier normalization that forced the axis off under cave-entrance shuffle
+SHALL be removed, together with its predicate; a single predicate SHALL remain
+as the consumer-facing test for whether shop slots are live fill locations.
+
+#### Scenario: The axes compose
+- **WHEN** a seed requests both `shopsanity=true` and
   `shuffle_cave_entrances=true` in a world state where cave-entrance shuffle is
-  effective (Open or Standard)
-- **THEN** the generated seed contains no shop-class fill placements, the
-  canonical settings serialize `shopsanity` as off, and the spoiler reports the
-  axis as off
+  effective
+- **THEN** the seed generates with all 27 shop slots as fill locations, the
+  canonical settings preserve `shopsanity=true`, and each shop slot's logic
+  region is the region of the overworld door that reaches it in that seed
 
 #### Scenario: No derived-rule coupling
-- **WHEN** `shopsanity=true` is combined with any supported axis combination
-  other than effective cave-entrance shuffle
+- **WHEN** `shopsanity=true` is combined with any supported axis combination,
+  effective cave-entrance shuffle included
 - **THEN** canonical serialization preserves `shopsanity=true` (no
   normalization), and generation succeeds or refuses on the other axes' existing
   rules only
@@ -140,52 +146,79 @@ serialization, placement, runtime and the spoiler all consult, so the
 
 ### Requirement: Shop identity is keyed by the entered overworld door
 
-A shop SHALL be identified at runtime by the pair (interior room low byte,
-entered overworld door id), where the door id is the overworld door row index
-plus one — the same quantity ALTTPR stores in `PreviousOverworldDoor`
-(`z3randomizer/doorframefixes.asm` `StoreLastOverworldDoorID`) and the same
-quantity its `new Shop(...)` door argument holds. The engine's `which_entrance`
-SHALL NOT be used as the shop key: four shops share entrance id `0x60` and two
-share `0x58`, so it cannot separate them.
+A shop SHALL be identified at runtime by the pair (interior room, entered
+overworld door id), where the door id is the overworld door row index plus one —
+the same quantity ALTTPR stores in `PreviousOverworldDoor`. The engine's
+`which_entrance` SHALL NOT be used as the shop key: four shops share entrance id
+`0x60` and two share `0x58`, so it cannot separate them.
 
 The room SHALL be compared as the full 16-bit room index, as the ROM does; the
 low byte alone aliases ordinary rooms onto interior rooms (room `0x010` onto
 `0x110`).
 
+For the eight shops that are cave interiors, the live door SHALL be **derived
+from the entrance layout** rather than read from a static column: the shop is the
+destination pool entry, so its doors are the door rows of the source entry the
+permutation assigned to it. With cave-entrance shuffle inactive the assignment is
+the identity and this SHALL reduce to the vanilla door column. This mirrors
+ALTTPR, whose ROM writer re-derives each shop's door byte per seed from the
+post-shuffle connection.
+
+A source entry MAY own several door rows, in which case all of them reach that
+entry's shop — they are one pool slot, so this is the same shop, not an alias.
+Under cross-category shuffle the source MAY be a **dungeon** door, which the
+resolution SHALL accept (dungeon entrance ids are unique, so a dungeon source
+resolves by id where a cave source resolves by row); otherwise a shop landing
+behind a dungeon door would be modelled as reachable by the placer and be
+unobtainable at runtime.
+
+The room comparison SHALL be against the room of the **destination entry** the
+door resolves to, so that a captured door id which does not belong to the room
+the player is standing in — a mirror warp, a fall-hole, a stale byte — yields no
+shop rather than naming the shop that door's destination happens to host.
+
 Only the one shop ALTTPR declares with no door (Light World Death Mountain,
 `config = 0x43`) SHALL match on the room alone, mirroring its
-`shop_config & 0x40` skip-door-check bit. Every other shop SHALL stay
-door-keyed even when its room hosts a single shop, so that a room loaded by
-more than one overworld door (room `0x11F` is loaded by entrance ids `0x46` and
-`0x6B`, and upstream declares a shop for the first only) keeps vanilla shop
-behavior at the undeclared door, and no slot becomes obtainable from a door its
-logic region does not bind it to.
+`shop_config & 0x40` skip-door-check bit. Every other shop SHALL stay door-keyed
+even when its room hosts a single shop, so that a room loaded by more than one
+overworld door keeps vanilla shop behavior at the door upstream does not declare.
 
 The door id SHALL be captured at the overworld entry hook and SHALL persist in
 the reserved `g_ram` compat block, so that a snapshot replay-restore — which
 restores `g_ram` but not C statics — keeps the active shop resolvable.
 
-#### Scenario: Every shop slot is reachable from exactly one door
-- **WHEN** the shop resolver is walked against every row of the vanilla
-  overworld entrance table with a `shopsanity=true` slot active
-- **THEN** each of the 27 shop slots (ids 237-263) resolves from at least one
-  overworld door, and no slot resolves from more than one door
-
-#### Scenario: Shops sharing an interior room stay distinct
-- **WHEN** the player enters the Dark World Potion Shop, Lumberjack Hut,
-  Village of Outcasts and Lake Hylia shop doors, all of which load room `0x10F`
-  with `which_entrance == 0x60`
-- **THEN** each door presents its own three slots (237-239, 243-245, 246-248,
-  249-251 respectively) rather than all four presenting the same three
+#### Scenario: Every shop slot is reachable from exactly one room
+- **WHEN** the shop resolver is walked against every row of the overworld
+  entrance table, both with no entrance shuffle and against generated
+  cave-entrance-shuffled layouts including decoupled and cross-category ones
+- **THEN** each of the 27 shop slots resolves from at least one overworld door,
+  no slot resolves from more than one room, and no single door's three columns
+  resolve to different shops
 
 #### Scenario: The door-less shop resolves from its room alone
 - **WHEN** the player enters the Light World Death Mountain shop, which upstream
   declares with `config = 0x43` and `door_id = 0x00`
 - **THEN** its three slots resolve on the room match alone, without consulting
-  the door id
+  the door id — it is also the one shop that is not a cave interior, so it never
+  shuffles and keeps the static table row
 
 #### Scenario: An undeclared door into a shop room stays vanilla
 - **WHEN** the player enters room `0x11F` through entrance id `0x6B`, the door
   for which upstream declares no shop
-- **THEN** no shop check is offered and the vanilla shop behavior runs
+- **THEN** no shop check is offered and the vanilla shop behavior runs; that
+  door is its own pool entry with no shop, so under cave-entrance shuffle it
+  offers whatever the permutation put behind it and still never the room's shop
+
+#### Scenario: Shops sharing an interior room stay distinct
+- **WHEN** the player enters the Dark World Potion Shop, Lumberjack Hut, Village
+  of Outcasts and Lake Hylia shop doors, all of which load room `0x10F` with
+  `which_entrance == 0x60`
+- **THEN** each door presents its own three slots rather than all four
+  presenting the same three
+
+#### Scenario: A shuffled door sells the destination's shop
+- **WHEN** cave-entrance shuffle sends an arbitrary overworld door to a shop's
+  pool entry
+- **THEN** that door sells that shop's three slots at that shop's prices, and
+  those slot ids are bound in logic to the region of the door the player used
 

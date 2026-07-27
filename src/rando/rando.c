@@ -1877,35 +1877,49 @@ RandoGrantResult Rando_ChestGrant(uint16 dungeon_room, uint8 chest_ordinal,
 
 // === Phase B sprite/shop dispatch: begin ===
 // ---------------------------------------------------------------------------
-// Retro shop-slot lookup (#53). (room-low-byte, entrance-door) selects one
-// of the 9 ALTTPR shops; that shop's three purchasable slots occupy three
-// consecutive registry ids (LOC base .. base+2). Capacity-Upgrade slots
-// (264/265) are identity-placed and dispatched separately by their own site.
+// Shop-slot lookup (#53). The entered overworld door selects one of the 9
+// ALTTPR shops; that shop's three purchasable slots occupy three consecutive
+// registry ids (LOC base .. base+2). Capacity-Upgrade slots (264/265) are
+// identity-placed and dispatched separately by their own site.
 //
 // Provenance: ALTTPR shop room_id/door_id pairs from
 // `../alttp_vt_randomizer/app/Region/Standard/**/*.php` `new Shop(...)`
 // 4th/5th constructor args; LOC bases from
 // `assets/rando/location_registry.yaml` ids 237..263. The (room, door)
 // disambiguation matches z3randomizer `shopkeeper.asm` SpritePrep_ShopKeeper
-// (ShopTable room+door match). Door values equal the vanilla overworld
-// entrance ids (kOverworld_Entrance_Id), which is exactly what
-// `which_entrance` holds while the player stands in the cave.
+// (ShopTable room+door match).
 //
-// NOTE: low-byte room is ambiguous (0x0F backs four DW shops; 0x12 backs DW
-// Death-Mountain + LW Lake-Hylia), so for those the DOOR disambiguates.
-//
-// The door column is ALTTPR's `PreviousOverworldDoor`, which
+// `door` is ALTTPR's `PreviousOverworldDoor`, which
 // `z3randomizer/doorframefixes.asm` (`StoreLastOverworldDoorID`:
 // `TXA : INC : STA.l PreviousOverworldDoor`) defines as the overworld door ROW
 // INDEX + 1. It is NOT the entrance id — that same routine loads the entrance
 // id separately from `$9BBB73,X` into `EntranceIndex`. The two quantities
-// coincide for only 3 of the 9 shops, so keying this table on the engine's
+// coincide for only 3 of the 9 shops, so keying on the engine's
 // `which_entrance` cannot work: the four room-0x10F doors all carry entrance id
 // 0x60 and the two room-0x112 doors both carry 0x58. (That mistake shipped
 // once; `--rando-shop-doorwalk` is the guard that now pins it down. It measured
 // 15 of the 27 slots unreachable and 6 reached from several doors at once.)
 // The live door id is captured at the overworld entry hook into
 // g_ram[kRam_RandoOverworldDoor].
+//
+// DERIVED, NOT TABULATED (design D4). Eight of the nine shops sit in cave
+// interiors that are cave-entrance-shuffle pool entries, one entry per
+// overworld door row. A shop travels with its entry, so its live door set is
+// whichever SOURCE entry the permutation assigned to it:
+//
+//     door row -> source entry -> installed permutation -> destination entry
+//                              -> that entry's shop_loc_base
+//
+// which is ALTTPR's own per-seed re-derivation (`Shop::get_bytes`:
+// `door_id = door_addresses[entrances[0].name][0] + 1`) expressed against our
+// assignment instead of a rewritten ROM table. With the axis off the assignment
+// is the identity and this reduces EXACTLY to the vanilla door column that the
+// static table used to hold — `--rando-shop-doorwalk` pins both arms.
+//
+// Deriving it also means placement and runtime agree by construction rather
+// than by a second table that could drift: the same `location_ids` that carry
+// `shop_loc_base`'s three slots are what `Entrance_ApplyRegionOverrides` rebinds
+// to the source door's region in the same pass.
 //
 // ROOM-ONLY shops: ALTTPR's shop identifier (z3randomizer `shopkeeper.asm`,
 // ShopTable match loop) checks `ShopType & 0x0040`; when set, it matches on
@@ -1915,7 +1929,10 @@ RandoGrantResult Rando_ChestGrant(uint16 dungeon_room, uint8 chest_ordinal,
 // `../alttp_vt_randomizer/app/Region/Standard/LightWorld/DeathMountain/East.php`,
 // so its `door_id = 0x00` is deliberately ignored. Keying that shop on the door
 // would silently fail (0x00 also = the "no entrance" reset value), so it is
-// flagged room_only and matched on room alone — exactly as the ROM does.
+// flagged room_only and matched on room alone — exactly as the ROM does. It is
+// also the ONE shop that is not a cave interior (room 0x0FF is below the
+// 0x100 cached-exit class), so it never shuffles and the static table keeps
+// exactly this row.
 //
 // Every OTHER shop stays door-keyed even where its room hosts only one shop.
 // Room-only matching there would be a superset of upstream: room 0x11F is
@@ -1926,25 +1943,66 @@ RandoGrantResult Rando_ChestGrant(uint16 dungeon_room, uint8 chest_ordinal,
 typedef struct { uint16 room; uint8 door; uint16 loc_base; bool room_only; } RandoShopSlot;
 static const RandoShopSlot kRandoShopSlots[] = {
   // room   door   base  room_only   shop (LOC ids base..base+2)
-  { 0x10F, 0x6F, 237, false },  // Dark World Potion Shop          (237/238/239)
-  { 0x110, 0x75, 240, false },  // Dark World Forest Shop          (240/241/242)
-  { 0x10F, 0x57, 243, false },  // Dark World Lumberjack Hut       (243/244/245)
-  { 0x10F, 0x60, 246, false },  // Dark World Village of Outcasts  (246/247/248)
-  { 0x10F, 0x74, 249, false },  // Dark World Lake Hylia Shop      (249/250/251)
-  { 0x112, 0x6E, 252, false },  // Dark World Death Mountain Shop  (252/253/254)
   { 0x0FF, 0x00, 255, true  },  // Light World Death Mountain Shop (255/256/257) — config 0x43 -> room-only
-  { 0x11F, 0x46, 258, false },  // Light World Kakariko Shop       (258/259/260)
-  { 0x112, 0x58, 261, false },  // Light World Lake Hylia Shop     (261/262/263)
 };
+// The 27 regular shop slots as one contiguous id block — the doorwalk audit and
+// the debug dump iterate it, since the per-shop rows now live in the cave table.
+enum { kRandoShopLocFirst = 237, kRandoShopLocCount = 27 };
+
+// The ENTRY permutation installed this session, for the D4 chain above. Defined
+// with the rest of the entrance runtime state further down; forward-declared
+// here because the shop dispatch is emitted before those globals.
+// Returns NULL / *out_n == 0 when no entry axis is installed (⇒ identity).
+static const uint8 *Entrance_InstalledEntryNet(int *out_n, bool *out_cross);
+// True when the ACTIVE slot's settings say a cave-entry permutation must be
+// installed. "No net" and "identity net" are otherwise indistinguishable, and
+// they are not interchangeable here: the four Dark World shops share room
+// 0x10F, so the destination-room guard below cannot catch a shuffled slot that
+// silently resolved with the vanilla assignment — it would hand over a real but
+// WRONG shop (wrong item, wrong price, wrong location marked checked).
+static bool Entrance_EntryNetExpected(void);
+// The door's PRISTINE vanilla entrance id (the saved original under an installed
+// overlay, else the live table). Only needed to resolve a DUNGEON source door
+// under Crossed; cave sources resolve by row.
+static uint8 Entrance_VanillaIdOfDoorRow(uint16 lx);
 
 // `door` is ALTTPR's PreviousOverworldDoor (overworld door row index + 1) — see
-// the table comment above; callers read it from g_ram[kRam_RandoOverworldDoor].
+// the block comment above; callers read it from g_ram[kRam_RandoOverworldDoor].
 static uint16 shop_lookup(uint16 room, uint8 door, uint8 pos) {
   if (pos > 2) return 0xFFFFu;  // shops have exactly 3 slots
+  // Cave-resident shops (8 of 9), resolved through the live entrance layout.
+  // door == 0 is the engine's "no entrance yet" reset value, which is also why
+  // the room-only shop is declared with door 0 — never treat it as row -1.
+  if (door != 0) {
+    int net_n = 0;
+    bool net_cross = false;
+    const uint8 *net = Entrance_InstalledEntryNet(&net_n, &net_cross);
+    // Fail CLOSED on the one inconsistency the room guard cannot see: settings
+    // that call for a shuffled layout while none is installed. Falling through
+    // to the identity assignment there would answer with the door's VANILLA
+    // shop, which for the room-0x10F and room-0x112 doors is a different real
+    // shop in the same room — so the room compare passes and the player is
+    // handed someone else's three slots. No shop beats the wrong shop.
+    if (net == NULL && Entrance_EntryNetExpected()) return 0xFFFFu;
+    int dst = Entrance_DestCaveOfDoorRow(net, net_n, net_cross,
+                                         (uint16)(door - 1),
+                                         Entrance_VanillaIdOfDoorRow((uint16)(door - 1)));
+    if (dst >= 0) {
+      uint16 base = Entrance_CaveShopLocBase(dst);
+      // Room must be the destination interior's own room. A captured door id
+      // that does not belong to the room the player is standing in (a mirror
+      // warp, a fall-hole, a stale byte) then fails CLOSED instead of naming
+      // whatever shop that row's destination happens to host.
+      if (base != 0xFFFFu && room == Entrance_CaveInteriorRoom(dst))
+        return (uint16)(base + pos);
+      // A cave door that hosts no shop falls through: the static table holds
+      // only the room-only 0x0FF row, and a cave door never loads room 0x0FF.
+    }
+  }
   for (uint32 i = 0; i < sizeof(kRandoShopSlots) / sizeof(kRandoShopSlots[0]); i++) {
     if (kRandoShopSlots[i].room != room) continue;  // room must always match
     // Room-only shops match on the room alone (ShopType & 0x40); others also
-    // require the door to match, since their room is shared by several shops.
+    // require the door to match.
     if (kRandoShopSlots[i].room_only || kRandoShopSlots[i].door == door) {
       return (uint16)(kRandoShopSlots[i].loc_base + pos);
     }
@@ -3948,9 +4006,42 @@ static uint8 g_cross_decoupled_exit_cave;  // target cave interior when kind == 
 // its own can no longer answer "did this door move": several pool entries share
 // an entrance id — the four Dark World shop doors all load room 0x10F through
 // 0x60 — so an unchanged overlay byte does not imply an unchanged destination.
-// g_entry_net_n == 0 means no entry axis is installed.
+// g_entry_net_n == 0 means no entry axis is installed. g_entry_net_cross says
+// which endpoint space it indexes: under Crossed the permutation runs over the
+// COMBINED cave+dungeon endpoints, so the source lookup differs (dungeon doors
+// resolve by their unique entrance id, caves by row) and a cave entry's image
+// may be a dungeon.
 static uint8 g_entry_net[kEntranceMaxInteriors];
 static int   g_entry_net_n;
+static bool  g_entry_net_cross;
+
+// The installed entry permutation, for the door row -> source -> assign ->
+// destination chain (shop identity, destination-side discovery). NULL / *out_n
+// 0 = nothing installed, which callers treat as the identity assignment.
+static const uint8 *Entrance_InstalledEntryNet(int *out_n, bool *out_cross) {
+  if (out_n) *out_n = g_entry_net_n;
+  if (out_cross) *out_cross = g_entry_net_cross;
+  return g_entry_net_n > 0 ? g_entry_net : NULL;
+}
+
+// See the forward declaration: lets a consumer distinguish "identity because
+// nothing is shuffled" from "identity because the layout is MISSING".
+// Settings_EffectiveShuffleCaveEntrances (not the raw bit) so the world-state
+// normalization that makes the axis inert in Inverted/Retro is honored; Crossed
+// sets the cave bit too, so it is covered.
+static bool Entrance_EntryNetExpected(void) {
+  const RandoSettings *s = Rando_GetActiveSettings();
+  return s != NULL && Settings_EffectiveShuffleCaveEntrances(s);
+}
+
+// The door's PRISTINE vanilla entrance id: the saved original while an overlay
+// is installed, otherwise the live table (vanilla / non-entrance game).
+static uint8 Entrance_VanillaIdOfDoorRow(uint16 lx) {
+  if (lx >= kOverworld_Entrance_Id_SIZE) return 0;
+  return (g_entrance_overlay_orig != NULL)
+             ? g_entrance_overlay_orig[lx]
+             : ((const uint8 *)kOverworld_Entrance_Id)[lx];
+}
 typedef struct { uint8 block[0x32]; uint8 is_dark; uint8 save_dark; uint8 valid; } RandoCaveArrival;
 // Single per-interior overworld-arrival table used by BOTH the bake-capture and
 // the decoupled runtime. Persisted to cave_arrival_capture.bin and reloaded each
@@ -3984,9 +4075,8 @@ void Rando_RecordEnteredDoorForCapture(uint16 lx) {
   if (lx >= len) return;
   // The door's VANILLA entrance-id: the saved original when an overlay is
   // installed (shuffle), otherwise the live table (vanilla/non-entrance game).
-  uint8 vid = (g_entrance_overlay_orig != NULL) ? g_entrance_overlay_orig[lx]
-                                                : ((const uint8 *)kOverworld_Entrance_Id)[lx];
-  (void)vid;
+  // Needed below to resolve a DUNGEON source door under Crossed.
+  uint8 vid = Entrance_VanillaIdOfDoorRow(lx);
   // The player physically walked through this door, so where it leads is now
   // known to them — mark it discovered. Deliberately NOT gated on the overlay
   // byte having changed: entries sharing an entrance id make an unchanged byte
@@ -3994,19 +4084,23 @@ void Rando_RecordEnteredDoorForCapture(uint16 lx) {
   // in Rando_EntranceConnection, where the entry-level answer is available.
   if (g_entrance_overlay_orig != NULL) Rando_EntranceMarkDiscovered(lx);
   // tracker-player-knowledge — the player just SAW the interior the door
-  // actually loads (the CURRENT, possibly shuffled table id): persistently
-  // mark that vanilla interior discovered so its contents join the
-  // knowledge-limited view. A dungeon behind this door resolves to interior
-  // -1 here; the per-frame dungeon observation covers it instead.
+  // actually loads: persistently mark that pool entry discovered so its
+  // contents join the knowledge-limited view. A dungeon behind this door
+  // resolves to -1 here; the per-frame dungeon observation covers it instead.
   //
-  // This one is DESTINATION-side, so it can only key on the loaded entrance id
-  // and stays first-match where entries share one (the four room-0x10F shop
-  // entries). That is inert for the knowledge model today: every entry sharing
-  // an id is a location-less pool slot, so naming the wrong sibling reveals
-  // nothing either way. Giving those entries their own shop slots would make it
-  // load-bearing — resolving it then needs the live assignment, not the id.
-  Rando_MarkCaveInteriorDiscovered(
-      Entrance_InteriorOfEntranceId(((const uint8 *)kOverworld_Entrance_Id)[lx]));
+  // Resolved through the live ASSIGNMENT, not the loaded entrance id. The id is
+  // ambiguous among room-siblings (the four room-0x10F shop entries all load
+  // through 0x60), and it stopped being inert the moment those entries got
+  // their own shop slots: naming the wrong sibling would now reveal a shop's
+  // three checks the player has not actually found. The chain the shop resolver
+  // uses is the same one that answers "which entry did this door load".
+  {
+    int net_n = 0;
+    bool net_cross = false;
+    const uint8 *net = Entrance_InstalledEntryNet(&net_n, &net_cross);
+    Rando_MarkCaveInteriorDiscovered(
+        Entrance_DestCaveOfDoorRow(net, net_n, net_cross, lx, vid));
+  }
   // SOURCE side: which door the player walked into. Keyed by row, so the four
   // room-0x10F doors record four distinct interiors (their arrival positions,
   // regions and shuffle slots all differ).
@@ -4373,6 +4467,7 @@ static void Entrance_RuntimeTeardown(void) {
   }
   memset(g_entrance_discovered, 0, sizeof(g_entrance_discovered));
   g_entry_net_n = 0;
+  g_entry_net_cross = false;
   Entrance_ClearRegionOverrides();
   Entrance_ClearEdgeOverrides();
   g_rando_entrance_exit_room = 0;
@@ -4593,9 +4688,11 @@ static void Entrance_RuntimeInstall(const RandoSlotHeader *h) {
   // one (dungeon-only shuffle leaves this empty, and the id compare is exact
   // there because dungeon entrance-ids are unique).
   g_entry_net_n = 0;
+  g_entry_net_cross = false;
   if (lay->cross && lay->cross_n > 0) {
     g_entry_net_n = (lay->cross_n > kEntranceMaxInteriors) ? kEntranceMaxInteriors
                                                            : lay->cross_n;
+    g_entry_net_cross = true;
     memcpy(g_entry_net, lay->cross_assign, (size_t)g_entry_net_n);
   } else if (lay->cave && lay->cave_n > 0) {
     g_entry_net_n = (lay->cave_n > kEntranceMaxInteriors) ? kEntranceMaxInteriors
@@ -4645,6 +4742,48 @@ static void Entrance_RuntimeInstall(const RandoSlotHeader *h) {
   g_entrance_overlay_orig = Entrance_PristineVanillaIds();
   g_asset_ptrs[126] = g_entrance_overlay;
 }
+
+// Audit/self-test hook — install the entrance layout that
+// (seed, axes, attempt, world_state) regenerates, with no sidecar slot on disk.
+// Deliberately routes through the SAME Entrance_ComputeLayout +
+// Entrance_RuntimeInstall the game uses, so --rando-shop-doorwalk's shuffled
+// arm walks the real door overlay and the real installed entry permutation
+// rather than a re-derived model of them (a model that agreed with itself would
+// validate nothing — the lesson the vanilla arm already encodes). Returns false
+// when the axes produce no layout. Never call from gameplay: it leaves the
+// overlay installed without an active slot behind it.
+bool Rando_EntranceInstallLayoutForAudit(uint64 seed_u64, uint8 entrance_axes,
+                                         uint8 entrance_attempt,
+                                         uint8 world_state) {
+  // Refuse while a slot is live. Entrance_RuntimeInstall re-Begins the shared
+  // region/edge override stores, resets the decoupled nets and wipes
+  // g_entrance_discovered — installing a synthetic layout over a real slot
+  // would silently drop that slot's tracker overrides and its persisted
+  // door-discovery bitmap. The doorwalk runs before any slot exists; anything
+  // that does not is a bug in the caller, not a case to handle.
+  if (g_rando_slot_active) {
+    fprintf(stderr, "Rando_EntranceInstallLayoutForAudit: refused — a slot is "
+                    "active; this hook clears shared override state\n");
+    return false;
+  }
+  RandoSlotHeader h;
+  memset(&h, 0, sizeof(h));
+  h.slot_kind = kSlotKind_Randomizer;
+  h.generator_version = (uint16)kGeneratorVersion;
+  h.entrance_axes = entrance_axes;
+  h.entrance_attempt = entrance_attempt;
+  h.settings_ext_present = 1;
+  h.world_state = world_state;
+  ShareString ss;
+  memset(&ss, 0, sizeof(ss));
+  ss.version = (uint8)kGeneratorVersion;
+  ss.seed_u64 = seed_u64;
+  Share_PackBinary(&ss, h.share_string);
+  Entrance_RuntimeInstall(&h);
+  return g_entrance_overlay_orig != NULL;
+}
+
+void Rando_EntranceTeardownLayoutForAudit(void) { Entrance_RuntimeTeardown(); }
 
 // Coupling helper (Stage 2): for the overworld entry hook. Given the door-slot
 // `lx`, return the room the dungeon-exit room-keyed search should target so the
@@ -11165,6 +11304,29 @@ void Rando_RunAllSelfChecks(void) {
 }
 
 // ---------------------------------------------------------------------------
+// Reverse of the shop resolver for the diagnostic below: the (room, door) pair
+// that currently reaches shop block `base`, found by walking every overworld
+// door row through the LIVE tables exactly as --rando-shop-doorwalk does. Under
+// cave-entrance shuffle that door is the shuffled one, which is the whole point
+// of asking. False when no door reaches the shop or the entrance assets are
+// absent (the headless probe can run without them).
+static bool ShopDbg_LiveDoorOfShop(uint16 base, uint16 *out_room, uint8 *out_door) {
+  const uint8 *ids = (const uint8 *)kOverworld_Entrance_Id;
+  const uint16 *rooms = kEntranceData_rooms;
+  if (ids == NULL || rooms == NULL) return false;
+  uint32 ndoors = kOverworld_Entrance_Id_SIZE;
+  uint32 nrooms = kEntranceData_rooms_SIZE / 2u;
+  for (uint32 lx = 0; lx < ndoors && lx < 0xFFu; lx++) {
+    if (ids[lx] >= nrooms) continue;
+    uint16 room = rooms[ids[lx]];
+    if (shop_lookup(room, (uint8)(lx + 1), 0) != base) continue;
+    if (out_room) *out_room = room;
+    if (out_door) *out_door = (uint8)(lx + 1);
+    return true;
+  }
+  return false;
+}
+
 // add-rando-shopsanity — playtest diagnostic. Prints the WHOLE shop-check
 // decision chain (activation gates, then per-shop-slot resolution) to
 // dump_shop_debug.txt AND stderr, so an "icons not drawing" playtest report
@@ -11211,22 +11373,31 @@ void Rando_DumpShopCheckDebug(void) {
         fprintf(f, "[SHOPDBG] current (room,door) names shop slots %u-%u\n",
                 live, live + 2);
     }
-    for (uint32 i = 0; i < sizeof(kRandoShopSlots) / sizeof(kRandoShopSlots[0]); i++) {
+    // All 27 slots, each printed against the door that CURRENTLY reaches it.
+    // The per-shop (room, door) rows moved into the cave-interior table when
+    // shop identity became layout-derived, so the live pair is recovered by
+    // walking the overworld door table through the same resolver the runtime
+    // uses — which also makes the dump show the shuffled door, not a vanilla
+    // one, on a cave-entrance-shuffle slot.
+    for (uint16 base = kRandoShopLocFirst;
+         base < kRandoShopLocFirst + kRandoShopLocCount; base += 3) {
+      uint16 shop_room = 0xFFFFu;
+      uint8 shop_door = 0;
+      if (!ShopDbg_LiveDoorOfShop(base, &shop_room, &shop_door))
+        fprintf(f, "[SHOPDBG] shop %u-%u: NO door currently reaches it\n",
+                base, base + 2);
       for (uint8 pos = 0; pos < 3; pos++) {
-        uint16 loc = (uint16)(kRandoShopSlots[i].loc_base + pos);
+        uint16 loc = (uint16)(base + pos);
         uint16 placed = Placement_Lookup(loc, 0xFFFFu);
         uint16 ci_loc = 0xFFFFu, ci_item = 0xFFFFu, ci_price = 0;
-        // Non-room-only rows resolve with their own table door id; the
-        // room-only row matches on room alone so any entrance value works.
-        bool ci = Rando_ShopSlotCheckInfo(kRandoShopSlots[i].room,
-                                          kRandoShopSlots[i].door,
+        bool ci = Rando_ShopSlotCheckInfo(shop_room, shop_door,
                                           (uint8)(pos + 1),
                                           &ci_loc, &ci_item, &ci_price);
         uint8 gfx = 0, big = 0, fl = 0;
         int icon = ci ? Rando_GetShopCheckIcon(loc, &gfx, &big, &fl) : -1;
         fprintf(f, "[SHOPDBG] loc=%u room=%03X door=%02X pos=%u placed=%d "
                    "checked=%d checkinfo=%d item=%d price=%u icon=%d gfx=%02X\n",
-                loc, kRandoShopSlots[i].room, kRandoShopSlots[i].door, pos,
+                loc, shop_room, shop_door, pos,
                 placed == 0xFFFFu ? -1 : (int)placed,
                 Rando_IsLocationChecked(loc) ? 1 : 0,
                 ci ? 1 : 0, ci ? (int)ci_item : -1,

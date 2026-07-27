@@ -219,6 +219,49 @@ stood, so four doors into room `0x10F` each return to their own door with no
 per-entry table. Coupled cave shuffle — the default — is therefore safe under
 the split, and the risk is confined to the decoupled arrival data in D6.
 
+## D11. What phase 2b changed about D4, and one recorded consequence
+
+Two things the earlier design did not account for, both found while building 3.1
+and both verified against source rather than reasoned about:
+
+**Cross-category is part of the chain, not an edge case.** D4 wrote the
+resolution as "door row -> source entry -> assign -> destination entry", which
+is the CAVE pool. Under `cross_category` the permutation runs over the combined
+cave+dungeon endpoint space, so a shop's pool entry can be the image of a
+DUNGEON door — and `Entrance_ApplyCrossOverrides` already binds the destination
+cave's locations to that dungeon door's edge region and predicate, so the placer
+models the shop as reachable there. A cave-only lookup would therefore have
+produced a shop that logic certifies and the runtime cannot hand over. The
+shipped resolution (`Entrance_DestCaveOfDoorRow`) takes the endpoint space as a
+parameter: caves resolve by row, dungeons by their unique entrance id.
+`--rando-shop-doorwalk`'s `crossed` arm exhibits it — Desert Palace's door row
+`0x08` sells the Dark World Death Mountain shop.
+
+**The room compare became a fail-closed guard.** The static table compared the
+room because its rows were keyed (room, door). The derived resolution compares
+the room of the *destination entry*, which is a different and stronger claim:
+the captured door id must belong to the room the player is actually standing in.
+A stale `kRam_RandoOverworldDoor` — a mirror warp, a fall-hole, an unrelated
+room reached some other way — then yields no shop instead of naming whatever
+shop that row's destination happens to host. It is also what keeps the Retro
+take-any redirect behaving exactly as before: the redirect rewrites
+`which_entrance` after the entry hook, so the loaded room stops matching and the
+door names no shop, which is what the old (room, door) table did too.
+
+**Recorded consequence: a shuffled shop keeps its own vanilla access callback.**
+The reachability engine ANDs three things for an overridden location: the
+override's region, the override's SOURCE predicate (the door's `can_enter`), and
+the location's own `can_reach` from the logic tables. So the Village of Outcasts
+shop still demands Hammer + Moon Pearl even after the shuffle moves it behind a
+Light World door. That upstream callback describes crossing the hammer-peg field
+to the shop's *vanilla* door, so under the shuffle it is a leftover — but it is
+leftover in the CONSERVATIVE direction (the placer claims less than the runtime
+allows, never more), and it is exactly how every other cave-pool location with
+its own predicate already behaves. Deliberately not special-cased for shops:
+doing so would make shops the one location class whose destination predicate is
+dropped, and the composed corpus rows fill cleanly at the strict `items`
+accessibility tier as-is.
+
 ## D8. Why not pin the shop doors vanilla instead
 
 Considered and rejected by the owner. Excluding the four shop interiors from the

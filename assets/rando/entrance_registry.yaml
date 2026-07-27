@@ -74,10 +74,16 @@
 #     locations   : [location_registry ids] resident in this interior. May be []
 #                   for "empty" caves (still shuffle as slots).
 #     shop_loc_base: optional location_registry id of this door's shop slot 0
-#                   (slots are base..base+2). DOCUMENTATION ONLY in this phase —
-#                   gen_entrance_table.py does not emit it and no C code reads
-#                   it; it records which shop each split door hosts so the
-#                   follow-up phase can derive shop identity from the layout.
+#                   (slots are base..base+2). EMITTED into kCaveInteriors and
+#                   read at runtime: a shop travels with its DESTINATION pool
+#                   entry, so the resolver goes door row -> source entry ->
+#                   installed permutation -> destination entry -> this base.
+#                   An entry declaring a base MUST also list base..base+2 in
+#                   `locations` (asserted by gen_entrance_table.py) — that is
+#                   what makes Entrance_ApplyRegionOverrides rebind the three
+#                   slots to whichever door now reaches them, and what brings
+#                   the entry under Entrance_SelfCheck (2)'s registry<->logic
+#                   region cross-validation.
 #     notes       : provenance / ambiguity flags.
 #
 # ORDERING IS LOAD-BEARING — APPEND ONLY, NEVER INSERT OR REORDER. Three
@@ -303,7 +309,7 @@ interiors:
     door_rows: [0x74]
     region: DarkWorld_NorthWest
     shop_loc_base: 240
-    locations: []
+    locations: [240, 241, 242]
     notes: >
       Empty (shop only). Single door row 0x74 = ALTTPR door 0x75, dark screen
       0x1A, so this interior needed no split. Hosts the Dark World Forest Shop
@@ -322,7 +328,7 @@ interiors:
     door_rows: [0x57]
     region: LightWorld_South
     shop_loc_base: 261
-    locations: []
+    locations: [261, 262, 263]
     notes: >
       Door row 0x57 (ALTTPR door 0x58), light screen 0x35 = Lake Hylia. Hosts
       the Light World Lake Hylia Shop (261-263), whose upstream access is the
@@ -353,7 +359,7 @@ interiors:
     region: DarkWorld_NorthWest
     can_enter: "HAS_ITEM(MoonPearl) OR CanPearlBypass() OR CanBunnyRevival(world)"
     shop_loc_base: 243
-    locations: []
+    locations: [243, 244, 245]
     notes: >
       Door row 0x56 (ALTTPR door 0x57), dark screen 0x02. Hosts the Dark World
       Lumberjack Hut Shop (243-245), which has no upstream callback
@@ -477,7 +483,7 @@ interiors:
     door_rows: [0x45]
     region: LightWorld_NorthWest
     shop_loc_base: 258
-    locations: []
+    locations: [258, 259, 260]
     notes: >
       Door row 0x45 (ALTTPR door 0x46), light screen 0x18 = Kakariko. Hosts the
       Light World Kakariko Shop (258-260); no upstream callback
@@ -594,7 +600,7 @@ interiors:
     region: DarkWorld_DeathMountain_East
     can_enter: "HAS_ITEM(MoonPearl) OR CanPearlBypass() OR CanBunnyRevival(world)"
     shop_loc_base: 252
-    locations: []
+    locations: [252, 253, 254]
     notes: >
       Split from general_store_2; shares its entrance id 0x58 (same room 0x112,
       different overworld door). Door row 0x6D (ALTTPR door 0x6E), dark screen
@@ -611,7 +617,7 @@ interiors:
     region: DarkWorld_NorthWest
     can_enter: "HAS_ITEM(Hammer) AND (HAS_ITEM(MoonPearl) OR CanPearlBypass() OR CanBunnyRevival(world))"
     shop_loc_base: 246
-    locations: []
+    locations: [246, 247, 248]
     notes: >
       Split from general_store_3. Door row 0x5F (ALTTPR door 0x60), dark screen
       0x18 = Village of Outcasts. Hosts the Dark World Outcasts Shop (246-248),
@@ -628,7 +634,7 @@ interiors:
     region: DarkWorld_NorthEast
     can_enter: "CanBunnyRevival(world) OR ((HAS_ITEM(MoonPearl) OR CanPearlBypass()) AND (CanOneFrameClipOW() OR CanBootsClip() OR HAS_ITEM(Hammer) OR HAS_ITEM(Flippers) OR CanLiftRocks()))"
     shop_loc_base: 237
-    locations: []
+    locations: [237, 238, 239]
     notes: >
       Split from general_store_3. Door row 0x6E (ALTTPR door 0x6F), dark screen
       0x16. Hosts the Dark World Potion Shop (237-239); predicate mirrors
@@ -645,7 +651,7 @@ interiors:
     region: DarkWorld_South
     can_enter: "HAS_ITEM(MoonPearl) OR CanPearlBypass() OR CanBunnyRevival(world)"
     shop_loc_base: 249
-    locations: []
+    locations: [249, 250, 251]
     notes: >
       Split from general_store_3. Door row 0x73 (ALTTPR door 0x74), dark screen
       0x35. Hosts the Dark World Lake Hylia Shop (249-251), no upstream callback

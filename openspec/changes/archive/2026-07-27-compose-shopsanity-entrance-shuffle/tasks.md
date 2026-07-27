@@ -106,16 +106,49 @@ the risky one; everything before it is mechanical.
 
 ## 3. Shop identity from the layout
 
-- [ ] 3.1 Add `shop_loc_base` to `RandoCaveInterior`; resolve a shop as
-      door row -> source entry -> `assign` -> destination entry -> `shop_loc_base`
-      (design D4), falling back to identity when no layout is active.
-- [ ] 3.2 Reduce the static `kRandoShopSlots` to the one non-cave row (LW Death
-      Mountain, room `0x0FF`, room-only).
-- [ ] 3.3 Drop `Settings_ShopsanityForcedOff`; keep `Settings_ShopsanityActive`
-      as the single consumer predicate. Re-enable the PC UI checkbox.
-- [ ] 3.4 Extend `--rando-shop-doorwalk` to walk a SHUFFLED layout too, not just
-      vanilla: for a generated cave-shuffle seed, every shop slot must still be
-      reachable from exactly one room. This is the guard for the whole change.
+- [x] 3.0 Bound each split entry's three shop `location_ids` (deferred from 1.2),
+      which is what switches `Entrance_SelfCheck` (2)'s registry<->logic region
+      cross-validation on for those entries. All eight cave-resident shops'
+      derived per-door regions passed it unchanged — the D9 derivation was
+      right, so the guard confirmed rather than corrected. The generator and a
+      new self-check (2b) additionally assert base <-> locations agreement, so a
+      base declared without its slots (a rebinding that silently would not
+      happen) fails the build in both places.
+- [x] 3.1 `shop_loc_base` added to `RandoCaveInterior` and emitted by
+      `gen_entrance_table.py` (0xFFFF = no shop). `shop_lookup` resolves door
+      row -> source entry -> installed permutation -> destination entry ->
+      `shop_loc_base`, with the DESTINATION entry's room as a fail-closed check.
+      DEVIATION from D4 as written, and it is load-bearing: the chain is
+      `Entrance_DestCaveOfDoorRow(net, n, cross, lx, vanilla_id)`, which also
+      handles CROSS-category, where the permutation runs over the combined
+      cave+dungeon endpoint space. D4 described only the cave pool; under
+      Crossed a shop's entry can land behind a DUNGEON door, and the placer
+      already models that (`Entrance_ApplyCrossOverrides` binds the destination
+      cave's locations to the dungeon source's door-edge region), so a
+      cave-only resolution would have made that shop reachable in logic and
+      unobtainable at runtime. Confirmed live: the doorwalk's `crossed` arm
+      shows Desert Palace's door row 0x08 selling the Dark World Death Mountain
+      shop.
+- [x] 3.2 `kRandoShopSlots` reduced to the single room-only LW Death Mountain
+      row. `Rando_DumpShopCheckDebug` iterated that table, so it was reworked to
+      iterate the 27 slot ids and recover each shop's LIVE (room, door) by
+      walking the door table through the resolver — which also makes the dump
+      show the shuffled door rather than a vanilla one.
+- [x] 3.3 `Settings_ShopsanityForcedOff` and its `apply_derived_rules`
+      normalization removed; `Settings_ShopsanityActive` is now just
+      `shopsanity != 0`. PC ImGui checkbox re-enabled (the disable + explanatory
+      caption are gone, not merely inverted).
+- [x] 3.4 `--rando-shop-doorwalk` now runs seven arms: `vanilla`, five generated
+      layouts (three cave-only across Open/Standard, one decoupled, one
+      Crossed), and `post-teardown`. The shuffled arms go through the real
+      `Entrance_RuntimeInstall` via a new `Rando_EntranceInstallLayoutForAudit`
+      hook, so they walk the actual overlay and the actual `g_entry_net` — a
+      re-derived model would only have validated itself, which is the failure
+      the vanilla arm was built to avoid in the first place. Added a third
+      invariant beyond reachable/not-room-aliased: a door's three columns must
+      resolve to ONE shop's consecutive slots. 0 violations on all seven arms.
+      The `post-teardown` arm exists because the audit hook installs an overlay
+      with no slot behind it; it proves teardown restores the pristine table.
 
 ## 4. Collateral the data-flow map surfaced (design D8)
 
@@ -145,6 +178,114 @@ No persistence work: the assignment is regenerated, not stored (design D7).
 
 - [x] 5.1 `--rando-selftest`, `--rando-grant-check`, `--door-selftest` green.
 - [x] 5.2 MSVC (Release x64) + WSL `gcc -Werror` both clean.
+### Phase 2b
+
+- [x] 5.1b `--rando-selftest`, `--rando-grant-check`, `--door-selftest` green.
+      Two new self-checks added rather than relying on the corpus:
+      `Entrance_SelfCheck` (2b) rejects a `shop_loc_base` whose three slots are
+      not bound, and (6b) asserts the shop rebinding against the override store
+      via a forced 2-swap. (6b) exists because reading the composed seed's
+      spoiler — the first thing tried — proved NOTHING: the spoiler prints every
+      location's STATIC logic region, for all location types, so a rebound slot
+      and an unbound one look identical there.
+- [x] 5.2b MSVC Release x64 + WSL `gcc -O2 -Werror` both clean, and the two
+      binaries agree on the moved digest (cross-platform determinism).
+- [x] 5.3b `kGeneratorVersion` 161 -> **162**. Re-grepped every local branch
+      before picking: 161 is main/2a, 160 is claimed by `codex/hints-v2` and
+      `codex/bomb-grass-logic`, nothing claims 162.
+      **Corpus moved exactly as predicted: 3 of 245 rows, all carrying BOTH
+      axes** (the relabelled compose row + the two new ones). Every
+      cave-shuffle-only row and every shopsanity-only row is byte-identical.
+      That was the load-bearing measurement, not a formality: adding shop
+      `location_ids` to cave entries sets region overrides on locations that are
+      NOT fill locations when shopsanity is off, and "that should be inert" was
+      an assumption until the regen showed zero movement. Spot-checked the same
+      rows against the pre-bump manifest BEFORE bumping, so the inertness was
+      established independently of the regen that rewrote the file.
+- [x] 5.5c **KNOWN RED, owner-accepted 2026-07-27:**
+      `check_hint_version_policy.py`. It lists `src/rando/shuffle_entrance.c` in
+      `ENTRANCE_REGION_PATH` and treats ANY edit to that file as hint-sensitive
+      (unconditionally — unlike the codegen path, which requires a content
+      match), then demands BOTH `kRandoHintPlanAlgorithmVersion` and
+      `kRandoHintTextSchemaVersion` advance. It rejects this commit AND
+      `cfa0d2c5`, which is main's HEAD — so main is already red on this gate.
+      The guard was introduced by `df72b4a0`, 2a's own parent, so no entrance
+      change has ever satisfied it; 2a's "5.5 full PASSES end to end" is not
+      reproducible today.
+      The concern is real in one direction — hints DO consume
+      `Rando_GetEntranceRegionOverride` (`hint_effective_region`,
+      `rando_hints.c`), so shop rebinding changes hint text on composed seeds.
+      But the two axes identify the plan ALGORITHM and the TEXT SCHEMA for
+      loading a persisted plan, and neither changed; input drift is caught by
+      the persisted plan digest plus `kGeneratorVersion`, and entrance seeds
+      additionally by `entrance_digest24`, both of which hard-refuse across this
+      bump. Advancing the axes would assert a schema change that did not happen
+      and would downgrade old saves from an accurate "digest mismatch" to a
+      wrong "unsupported". Owner chose to accept the red rather than bump or
+      silently narrow the guard. Spun out as its own change.
+- [x] 5.5b `run_rando_validation.py full` green end to end **up to that gate**,
+      which short-circuits the profile; the 24 gates it would otherwise have run
+      were then executed individually and ALL PASS (including the 246-row
+      regression corpus, the slot-path matrix, the invariant sweep, the runtime
+      placer-determinism canary and all three hint guards), plus
+      `gen_entrance_door_rows.py --check` (70 rows / 46 interiors, world
+      consistent), `check_knowledge_consumers.py`, `check_grant_consumers.py`
+      and `check_no_embedded_data.py` run explicitly.
+      TOOLING NOTE: `full` cannot run under WSL in a Windows-created worktree
+      without `GIT_DIR` + `GIT_WORK_TREE` exported — WSL git cannot follow the
+      worktree's `.git` file (it holds a Windows path), and the profile
+      hard-fails at its generator-version diff guard. `--base-sha`/`--head-sha`
+      do not work around it; the guard still has to `cat-file` those refs.
+
+- [x] 5.6b Independent fresh-eyes review of the 2b commit. **0 HIGH**, 2 MED +
+      2 LOW; all four FIXED. It also independently re-derived and confirmed
+      D11's conservative-direction claim, the player-knowledge gating, and the
+      Retro/Inverted/fall-hole/mirror no-change analysis.
+      - **MED (fixed).** The canonical `randomizer-core` spec still MANDATED the
+        deleted normalization — both in the serialization requirement's body and
+        in a scenario asserting byte 29 bit 4 serializes `0` with a hash equal to
+        the shopsanity-absent seed. The change shipped no `randomizer-core`
+        delta, so archiving would have made a provably-false *serialization*
+        requirement the permanent baseline, and `openspec validate` cannot catch
+        it (structure, not truth) — exactly the delta-rot trap CLAUDE.md warns
+        about, one capability over from where I was looking. Added a
+        `randomizer-core` MODIFIED delta, extracted PROGRAMMATICALLY from the
+        canonical file and then edited in two places, so the 31-byte
+        serialization table could not pick up transcription drift (diffed back
+        against canonical to prove only the two intended hunks differ).
+      - **MED (fixed).** No corpus row covered `cross_category + shopsanity` —
+        the one composition whose PLACEMENT-side binding comes from a different
+        function (`Entrance_ApplyCrossOverrides`, over the combined endpoint
+        space) than every other row's `Entrance_ApplyRegionOverrides`. The
+        doorwalk's `crossed` arm only pins the RUNTIME half, and self-check (6b)
+        only exercised the cave-pool function, so a cross path that bound
+        nothing would have passed everything while the runtime still sold shops
+        — the placement/runtime disagreement this change exists to prevent.
+        Added self-check (6c) (the same forced 2-swap through the cross path)
+        and corpus row `shopsanity-entrance-crossed`. The cross binding turned
+        out to be CORRECT; the gap was in coverage, not behavior.
+      - **LOW-MED (fixed).** `shop_lookup` could not distinguish "no permutation
+        installed" from "identity permutation", and the destination-room guard
+        is blind among room-siblings — so a frame reaching a shop with the door
+        byte live but `g_entry_net_n == 0` would resolve the door's VANILLA
+        shop, pass the room compare (four DW shops share room 0x10F), and hand
+        over a real but WRONG shop: wrong item, wrong price, wrong location
+        marked checked. The reviewer traced every teardown path and found no
+        live repro, but the resolver had no positive "layout expected but
+        absent" test. Added `Entrance_EntryNetExpected()` (keyed on
+        `Settings_EffectiveShuffleCaveEntrances`, so world-state normalization
+        is honored) and made that case return "no shop". No shop beats the
+        wrong shop.
+      - **LOW (fixed).** `Rando_EntranceInstallLayoutForAudit` is exported
+        unguarded but routes through `Entrance_RuntimeInstall`, which re-Begins
+        the shared override stores and wipes `g_entrance_discovered`. Harmless
+        from the doorwalk (which `exit()`s), but a future in-process caller —
+        e.g. adding it to `Rando_RunAllSelfChecks` — would silently clear an
+        active slot's tracker overrides and persisted discovery bitmap. Now
+        refuses while `g_rando_slot_active`.
+
+### Phase 2a
+
 - [x] 5.3 `kGeneratorVersion` 159 -> **161** (160 is claimed by the unmerged
       `codex/bomb-grass-logic` branch). Corpus regenerated: 15 of 243 rows moved,
       and the split is exactly as predicted — all 15 carry
@@ -152,10 +293,13 @@ No persistence work: the assignment is regenerated, not stored (design D7).
       cave-axis rows that did NOT move are the Inverted and Retro ones, where
       `Entrance_IsActive` normalizes the axis off by world state, so
       byte-identical is correct there.
-- [ ] 5.4 Corpus rows for `shopsanity + shuffle_cave_entrances` — DEFERRED to
-      phase 2b with the rest of the composition; shops are still forced off under
-      cave shuffle, so such a row would only re-pin the forced-off behavior the
-      existing `shopsanity-entrance-caves-forced-off` row already covers.
+- [x] 5.4 Done in 2b. `shopsanity-entrance-caves-forced-off` relabelled
+      `-compose` (same settings/seed, digest moves), plus new
+      `shopsanity-entrance-caves-standard` and
+      `-decoupled` rows. The decoupled row exists because the one-way exit net is
+      an INDEPENDENT permutation layered on the entry shuffle: if a regression
+      ever resolved a shop through the exit net, that row moves while the coupled
+      row does not.
 - [x] 5.5 All CI guards green: `run_rando_validation.py full` PASSES end to end
       (243/243 corpus, slot-path matrix, invariant sweep, placer determinism,
       benchmarks), plus `check_init_order.py`, `check_no_embedded_data.py` and
@@ -207,19 +351,62 @@ No persistence work: the assignment is regenerated, not stored (design D7).
 
 ## 6. Docs & spec
 
-- [ ] 6.1 `docs/randomizer.md`: the axes now compose; document the decoupled
-      arrival degradation. DEFERRED to 2b — nothing player-visible changed in
-      2a (shops are still forced off under cave shuffle and coupled mode, the
-      default, is unaffected), so there is no user-facing behavior to document
-      yet. The decoupled gap is 8 doors, not six, and is recorded in
-      `cave_arrival_baked.h` and task 7.3.
+- [x] 6.1 `docs/randomizer.md` done in 2b. The Shopsanity section's
+      "forced off by cave-entrance shuffle" block became a Composition block
+      (with the old reasoning kept as a parenthetical so the removal is not
+      mysterious later), the settings-table row lost its normalization note, and
+      the runtime-identity paragraph now says identity is derived per seed and
+      describes the doorwalk's two arms. Added generator-version rows 160→161
+      and 161→162 — 2a never wrote its own, so the table skipped from 160 to a
+      gap. ALSO corrected a claim 2a made stale: the entrance-shuffle changelog
+      row still said the baked arrival table makes "every door one-way from
+      launch"; it is now 37 of 46, with the other 9 degrading to the coupled
+      exit until task 7.3's walkabout.
 - [x] 6.2a Reconciled the `randomizer-shuffles` delta against as-built source:
       the append-only rationale named three positionally-keyed structures, but
       the baked arrival table is now name-keyed, so it is two plus an explicit
       requirement for the arrival table's keying and failure mode. Added the
       fall-hole shared-id constraint and the entry-vs-id tracker rule.
       The `randomizer-shopsanity` delta is untouched: it describes phase 2b.
-- [ ] 6.2b Re-reconcile after 2b, then archive on the branch.
+- [x] 6.2b Re-reconciled both deltas against as-built source, then archived on
+      the branch. Three things the deltas asserted or omitted that the code
+      settled differently:
+      - `randomizer-shopsanity` said the live door is derived "door row ->
+        source entry". It now also covers the CROSS-category source (a dungeon
+        door can be a shop's source; dungeon ids are unique so that side resolves
+        by id), states that one source entry's several door rows are the same
+        shop rather than an alias, and states the room compare is against the
+        DESTINATION entry's room as a fail-closed guard. See design D11.
+      - The delta required each shop to "carry its three slot ids"; nothing said
+        who enforces it. Added: an entry naming a shop without binding its slots
+        must fail the build, and the rebinding must be asserted against the
+        override store — because the spoiler prints every location's STATIC
+        logic region, so a spoiler read cannot tell a rebound slot from an
+        unbound one. (That is not hypothetical: reading the composed seed's
+        spoiler was the first check tried, and it showed the vanilla regions.)
+      - `randomizer-shuffles` covered the tracker's entry-vs-id rule but not the
+        general one. Generalized: any consumer needing the entry a door LOADS
+        (as opposed to the entry it BELONGS to) must resolve through the
+        assignment, with the destination-side knowledge marking named
+        explicitly, plus the cross-category endpoint-space rule and a scenario.
+
+      ARCHIVER LIMITATION, worked around deliberately — worth knowing before the
+      next spec change. `openspec archive` refuses a MODIFIED requirement whose
+      block omits ANY scenario title the canonical spec has, reading it as an
+      accidental drop; there is no scenario-level RENAME, `--no-validate` does
+      not skip that merge check, and REMOVED+ADDED of one requirement name is
+      rejected by `validate`. The refusal is a GOOD guard: running the same
+      scenario-set diff by hand across all three deltas found that the
+      `randomizer-shopsanity` delta (authored in phase 1) silently dropped FIVE
+      canonical scenarios — three of them still true and simply not carried over
+      (`The door-less shop resolves from its room alone`, `An undeclared door
+      into a shop room stays vanilla`, `No derived-rule coupling`). Archiving an
+      earlier draft would have deleted them from the baseline. Two scenarios
+      genuinely needed renaming (their titles asserted the old behavior), so the
+      deltas keep the OLD titles with corrected bodies plus an inline NOTE, and
+      the rename is applied to `openspec/specs/` directly in the same commit.
+      The canonical specs are the coherent artifact; the archived deltas record
+      why they differ.
 
 ## 7. Owner-gated (cannot be automated)
 

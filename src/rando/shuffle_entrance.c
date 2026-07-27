@@ -44,6 +44,16 @@ typedef struct RandoCaveInterior {
   uint8 door_row_count;
   const uint16 *location_ids;  // member locations (NULL when none)
   uint8 location_count;
+  uint16 shop_loc_base;        // base location id of the shop behind THIS door
+                               // (slots base..base+2), or 0xFFFF for none. The
+                               // shop travels with the entry, so the runtime
+                               // resolves it from the DESTINATION entry the
+                               // permutation assigned to the entered door's
+                               // source entry — ALTTPR's per-seed re-derivation
+                               // (Shop::get_bytes) against our own assignment.
+                               // When set, base..base+2 are also in
+                               // location_ids, which is what makes
+                               // Entrance_ApplyRegionOverrides rebind them.
 } RandoCaveInterior;
 
 static const uint8 kEnt_ids_0[1] = { 0x3C };
@@ -157,62 +167,71 @@ static const uint16 kEnt_locs_16[2] = { 206, 207 };
 static const uint16 kEnt_locs_17[5] = { 222, 223, 224, 225, 227 };
 static const uint16 kEnt_locs_18[1] = { 152 };
 static const uint16 kEnt_locs_19[1] = { 165 };
+static const uint16 kEnt_locs_20[3] = { 240, 241, 242 };
+static const uint16 kEnt_locs_21[3] = { 261, 262, 263 };
+static const uint16 kEnt_locs_23[3] = { 243, 244, 245 };
 static const uint16 kEnt_locs_24[2] = { 149, 150 };
 static const uint16 kEnt_locs_28[5] = { 160, 161, 162, 163, 164 };
 static const uint16 kEnt_locs_30[1] = { 171 };
 static const uint16 kEnt_locs_31[1] = { 183 };
+static const uint16 kEnt_locs_32[3] = { 258, 259, 260 };
 static const uint16 kEnt_locs_38[1] = { 184 };
 static const uint16 kEnt_locs_39[1] = { 218 };
+static const uint16 kEnt_locs_41[3] = { 252, 253, 254 };
+static const uint16 kEnt_locs_42[3] = { 246, 247, 248 };
+static const uint16 kEnt_locs_43[3] = { 237, 238, 239 };
+static const uint16 kEnt_locs_44[3] = { 249, 250, 251 };
 
 #define kEntranceCaveInteriorCount 46
 static const RandoCaveInterior kCaveInteriors[kEntranceCaveInteriorCount] = {
-  { /* 0*/ "treasure_shell_game", 0x100, "LightWorld_NorthWest", kEnt_ids_0, 1, kEnt_rows_0, 1, 0, 0 },
-  { /* 1*/ "snitch_house", 0x101, "LightWorld_NorthWest", kEnt_ids_1, 2, kEnt_rows_1, 2, 0, 0 },
-  { /* 2*/ "sickboy_house", 0x102, "LightWorld_NorthWest", kEnt_ids_2, 1, kEnt_rows_2, 1, kEnt_locs_2, 1 },
-  { /* 3*/ "kakariko_tavern", 0x103, "LightWorld_NorthWest", kEnt_ids_3, 3, kEnt_rows_3, 3, kEnt_locs_3, 1 },
-  { /* 4*/ "sahasrahla_hut", 0x105, "LightWorld_NorthEast", kEnt_ids_4, 1, kEnt_rows_4, 1, kEnt_locs_4, 3 },
-  { /* 5*/ "kakariko_library", 0x107, "LightWorld_South", kEnt_ids_5, 2, kEnt_rows_5, 2, 0, 0 },
-  { /* 6*/ "chicken_house", 0x108, "LightWorld_NorthWest", kEnt_ids_6, 1, kEnt_rows_6, 1, kEnt_locs_6, 1 },
-  { /* 7*/ "potion_shop", 0x109, "LightWorld_NorthEast", kEnt_ids_7, 1, kEnt_rows_7, 1, kEnt_locs_7, 1 },
-  { /* 8*/ "village_chest_game", 0x106, "DarkWorld_NorthWest", kEnt_ids_8, 2, kEnt_rows_8, 2, kEnt_locs_8, 2 },
-  { /* 9*/ "bomb_shop", 0x11C, "DarkWorld_NorthWest", kEnt_ids_9, 2, kEnt_rows_9, 2, kEnt_locs_9, 1 },
-  { /*10*/ "aginah_cave", 0x10A, "LightWorld_South", kEnt_ids_10, 1, kEnt_rows_10, 2, kEnt_locs_10, 1 },
-  { /*11*/ "watergate", 0x10B, "LightWorld_South", kEnt_ids_11, 1, kEnt_rows_11, 1, kEnt_locs_11, 1 },
-  { /*12*/ "ice_rod_cave", 0x120, "LightWorld_South", kEnt_ids_12, 2, kEnt_rows_12, 2, kEnt_locs_12, 1 },
-  { /*13*/ "mini_moldorm_cave", 0x123, "LightWorld_South", kEnt_ids_13, 1, kEnt_rows_13, 1, kEnt_locs_13, 5 },
-  { /*14*/ "mimic_cave", 0x10C, "LightWorld_DeathMountain_East", kEnt_ids_14, 2, kEnt_rows_14, 2, kEnt_locs_14, 1 },
-  { /*15*/ "byrna_gauntlet", 0x117, "DarkWorld_DeathMountain_West", kEnt_ids_15, 1, kEnt_rows_15, 1, kEnt_locs_15, 1 },
-  { /*16*/ "mire_shed", 0x10D, "DarkWorld_Mire", kEnt_ids_16, 1, kEnt_rows_16, 1, kEnt_locs_16, 2 },
-  { /*17*/ "hype_cave", 0x11E, "DarkWorld_South", kEnt_ids_17, 2, kEnt_rows_17, 2, kEnt_locs_17, 5 },
-  { /*18*/ "hall_of_invisibility_cape", 0x113, "LightWorld_NorthWest", kEnt_ids_18, 1, kEnt_rows_18, 1, kEnt_locs_18, 1 },
-  { /*19*/ "thief_hideout", 0x124, "LightWorld_NorthWest", kEnt_ids_19, 2, kEnt_rows_19, 2, kEnt_locs_19, 1 },
-  { /*20*/ "general_store_1", 0x110, "DarkWorld_NorthWest", kEnt_ids_20, 1, kEnt_rows_20, 1, 0, 0 },
-  { /*21*/ "general_store_2", 0x112, "LightWorld_South", kEnt_ids_21, 1, kEnt_rows_21, 1, 0, 0 },
-  { /*22*/ "archery_game", 0x111, "DarkWorld_South", kEnt_ids_22, 1, kEnt_rows_22, 1, 0, 0 },
-  { /*23*/ "general_store_3", 0x10F, "DarkWorld_NorthWest", kEnt_ids_23, 1, kEnt_rows_23, 1, 0, 0 },
-  { /*24*/ "pond_of_wishing", 0x114, "LightWorld_NorthEast", kEnt_ids_24, 2, kEnt_rows_24, 2, kEnt_locs_24, 2 },
-  { /*25*/ "pond_of_happiness", 0x115, "LightWorld_South", kEnt_ids_25, 2, kEnt_rows_25, 8, 0, 0 },
-  { /*26*/ "warped_pond_of_wishing", 0x116, "DarkWorld_NorthEast", kEnt_ids_26, 1, kEnt_rows_26, 1, 0, 0 },
-  { /*27*/ "chest_shell_game", 0x118, "LightWorld_NorthWest", kEnt_ids_27, 1, kEnt_rows_27, 1, 0, 0 },
-  { /*28*/ "blinds_old_hideout", 0x119, "LightWorld_NorthWest", kEnt_ids_28, 1, kEnt_rows_28, 1, kEnt_locs_28, 5 },
-  { /*29*/ "storyteller_cave_4", 0x11A, "DarkWorld_NorthEast", kEnt_ids_29, 1, kEnt_rows_29, 1, 0, 0 },
-  { /*30*/ "refill_cave_1_graveyard", 0x11B, "LightWorld_NorthWest", kEnt_ids_30, 1, kEnt_rows_30, 1, kEnt_locs_30, 1 },
-  { /*31*/ "refill_cave_1_cave_45", 0x11B, "LightWorld_South", kEnt_ids_31, 1, kEnt_rows_31, 1, kEnt_locs_31, 1 },
-  { /*32*/ "kakariko_lame_shop", 0x11F, "LightWorld_NorthWest", kEnt_ids_32, 1, kEnt_rows_32, 1, 0, 0 },
-  { /*33*/ "chez_smithies", 0x121, "LightWorld_NorthWest", kEnt_ids_33, 1, kEnt_rows_33, 1, 0, 0 },
-  { /*34*/ "fortune_teller", 0x122, "LightWorld_NorthWest", kEnt_ids_34, 2, kEnt_rows_34, 3, 0, 0 },
-  { /*35*/ "storyteller_cave_5", 0x10E, "DarkWorld_NorthEast", kEnt_ids_35, 2, kEnt_rows_35, 2, 0, 0 },
-  { /*36*/ "thief_hideout_3", 0x125, "LightWorld_South", kEnt_ids_36, 2, kEnt_rows_36, 2, 0, 0 },
-  { /*37*/ "fairy_cave_5_link_house", 0x126, "LightWorld_South", kEnt_ids_37, 1, kEnt_rows_37, 2, 0, 0 },
-  { /*38*/ "fairy_cave_5_checkerboard", 0x126, "LightWorld_South", kEnt_ids_38, 1, kEnt_rows_38, 1, kEnt_locs_38, 1 },
-  { /*39*/ "heart_piece_cave_3", 0x127, "DarkWorld_NorthWest", kEnt_ids_39, 1, kEnt_rows_39, 1, kEnt_locs_39, 1 },
-  { /*40*/ "general_store_2_dark_sanctuary", 0x112, "DarkWorld_NorthWest", kEnt_ids_40, 1, kEnt_rows_40, 1, 0, 0 },
-  { /*41*/ "general_store_2_dw_death_mountain", 0x112, "DarkWorld_DeathMountain_East", kEnt_ids_41, 1, kEnt_rows_41, 1, 0, 0 },
-  { /*42*/ "general_store_3_outcasts", 0x10F, "DarkWorld_NorthWest", kEnt_ids_42, 1, kEnt_rows_42, 1, 0, 0 },
-  { /*43*/ "general_store_3_potion", 0x10F, "DarkWorld_NorthEast", kEnt_ids_43, 1, kEnt_rows_43, 1, 0, 0 },
-  { /*44*/ "general_store_3_lake_hylia", 0x10F, "DarkWorld_South", kEnt_ids_44, 1, kEnt_rows_44, 1, 0, 0 },
-  { /*45*/ "kakariko_lame_shop_lumberjack_house", 0x11F, "LightWorld_NorthWest", kEnt_ids_45, 1, kEnt_rows_45, 1, 0, 0 },
+  { /* 0*/ "treasure_shell_game", 0x100, "LightWorld_NorthWest", kEnt_ids_0, 1, kEnt_rows_0, 1, 0, 0, 0xFFFF },
+  { /* 1*/ "snitch_house", 0x101, "LightWorld_NorthWest", kEnt_ids_1, 2, kEnt_rows_1, 2, 0, 0, 0xFFFF },
+  { /* 2*/ "sickboy_house", 0x102, "LightWorld_NorthWest", kEnt_ids_2, 1, kEnt_rows_2, 1, kEnt_locs_2, 1, 0xFFFF },
+  { /* 3*/ "kakariko_tavern", 0x103, "LightWorld_NorthWest", kEnt_ids_3, 3, kEnt_rows_3, 3, kEnt_locs_3, 1, 0xFFFF },
+  { /* 4*/ "sahasrahla_hut", 0x105, "LightWorld_NorthEast", kEnt_ids_4, 1, kEnt_rows_4, 1, kEnt_locs_4, 3, 0xFFFF },
+  { /* 5*/ "kakariko_library", 0x107, "LightWorld_South", kEnt_ids_5, 2, kEnt_rows_5, 2, 0, 0, 0xFFFF },
+  { /* 6*/ "chicken_house", 0x108, "LightWorld_NorthWest", kEnt_ids_6, 1, kEnt_rows_6, 1, kEnt_locs_6, 1, 0xFFFF },
+  { /* 7*/ "potion_shop", 0x109, "LightWorld_NorthEast", kEnt_ids_7, 1, kEnt_rows_7, 1, kEnt_locs_7, 1, 0xFFFF },
+  { /* 8*/ "village_chest_game", 0x106, "DarkWorld_NorthWest", kEnt_ids_8, 2, kEnt_rows_8, 2, kEnt_locs_8, 2, 0xFFFF },
+  { /* 9*/ "bomb_shop", 0x11C, "DarkWorld_NorthWest", kEnt_ids_9, 2, kEnt_rows_9, 2, kEnt_locs_9, 1, 0xFFFF },
+  { /*10*/ "aginah_cave", 0x10A, "LightWorld_South", kEnt_ids_10, 1, kEnt_rows_10, 2, kEnt_locs_10, 1, 0xFFFF },
+  { /*11*/ "watergate", 0x10B, "LightWorld_South", kEnt_ids_11, 1, kEnt_rows_11, 1, kEnt_locs_11, 1, 0xFFFF },
+  { /*12*/ "ice_rod_cave", 0x120, "LightWorld_South", kEnt_ids_12, 2, kEnt_rows_12, 2, kEnt_locs_12, 1, 0xFFFF },
+  { /*13*/ "mini_moldorm_cave", 0x123, "LightWorld_South", kEnt_ids_13, 1, kEnt_rows_13, 1, kEnt_locs_13, 5, 0xFFFF },
+  { /*14*/ "mimic_cave", 0x10C, "LightWorld_DeathMountain_East", kEnt_ids_14, 2, kEnt_rows_14, 2, kEnt_locs_14, 1, 0xFFFF },
+  { /*15*/ "byrna_gauntlet", 0x117, "DarkWorld_DeathMountain_West", kEnt_ids_15, 1, kEnt_rows_15, 1, kEnt_locs_15, 1, 0xFFFF },
+  { /*16*/ "mire_shed", 0x10D, "DarkWorld_Mire", kEnt_ids_16, 1, kEnt_rows_16, 1, kEnt_locs_16, 2, 0xFFFF },
+  { /*17*/ "hype_cave", 0x11E, "DarkWorld_South", kEnt_ids_17, 2, kEnt_rows_17, 2, kEnt_locs_17, 5, 0xFFFF },
+  { /*18*/ "hall_of_invisibility_cape", 0x113, "LightWorld_NorthWest", kEnt_ids_18, 1, kEnt_rows_18, 1, kEnt_locs_18, 1, 0xFFFF },
+  { /*19*/ "thief_hideout", 0x124, "LightWorld_NorthWest", kEnt_ids_19, 2, kEnt_rows_19, 2, kEnt_locs_19, 1, 0xFFFF },
+  { /*20*/ "general_store_1", 0x110, "DarkWorld_NorthWest", kEnt_ids_20, 1, kEnt_rows_20, 1, kEnt_locs_20, 3, 240 },
+  { /*21*/ "general_store_2", 0x112, "LightWorld_South", kEnt_ids_21, 1, kEnt_rows_21, 1, kEnt_locs_21, 3, 261 },
+  { /*22*/ "archery_game", 0x111, "DarkWorld_South", kEnt_ids_22, 1, kEnt_rows_22, 1, 0, 0, 0xFFFF },
+  { /*23*/ "general_store_3", 0x10F, "DarkWorld_NorthWest", kEnt_ids_23, 1, kEnt_rows_23, 1, kEnt_locs_23, 3, 243 },
+  { /*24*/ "pond_of_wishing", 0x114, "LightWorld_NorthEast", kEnt_ids_24, 2, kEnt_rows_24, 2, kEnt_locs_24, 2, 0xFFFF },
+  { /*25*/ "pond_of_happiness", 0x115, "LightWorld_South", kEnt_ids_25, 2, kEnt_rows_25, 8, 0, 0, 0xFFFF },
+  { /*26*/ "warped_pond_of_wishing", 0x116, "DarkWorld_NorthEast", kEnt_ids_26, 1, kEnt_rows_26, 1, 0, 0, 0xFFFF },
+  { /*27*/ "chest_shell_game", 0x118, "LightWorld_NorthWest", kEnt_ids_27, 1, kEnt_rows_27, 1, 0, 0, 0xFFFF },
+  { /*28*/ "blinds_old_hideout", 0x119, "LightWorld_NorthWest", kEnt_ids_28, 1, kEnt_rows_28, 1, kEnt_locs_28, 5, 0xFFFF },
+  { /*29*/ "storyteller_cave_4", 0x11A, "DarkWorld_NorthEast", kEnt_ids_29, 1, kEnt_rows_29, 1, 0, 0, 0xFFFF },
+  { /*30*/ "refill_cave_1_graveyard", 0x11B, "LightWorld_NorthWest", kEnt_ids_30, 1, kEnt_rows_30, 1, kEnt_locs_30, 1, 0xFFFF },
+  { /*31*/ "refill_cave_1_cave_45", 0x11B, "LightWorld_South", kEnt_ids_31, 1, kEnt_rows_31, 1, kEnt_locs_31, 1, 0xFFFF },
+  { /*32*/ "kakariko_lame_shop", 0x11F, "LightWorld_NorthWest", kEnt_ids_32, 1, kEnt_rows_32, 1, kEnt_locs_32, 3, 258 },
+  { /*33*/ "chez_smithies", 0x121, "LightWorld_NorthWest", kEnt_ids_33, 1, kEnt_rows_33, 1, 0, 0, 0xFFFF },
+  { /*34*/ "fortune_teller", 0x122, "LightWorld_NorthWest", kEnt_ids_34, 2, kEnt_rows_34, 3, 0, 0, 0xFFFF },
+  { /*35*/ "storyteller_cave_5", 0x10E, "DarkWorld_NorthEast", kEnt_ids_35, 2, kEnt_rows_35, 2, 0, 0, 0xFFFF },
+  { /*36*/ "thief_hideout_3", 0x125, "LightWorld_South", kEnt_ids_36, 2, kEnt_rows_36, 2, 0, 0, 0xFFFF },
+  { /*37*/ "fairy_cave_5_link_house", 0x126, "LightWorld_South", kEnt_ids_37, 1, kEnt_rows_37, 2, 0, 0, 0xFFFF },
+  { /*38*/ "fairy_cave_5_checkerboard", 0x126, "LightWorld_South", kEnt_ids_38, 1, kEnt_rows_38, 1, kEnt_locs_38, 1, 0xFFFF },
+  { /*39*/ "heart_piece_cave_3", 0x127, "DarkWorld_NorthWest", kEnt_ids_39, 1, kEnt_rows_39, 1, kEnt_locs_39, 1, 0xFFFF },
+  { /*40*/ "general_store_2_dark_sanctuary", 0x112, "DarkWorld_NorthWest", kEnt_ids_40, 1, kEnt_rows_40, 1, 0, 0, 0xFFFF },
+  { /*41*/ "general_store_2_dw_death_mountain", 0x112, "DarkWorld_DeathMountain_East", kEnt_ids_41, 1, kEnt_rows_41, 1, kEnt_locs_41, 3, 252 },
+  { /*42*/ "general_store_3_outcasts", 0x10F, "DarkWorld_NorthWest", kEnt_ids_42, 1, kEnt_rows_42, 1, kEnt_locs_42, 3, 246 },
+  { /*43*/ "general_store_3_potion", 0x10F, "DarkWorld_NorthEast", kEnt_ids_43, 1, kEnt_rows_43, 1, kEnt_locs_43, 3, 237 },
+  { /*44*/ "general_store_3_lake_hylia", 0x10F, "DarkWorld_South", kEnt_ids_44, 1, kEnt_rows_44, 1, kEnt_locs_44, 3, 249 },
+  { /*45*/ "kakariko_lame_shop_lumberjack_house", 0x11F, "LightWorld_NorthWest", kEnt_ids_45, 1, kEnt_rows_45, 1, 0, 0, 0xFFFF },
 };
+
 // === end generated block ===
 
 static void cave_source_pred(int interior, uint32 *pred_off, uint16 *pred_len) {
@@ -936,6 +955,46 @@ uint8 Entrance_CaveRepresentativeId(int interior) {
   return kCaveInteriors[interior].entrance_ids[0];
 }
 
+// Public: the cave interior the door at overworld row `lx` now LOADS under the
+// installed entry permutation, or -1 when the door reaches no cave.
+//
+// This is the D4 chain in one place: door row -> source endpoint -> assignment
+// -> destination entry. `net`/`n` is the installed entry permutation
+// (Entrance_RuntimeInstall's g_entry_net); pass NULL/0 for "no layout", which
+// makes the assignment the identity and reduces this to Entrance_InteriorOfDoorRow.
+// `cross` selects the endpoint space: under Crossed the permutation runs over the
+// COMBINED cave+dungeon endpoints, so a dungeon door can be the source of a cave
+// destination (and a cave door's target can be a dungeon, which returns -1).
+// `vanilla_entrance_id` is the door's PRISTINE entrance id, needed only to
+// resolve a dungeon source (dungeon ids are unique; cave sources go by row).
+int Entrance_DestCaveOfDoorRow(const uint8 *net, int n, bool cross, uint16 lx,
+                               uint8 vanilla_entrance_id) {
+  int src = cross ? cross_source_endpoint(lx, vanilla_entrance_id)
+                  : entry_of_door_row(lx);
+  if (src < 0) return -1;
+  int dst = src;
+  if (net != NULL && n > 0 && src < n) dst = net[src];
+  // Out of the cave range = a dungeon endpoint under Crossed: no cave loaded.
+  if (dst < 0 || dst >= kEntranceCaveInteriorCount) return -1;
+  return dst;
+}
+
+// Public: base location id of the shop hosted by cave interior `interior`
+// (slots base..base+2), or 0xFFFF when that interior's door hosts no shop.
+uint16 Entrance_CaveShopLocBase(int interior) {
+  if (interior < 0 || interior >= kEntranceCaveInteriorCount) return 0xFFFFu;
+  return kCaveInteriors[interior].shop_loc_base;
+}
+
+// Public: the interior ROOM a cave pool entry loads, or 0xFFFF out of range.
+// The shop resolver compares it against the live dungeon_room_index so a stale
+// captured door id (a mirror warp, a fall-hole) fails closed instead of naming
+// whatever shop that row's entry happens to host.
+uint16 Entrance_CaveInteriorRoom(int interior) {
+  if (interior < 0 || interior >= kEntranceCaveInteriorCount) return 0xFFFFu;
+  return kCaveInteriors[interior].room;
+}
+
 // Public: total cave interior count (the decoupled pool size) + a name for logs.
 int Entrance_CaveInteriorCount(void) { return kEntranceCaveInteriorCount; }
 const char *Entrance_CaveInteriorName(int interior) {
@@ -1388,6 +1447,44 @@ void Entrance_SelfCheck(void) {
     }
   }
 
+  // (2b) shop_loc_base is well-formed and its three slots are BOUND as this
+  //      entry's locations. The binding is what brings the entry under (2)
+  //      above — the region cross-validation the shop split depends on — and
+  //      what makes Entrance_ApplyRegionOverrides rebind the shop to whichever
+  //      door reaches it. A base without its locations would hand the player a
+  //      slot the logic still binds to its vanilla region. Asserted in
+  //      gen_entrance_table.py too, so a hand-edit of the generated block
+  //      cannot slip past the data guard (same discipline as the fall-hole
+  //      shared-id rule above).
+  for (int i = 0; i < kEntranceCaveInteriorCount; i++) {
+    uint16 base = kCaveInteriors[i].shop_loc_base;
+    if (base == 0xFFFFu) continue;
+    if (base < 237 || base + 2 > 263 || (base - 237) % 3 != 0 || base == 255) {
+      fprintf(stderr, "Entrance_SelfCheck: interior %d shop_loc_base %u is not a "
+                      "cave-shop block base (237+3k, k<9, excluding the non-cave "
+                      "Light World Death Mountain shop at 255)\n", i, base);
+      exit(2);
+    }
+    for (uint16 k = 0; k < 3; k++) {
+      bool bound = false;
+      for (int m = 0; m < kCaveInteriors[i].location_count; m++)
+        if (kCaveInteriors[i].location_ids[m] == (uint16)(base + k)) bound = true;
+      if (!bound) {
+        fprintf(stderr, "Entrance_SelfCheck: interior %d declares shop base %u but "
+                        "does not list slot %u in its locations — the region "
+                        "rebinding would silently not happen\n", i, base, base + k);
+        exit(2);
+      }
+    }
+    for (int j = i + 1; j < kEntranceCaveInteriorCount; j++) {
+      if (kCaveInteriors[j].shop_loc_base == base) {
+        fprintf(stderr, "Entrance_SelfCheck: interiors %d/%d both claim shop base "
+                        "%u\n", i, j, base);
+        exit(2);
+      }
+    }
+  }
+
   // (3) Permutation is a bijection of [0,N).
   RandoSettings s;
   Settings_SetDefaults(&s);
@@ -1481,6 +1578,86 @@ void Entrance_SelfCheck(void) {
       fprintf(stderr, "Entrance_SelfCheck: Clear must deactivate overrides\n");
       exit(2);
     }
+  }
+
+  // (6b) The same closed form for SHOP slots — design D5's "region binding falls
+  //      out" is the whole reason shopsanity can compose with cave-entrance
+  //      shuffle, and nothing else asserts it. The spoiler prints each location's
+  //      STATIC logic region (for every location type, not just shops), so a
+  //      spoiler read can neither confirm nor refute this; only the override
+  //      getter can. Swap the Dark World Potion Shop's entry with the Light World
+  //      Lake Hylia Shop's and require their three-slot blocks to trade regions.
+  //      Entry indices are hard-coded like (6) above (append-only ordering keeps
+  //      them valid) but are name-checked first, so a reorder fails loudly
+  //      instead of silently testing some other pair.
+  {
+    const int kPotion = 43, kLakeHylia = 21;
+    if (strcmp(kCaveInteriors[kPotion].name, "general_store_3_potion") != 0 ||
+        strcmp(kCaveInteriors[kLakeHylia].name, "general_store_2") != 0) {
+      fprintf(stderr, "Entrance_SelfCheck: shop region-binding check is pinned to "
+                      "interior indices %d/%d, which now hold '%s'/'%s' — the "
+                      "interiors list was reordered (it must be append-only)\n",
+              kPotion, kLakeHylia, kCaveInteriors[kPotion].name,
+              kCaveInteriors[kLakeHylia].name);
+      exit(2);
+    }
+    uint16 dwne = Rando_FindRegionByName("DarkWorld_NorthEast");
+    uint16 lws2 = Rando_FindRegionByName("LightWorld_South");
+    uint8 sw[kEntranceMaxInteriors];
+    for (int i = 0; i < kEntranceCaveInteriorCount; i++) sw[i] = (uint8)i;
+    sw[kPotion] = (uint8)kLakeHylia; sw[kLakeHylia] = (uint8)kPotion;
+    Entrance_ApplyRegionOverrides(sw, kEntranceCaveInteriorCount);
+    for (uint16 k = 0; k < 3; k++) {
+      // Lake Hylia's slots (261..263) are now reached through the Potion door.
+      if (Rando_GetEntranceRegionOverride((uint16)(261 + k)) != dwne ||
+          // ...and the Potion slots (237..239) through Lake Hylia's door.
+          Rando_GetEntranceRegionOverride((uint16)(237 + k)) != lws2) {
+        fprintf(stderr, "Entrance_SelfCheck: shop slots did not rebind to the "
+                        "shuffled door's region (%u→%u want %u, %u→%u want %u)\n",
+                261 + k, Rando_GetEntranceRegionOverride((uint16)(261 + k)), dwne,
+                237 + k, Rando_GetEntranceRegionOverride((uint16)(237 + k)), lws2);
+        exit(2);
+      }
+    }
+    Entrance_ClearRegionOverrides();
+  }
+
+  // (6c) The SAME shop rebinding through the CROSS-category path. Under Crossed
+  //      the placer's binding comes from Entrance_ApplyCrossOverrides, a
+  //      DIFFERENT function over a combined cave+dungeon endpoint space — (6b)
+  //      above would pass while that path bound nothing, and the runtime would
+  //      still hand shops over via the installed permutation. That is the
+  //      placement/runtime disagreement this whole change exists to avoid, so
+  //      pin both functions, not one.
+  {
+    const int kPotion = 43, kLakeHylia = 21;   // name-checked in (6b) above
+    uint16 dwne = Rando_FindRegionByName("DarkWorld_NorthEast");
+    uint16 lws2 = Rando_FindRegionByName("LightWorld_South");
+    uint8 didx[kEntranceDungeonCount];
+    int ndun = cross_dungeon_list(didx);
+    int n_cross = kEntranceCaveInteriorCount + ndun;
+    if (n_cross > kEntranceMaxInteriors) {
+      fprintf(stderr, "Entrance_SelfCheck: cross pool %d exceeds %d\n",
+              n_cross, kEntranceMaxInteriors);
+      exit(2);
+    }
+    uint8 cw[kEntranceMaxInteriors];
+    for (int i = 0; i < n_cross; i++) cw[i] = (uint8)i;
+    cw[kPotion] = (uint8)kLakeHylia; cw[kLakeHylia] = (uint8)kPotion;
+    Entrance_ApplyCrossOverrides(cw, n_cross);
+    for (uint16 k = 0; k < 3; k++) {
+      if (Rando_GetEntranceRegionOverride((uint16)(261 + k)) != dwne ||
+          Rando_GetEntranceRegionOverride((uint16)(237 + k)) != lws2) {
+        fprintf(stderr, "Entrance_SelfCheck: shop slots did not rebind under the "
+                        "CROSS-category override path (%u→%u want %u, %u→%u want "
+                        "%u)\n",
+                261 + k, Rando_GetEntranceRegionOverride((uint16)(261 + k)), dwne,
+                237 + k, Rando_GetEntranceRegionOverride((uint16)(237 + k)), lws2);
+        exit(2);
+      }
+    }
+    Entrance_ClearRegionOverrides();
+    Entrance_ClearEdgeOverrides();
   }
 
   // (7) Door overlay: build a synthetic vanilla table INDEXED BY DOOR ROW, since

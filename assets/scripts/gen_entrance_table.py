@@ -10,8 +10,9 @@ it and paste the block if entrance_registry.yaml changes:
 The table is the data home for Stage 1 cave shuffle: each interior carries its
 room, vanilla logic region (by NAME, resolved at runtime via
 Rando_FindRegionByName so numeric region-id drift can't silently corrupt it),
-its overworld entrance-ids, its overworld DOOR ROWS, and the location ids
-resident inside it.
+its overworld entrance-ids, its overworld DOOR ROWS, the location ids resident
+inside it, and — for the eight cave-resident shops — the base location id of the
+shop that lives behind its door.
 
 The door rows are the pool's identity unit — several entries legitimately share
 an entrance id (the four Dark World shop doors all load room 0x10F through id
@@ -30,6 +31,15 @@ REG = os.path.join(HERE, "..", "rando", "entrance_registry.yaml")
 # (a fall sets which_entrance directly), so it must key on the entrance id — which
 # is only unambiguous while no id in this range is claimed by two entries.
 FALLHOLE_LO, FALLHOLE_HI = 0x76, 0x81
+
+# The 27 regular shop slots occupy location_registry ids 237..263 in nine
+# consecutive 3-slot blocks. Eight of the nine shops are cave interiors and are
+# resolved through the entrance layout; the ninth (Light World Death Mountain,
+# base 255, room 0x0FF) is not a cave and keeps the static room-only table row,
+# so it must never appear as a cave entry's shop_loc_base.
+SHOP_LOC_FIRST, SHOP_LOC_COUNT = 237, 27
+SHOP_NON_CAVE_BASE = 255
+NO_SHOP = 0xFFFF  # kCaveInteriors sentinel for "this door hosts no shop"
 
 
 def check(interiors):
@@ -86,6 +96,39 @@ def check(interiors):
                         f"the fall-hole range 0x{FALLHOLE_LO:02X}-0x{FALLHOLE_HI:02X}; "
                         f"Rando_RecordEnteredFallhole keys on the id alone and could "
                         f"not tell them apart")
+
+    # (e) shop_loc_base is well-formed AND its three slots are bound as this
+    #     entry's locations. The binding is the load-bearing half: the runtime
+    #     resolves a shop from the DESTINATION entry's base, while the placer
+    #     learns which region reaches it from Entrance_ApplyRegionOverrides
+    #     walking that entry's location_ids. A base without its locations would
+    #     hand out a slot the logic still binds to its vanilla region.
+    #     Disjointness across entries falls out of (b).
+    shop_owner = {}
+    for idx, it in enumerate(interiors):
+        base = it.get("shop_loc_base")
+        if base is None:
+            continue
+        name = it["interior_id"]
+        if base == SHOP_NON_CAVE_BASE:
+            errs.append(f"entry {idx} ({name}) claims shop base {base}, the NON-CAVE "
+                        f"Light World Death Mountain shop (room 0x0FF); that shop is "
+                        f"room-only and must stay in the static table")
+        if not (SHOP_LOC_FIRST <= base < SHOP_LOC_FIRST + SHOP_LOC_COUNT) or \
+                (base - SHOP_LOC_FIRST) % 3 != 0:
+            errs.append(f"entry {idx} ({name}) shop_loc_base {base} is not a shop-block "
+                        f"base (expected {SHOP_LOC_FIRST}+3k, k < {SHOP_LOC_COUNT // 3})")
+            continue
+        if base in shop_owner:
+            errs.append(f"shop base {base} claimed by entries {shop_owner[base]} and {idx}")
+        else:
+            shop_owner[base] = idx
+        locs = list(it.get("locations") or [])
+        want = [base, base + 1, base + 2]
+        if not all(w in locs for w in want):
+            errs.append(f"entry {idx} ({name}) declares shop_loc_base {base} but its "
+                        f"locations {locs} do not bind slots {want}; without the binding "
+                        f"Entrance_ApplyRegionOverrides cannot rebind the shop's region")
     return errs
 
 
@@ -126,9 +169,12 @@ def main():
         room = rooms[0]
         region = it.get("region") or "0"
         region_c = "NULL" if region in (None, "0") else f"\"{region}\""
+        base = it.get("shop_loc_base")
+        base_c = "0xFFFF" if base is None else str(base)
         rows_c.append(
             f'  {{ /*{idx:2d}*/ "{it["interior_id"]}", 0x{room:03X}, {region_c}, '
-            f'{ename}, {len(eids)}, {rname}, {len(drows)}, {lname}, {len(locs)} }},')
+            f'{ename}, {len(eids)}, {rname}, {len(drows)}, {lname}, {len(locs)}, '
+            f'{base_c} }},')
     print("\n".join(ent_arrays))
     print()
     print("\n".join(row_arrays))

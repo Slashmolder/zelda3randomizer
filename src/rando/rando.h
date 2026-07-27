@@ -72,7 +72,15 @@
 //      cave-entrance-shuffle permutation changes; seeds without that axis are
 //      byte-identical — including everything 160 moved, which was nothing on the
 //      placement side.
-#define kGeneratorVersion 161u  // cave pool split by overworld door row
+// 162: shopsanity composes with cave-entrance shuffle. Each of the eight
+//      cave-resident shops now binds its three slot ids to its own (door-row)
+//      pool entry, so Entrance_ApplyRegionOverrides rebinds them to whichever
+//      door reaches them, and the runtime derives shop identity from the same
+//      assignment instead of a static door column. The forced-off normalization
+//      is gone. Only seeds carrying BOTH axes move — a cave-shuffle seed with
+//      shopsanity off is byte-identical (the new overrides land on locations
+//      that are not fill locations there, verified by regen, not assumed).
+#define kGeneratorVersion 162u  // shopsanity x cave-entrance shuffle compose
 // The share-string binary layout packs version into 1 byte
 // (rando_share.h: ShareString.version is uint8). Compile-time enforce
 // kGeneratorVersion ≤ 255 so silent truncation can't ship.
@@ -750,11 +758,24 @@ bool Rando_ShopSlotCheckInfo(uint16 room, uint8 door, uint8 pos_plus1,
                              uint16 *out_loc, uint16 *out_item,
                              uint16 *out_price);
 
-// Shop table resolution alone — no active-slot, placement or already-checked
-// gating. For the --rando-shop-doorwalk identity audit, which must run without
-// a generated slot on disk. 0xFFFF = not a shop tuple. Answers identity, not
-// liveness: never decide a grant with this.
+// Shop resolution alone — no active-slot, placement or already-checked gating.
+// For the --rando-shop-doorwalk identity audit, which must run without a
+// generated slot on disk. 0xFFFF = not a shop tuple. Answers identity, not
+// liveness: never decide a grant with this. Reads the LIVE entrance layout, so
+// under cave-entrance shuffle it names the destination door's shop.
 uint16 Rando_ShopSlotLocForDoor(uint16 room, uint8 door, uint8 pos_plus1);
+
+// Audit/self-test hook — install the entrance layout that
+// (seed, axes, attempt, world_state) regenerates, with no sidecar slot on disk,
+// through the same path the game uses (door overlay onto asset 126 + the
+// installed entry permutation). Lets --rando-shop-doorwalk walk a SHUFFLED
+// layout, which is the guard for shop-identity-from-the-layout. False when the
+// axes produce no layout. Never call from gameplay — it leaves an overlay
+// installed with no slot behind it; pair every call with the teardown.
+bool Rando_EntranceInstallLayoutForAudit(uint64 seed_u64, uint8 entrance_axes,
+                                         uint8 entrance_attempt,
+                                         uint8 world_state);
+void Rando_EntranceTeardownLayoutForAudit(void);
 
 // add-rando-shopsanity — icon resolution for an unchecked check slot (same
 // shared resolver as field items, NOT client-toggle gated). Returns:

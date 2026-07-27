@@ -71,7 +71,7 @@ The `RandoSettings` struct SHALL be canonically serialized field-by-field in the
 
 Changing this order — or the field widths, or the enum value assignments — is a `generator_version` bump trigger (per `tasks.md §13.6`).
 
-Serialization applies derived rules before writing bytes: Completionist forces `accessibility=locations`; retired bytes 9 and 10 canonicalize to `0`; Retro and active door shuffle normalize key modes; unsupported entrance and door-shuffle combinations normalize to the runtime-effective axes; `enemy_drop_checks=dungeon` degrades to `keys` under enemy shuffle and normalizes to `off` when small keys are vanilla; `enemy_drop_checks=all` is distinct from `dungeon` and either remains `all`, normalizes visibly to a lower supported tier such as entrance shuffle's `dungeon`, or generation rejects if the complete all-enemy registry is unavailable. `grass_shuffle` and `rock_shuffle` have no derived-rule couplings (they compose freely, including under door and cave-entrance shuffle). `shopsanity` composes freely EXCEPT under effective cave-entrance shuffle, which normalizes it off: four shop interiors are cave-pool members whose pool entries omit the shop slot ids, so a shuffled seed would evaluate each slot from its vanilla overworld region while the runtime reaches that interior through a different door (see the `randomizer-shopsanity` capability for why rebinding the region cannot repair it). Deserialization masks only the defined bits of bytes 25..30 — each bit-packed field is masked to its own width (`enemy_drop_checks` reads bits 0-1 of byte 28 only; `shopsanity` reads bit 4 of byte 29 only) — and range-checks the scalar enum/count fields including each packed byte-28/29/30 field (`grass_shuffle`/`rock_shuffle` value 3 is invalid and rejected).
+Serialization applies derived rules before writing bytes: Completionist forces `accessibility=locations`; retired bytes 9 and 10 canonicalize to `0`; Retro and active door shuffle normalize key modes; unsupported entrance and door-shuffle combinations normalize to the runtime-effective axes; `enemy_drop_checks=dungeon` degrades to `keys` under enemy shuffle and normalizes to `off` when small keys are vanilla; `enemy_drop_checks=all` is distinct from `dungeon` and either remains `all`, normalizes visibly to a lower supported tier such as entrance shuffle's `dungeon`, or generation rejects if the complete all-enemy registry is unavailable. `grass_shuffle` and `rock_shuffle` have no derived-rule couplings (they compose freely, including under door and cave-entrance shuffle). `shopsanity` composes freely, cave-entrance shuffle included, and has NO derived-rule coupling. It was previously normalized off under effective cave-entrance shuffle, because the shop-hosting interiors were single pool entries spanning several overworld doors and their entries omitted the shop slot ids; splitting the cave pool by door row gave each cave-resident shop its own entry carrying its own three slot ids, so the per-seed entrance region override rebinds them to whichever door reaches them (see the `randomizer-shopsanity` capability). That normalization and its predicate are removed. Deserialization masks only the defined bits of bytes 25..30 — each bit-packed field is masked to its own width (`enemy_drop_checks` reads bits 0-1 of byte 28 only; `shopsanity` reads bit 4 of byte 29 only) — and range-checks the scalar enum/count fields including each packed byte-28/29/30 field (`grass_shuffle`/`rock_shuffle` value 3 is invalid and rejected).
 
 #### Scenario: Reordering fields breaks settings_hash
 - **WHEN** the canonical serialization order changes (e.g., swap fields 4 and 5)
@@ -109,12 +109,13 @@ Serialization applies derived rules before writing bytes: Completionist forces `
 - **WHEN** a build that includes shopsanity serializes default settings
 - **THEN** the canonical blob length and every default-settings `settings_hash` are identical to the immediately-prior baseline (bit 4 of byte 29 serializes `0` at default), the previously-refused bit is now accepted on deserialize, and only `shopsanity=true` blobs hash differently; `generator_version` still advances with this change because ON-axis placement output is new
 
-#### Scenario: Shopsanity normalizes off under cave-entrance shuffle
+#### Scenario: Shopsanity survives canonical serialization under cave-entrance shuffle
 - **WHEN** settings requesting both `shopsanity=true` and
   `shuffle_cave_entrances=true` are canonically serialized in a world state
   where cave-entrance shuffle is effective (Open or Standard)
-- **THEN** byte 29 bit 4 serializes `0`, and the `settings_hash`, placement and
-  spoiler are identical to the same seed requested without `shopsanity`
+- **THEN** byte 29 bit 4 serializes `1`, and the `settings_hash`, placement and
+  spoiler all differ both from the same seed requested without `shopsanity` and
+  from the same seed requested without `shuffle_cave_entrances`
 
 ### Requirement: pieces_required must not exceed pieces_placed
 
