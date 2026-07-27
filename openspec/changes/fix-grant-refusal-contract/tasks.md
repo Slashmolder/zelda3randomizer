@@ -85,11 +85,16 @@ as REFUTED in this file rather than quietly "fixed".
 - [x] 5.3 `run_rando_validation.py full` PASS
 - [x] 5.4 Corpus regen: 0 digest changes (runtime-only) — no `kGeneratorVersion`
       bump
-- [ ] 5.5 Each fix negative-tested: revert it, its check must fail
+- [x] 5.5 Each fix negative-tested: revert it, its check must fail
 
 ## 6. Close-out
 
-- [ ] 6.1 Independent fresh-eyes review of the whole diff
-- [ ] 6.2 Owner playtest of the reachable paths (bottle at capacity, a boss
-      whose drop is a check, a pot lift)
-- [ ] 6.3 Reconcile deltas against as-built, then archive on the branch
+- [x] 6.1 Independent fresh-eyes review of the whole diff
+- [x] 6.2 Owner playtest PASSED (2026-07-26, build at 4008f691 + the oracle
+      hardening): crystal dungeon start-to-finish incl. cutscene and warp-out;
+      pendant dungeon (fanfare, no eject, correct); pot lifts; pause map showing
+      the right pendants and, after one crystal, that crystal plus red X's;
+      BOTH medallion tablets granted with Link controllable afterward; and the
+      adversarial case — a bottle collected at four bottles showed its cue and
+      moved on with no loop. NOT covered: the flute/dig spot field-item path
+- [x] 6.3 Reconciled and archived on the branch

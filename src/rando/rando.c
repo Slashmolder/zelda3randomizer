@@ -608,8 +608,11 @@ typedef enum {
   // can clear -> retryable, preserving the lossless-retry guarantee.
   kRandoBottleFit_Transient,
   // Needs an UNOWNED slot while four bottles are already held. Bottle count is
-  // monotonic (nothing in the game zeroes a slot), so this can NEVER become
-  // satisfiable -> terminal. Routing it to RetryableFailure is what turned
+  // monotonic under GAMEPLAY -- no item, event or menu action zeroes a slot --
+  // so this can never become satisfiable and is terminal. (The PC debug panel's
+  // Bottles combo CAN write 0; a player who cheats a slot free after a 5th
+  // bottle was consumed does not get it back. Accepted: the alternative for
+  // everyone else is a softlock.) Routing it to RetryableFailure is what turned
   // every "re-arm and retry next frame" site into an infinite loop, and the
   // sites that immobilize while retrying removed the player's only means of
   // recovery (the menu). See the change's design.md.
@@ -10031,24 +10034,32 @@ static void Rando_GrantPlanSelfCheck(void) {
     GRANT_PLAN_CHECK(Rando_ResolveGrantPlan(3, ITEM_BottleEmpty, &state, &plan) &&
                      plan.disposition == kRandoGrantDisposition_Receive,
                      "bottle with a free slot was not delivered", ITEM_BottleEmpty);
-    // No plan may ask a caller to retry a refusal the player cannot clear:
-    // sweep every bottle-ish code at a full inventory and assert none is
-    // retryable unless an empty bottle would satisfy it.
+    // Independent oracle: state which ITEMS are terminal at a full inventory
+    // from game semantics, not from the implementation's own classifier. The
+    // first version of this sweep asked rando_code_is_bottle_content() whether
+    // a refusal was clearable -- the same predicate that decides the
+    // disposition -- so it held by construction and a total swap of the two
+    // code tables passed it. A bottle-with-contents is still a NEW bottle and
+    // needs a free slot (permanent); a loose potion needs an EMPTY bottle,
+    // which drinking creates (transient).
     memset(state.bottle, 3, sizeof(state.bottle));
-    static const uint16 kBottleItems[] = {
-      ITEM_BottleEmpty, ITEM_BottleWithFairy, ITEM_BottleWithBee,
-      ITEM_BottleWithGoodBee, ITEM_BottleWithRedPotion,
-      ITEM_BottleWithGreenPotion, ITEM_BottleWithBluePotion,
-      ITEM_BluePotion, ITEM_RedPotion,
+    static const struct { uint16 item; uint8 want; } kBottleContract[] = {
+      { ITEM_BottleEmpty,             kRandoGrantDisposition_AcceptedNoOp },
+      { ITEM_BottleWithFairy,         kRandoGrantDisposition_AcceptedNoOp },
+      { ITEM_BottleWithBee,           kRandoGrantDisposition_AcceptedNoOp },
+      { ITEM_BottleWithGoodBee,       kRandoGrantDisposition_AcceptedNoOp },
+      { ITEM_BottleWithRedPotion,     kRandoGrantDisposition_AcceptedNoOp },
+      { ITEM_BottleWithGreenPotion,   kRandoGrantDisposition_AcceptedNoOp },
+      { ITEM_BottleWithBluePotion,    kRandoGrantDisposition_AcceptedNoOp },
+      { ITEM_BluePotion,              kRandoGrantDisposition_RetryableFailure },
+      { ITEM_RedPotion,               kRandoGrantDisposition_RetryableFailure },
     };
-    for (size_t i = 0; i < countof(kBottleItems); i++) {
-      if (!Rando_ResolveGrantPlan(3, kBottleItems[i], &state, &plan))
-        continue;
-      bool retryable = plan.disposition == kRandoGrantDisposition_RetryableFailure;
-      bool clearable = rando_code_is_bottle_content(plan.receive_code);
-      GRANT_PLAN_CHECK(!retryable || clearable,
-                       "a refusal the player cannot clear was marked retryable",
-                       kBottleItems[i]);
+    for (size_t i = 0; i < countof(kBottleContract); i++) {
+      GRANT_PLAN_CHECK(
+          Rando_ResolveGrantPlan(3, kBottleContract[i].item, &state, &plan) &&
+              plan.disposition == kBottleContract[i].want,
+          "bottle refusal class disagrees with the contract",
+          kBottleContract[i].item);
     }
   }
 
