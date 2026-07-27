@@ -6,12 +6,12 @@ as REFUTED in this file rather than quietly "fixed".
 
 ## 1. The systemic fix (do first — it defuses SEVERE 1 and 2)
 
-- [ ] 1.1 Split the bottle predicate in `rando.c` into permanent (pickup at four
+- [x] 1.1 Split the bottle predicate in `rando.c` into permanent (pickup at four
       bottles — monotonic) vs transient (content with no empty bottle). Permanent
       ⇒ `AcceptedNoOp`; transient ⇒ `RetryableFailure`
 - [ ] 1.2 Confirm no surface treats an `AcceptedNoOp` location as an item held
       (tracker item view, goal completion, hints, live reachability)
-- [ ] 1.3 Self-check matrix over (permanent, transient, at-cap, unsatisfiable) ×
+- [x] 1.3 Self-check matrix over (permanent, transient, at-cap, unsatisfiable) ×
       expected disposition, driving `Rando_PrepareGrant` itself
 
 ## 2. SEVERE sites

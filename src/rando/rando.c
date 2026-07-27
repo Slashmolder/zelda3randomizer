@@ -582,28 +582,63 @@ void Rando_CaptureGrantState(RandoGrantState *out) {
   out->trap_seed = rando_trap_decoy_seed();
 }
 
-static bool rando_plan_bottle_has_slot(const RandoGrantState *state,
-                                       uint8 code) {
+// Bottle codes, split by WHICH resource they need — the distinction the grant
+// refusal contract turns on (see openspec fix-grant-refusal-contract).
+//   PICKUP  = a new bottle; needs an UNOWNED slot (`bottle[i] < 2`).
+//   CONTENT = something poured into a bottle; needs an EMPTY one (== 2).
+static bool rando_code_is_bottle_pickup(uint8 code) {
   static const uint8 kBottlePickupCodes[] = {
     0x16, 0x2b, 0x2c, 0x2d, 0x3d, 0x3c, 0x48,
   };
-  static const uint8 kBottleContentCodes[] = {0x2e, 0x2f, 0x30, 0x0e};
-  bool is_bottle = false;
   for (size_t i = 0; i < countof(kBottlePickupCodes); i++)
-    is_bottle |= code == kBottlePickupCodes[i];
-  if (is_bottle) {
-    for (size_t i = 0; i < countof(state->bottle); i++)
-      if (state->bottle[i] < 2) return true;
-    return false;
-  }
-  bool is_content = false;
+    if (code == kBottlePickupCodes[i]) return true;
+  return false;
+}
+
+static bool rando_code_is_bottle_content(uint8 code) {
+  static const uint8 kBottleContentCodes[] = {0x2e, 0x2f, 0x30, 0x0e};
   for (size_t i = 0; i < countof(kBottleContentCodes); i++)
-    is_content |= code == kBottleContentCodes[i];
-  if (is_content) {
+    if (code == kBottleContentCodes[i]) return true;
+  return false;
+}
+
+typedef enum {
+  kRandoBottleFit_Ok = 0,
+  // Needs an EMPTY bottle. The player can make one by drinking, so the refusal
+  // can clear -> retryable, preserving the lossless-retry guarantee.
+  kRandoBottleFit_Transient,
+  // Needs an UNOWNED slot while four bottles are already held. Bottle count is
+  // monotonic (nothing in the game zeroes a slot), so this can NEVER become
+  // satisfiable -> terminal. Routing it to RetryableFailure is what turned
+  // every "re-arm and retry next frame" site into an infinite loop, and the
+  // sites that immobilize while retrying removed the player's only means of
+  // recovery (the menu). See the change's design.md.
+  kRandoBottleFit_Permanent,
+} RandoBottleFit;
+
+static RandoBottleFit rando_plan_bottle_fit(const RandoGrantState *state,
+                                            uint8 code) {
+  if (rando_code_is_bottle_pickup(code)) {
     for (size_t i = 0; i < countof(state->bottle); i++)
-      if (state->bottle[i] == 2) return true;
-    return false;
+      if (state->bottle[i] < 2) return kRandoBottleFit_Ok;
+    return kRandoBottleFit_Permanent;
   }
+  if (rando_code_is_bottle_content(code)) {
+    for (size_t i = 0; i < countof(state->bottle); i++)
+      if (state->bottle[i] == 2) return kRandoBottleFit_Ok;
+    return kRandoBottleFit_Transient;
+  }
+  return kRandoBottleFit_Ok;
+}
+
+// Live-state form of the permanent case, for the COMMIT path: a plan built when
+// a slot was free can be delivered after the player picked up a fourth bottle,
+// and that late refusal is just as permanent as an early one.
+static bool rando_receive_permanently_blocked(uint8 code) {
+  if (!rando_code_is_bottle_pickup(code))
+    return false;
+  for (int i = 0; i < 4; i++)
+    if (link_bottle_info[i] < 2) return false;
   return true;
 }
 
@@ -765,7 +800,11 @@ bool Rando_ResolveGrantPlan(uint16 location_id, uint16 item_id,
       code = blue_owned ? 0x2a : 0x0c;
     }
     out->receive_code = out->display_code = code;
-    if (!rando_plan_bottle_has_slot(state, code))
+    RandoBottleFit fit = rando_plan_bottle_fit(state, code);
+    if (fit == kRandoBottleFit_Permanent)
+      // Terminal, like any other "no useful state left to gain" receive.
+      out->disposition = kRandoGrantDisposition_AcceptedNoOp;
+    else if (fit == kRandoBottleFit_Transient)
       out->disposition = kRandoGrantDisposition_RetryableFailure;
     else if (rando_plan_receive_is_at_cap(state, code))
       out->disposition = kRandoGrantDisposition_AcceptedNoOp;
@@ -3056,10 +3095,20 @@ RandoGrantResult Rando_CommitPreparedGrant(
     return result;
 
   const RandoGrantPlan *plan = &token->plan;
-  if (!Rando_CanAcceptGrantPlanNow(plan))
-    return plan->disposition == kRandoGrantDisposition_Receive
-        ? kRandoGrantResult_Retryable : kRandoGrantResult_Invalid;
-  if (plan->disposition == kRandoGrantDisposition_Receive) {
+  // A plan built while a bottle slot was free can be committed after the player
+  // picked up a fourth bottle. That late refusal is just as permanent as an
+  // early one, so it terminates here rather than looping the caller forever.
+  bool deliver = true;
+  if (!Rando_CanAcceptGrantPlanNow(plan)) {
+    if (plan->disposition != kRandoGrantDisposition_Receive ||
+        !rando_receive_permanently_blocked(plan->receive_code))
+      return plan->disposition == kRandoGrantDisposition_Receive
+          ? kRandoGrantResult_Retryable : kRandoGrantResult_Invalid;
+    deliver = false;  // consume the check, grant nothing, do not retry
+  }
+  if (!deliver) {
+    // fall through to the commit bookkeeping below with no delivery
+  } else if (plan->disposition == kRandoGrantDisposition_Receive) {
     if (plan->receive_code >= 76)
       return kRandoGrantResult_Invalid;
     item_receipt_method = receipt_method;
@@ -9953,14 +10002,23 @@ static void Rando_GrantPlanSelfCheck(void) {
                      "legacy boomerang byte was ignored", ITEM_RedBoomerang);
   }
 
-  // Bottle acquisition and loose contents have different acceptance rules.
+  // Bottle acquisition and loose contents have different acceptance rules, and
+  // -- the point of fix-grant-refusal-contract -- their REFUSALS differ in kind.
+  // A refusal a player can never clear must terminate; only one they can clear
+  // may ask the caller to retry. Getting this backwards for the pickup case
+  // turned every "re-arm and retry next frame" site into an infinite loop, and
+  // the sites that immobilize while retrying removed the only means of recovery.
   {
     RandoGrantState state = base;
     RandoGrantPlan plan;
     memset(state.bottle, 3, sizeof(state.bottle));
+    // PERMANENT: a 5th bottle needs an UNOWNED slot and bottle count is
+    // monotonic, so this can never become satisfiable -> terminal, like any
+    // other at-cap receive. (This assertion previously demanded Retryable.)
     GRANT_PLAN_CHECK(Rando_ResolveGrantPlan(3, ITEM_BottleEmpty, &state, &plan) &&
-                     plan.disposition == kRandoGrantDisposition_RetryableFailure,
-                     "full bottle inventory was not retryable", ITEM_BottleEmpty);
+                     plan.disposition == kRandoGrantDisposition_AcceptedNoOp,
+                     "5th bottle must terminate, not loop", ITEM_BottleEmpty);
+    // TRANSIENT: contents need an EMPTY bottle, which drinking one creates.
     GRANT_PLAN_CHECK(Rando_ResolveGrantPlan(3, ITEM_BluePotion, &state, &plan) &&
                      plan.disposition == kRandoGrantDisposition_RetryableFailure,
                      "contents without an empty bottle were not retryable", ITEM_BluePotion);
@@ -9968,6 +10026,30 @@ static void Rando_GrantPlanSelfCheck(void) {
     GRANT_PLAN_CHECK(Rando_ResolveGrantPlan(3, ITEM_BluePotion, &state, &plan) &&
                      plan.disposition == kRandoGrantDisposition_Receive,
                      "contents with an empty bottle were rejected", ITEM_BluePotion);
+    // A free slot still delivers a bottle normally.
+    state.bottle[2] = 0;
+    GRANT_PLAN_CHECK(Rando_ResolveGrantPlan(3, ITEM_BottleEmpty, &state, &plan) &&
+                     plan.disposition == kRandoGrantDisposition_Receive,
+                     "bottle with a free slot was not delivered", ITEM_BottleEmpty);
+    // No plan may ask a caller to retry a refusal the player cannot clear:
+    // sweep every bottle-ish code at a full inventory and assert none is
+    // retryable unless an empty bottle would satisfy it.
+    memset(state.bottle, 3, sizeof(state.bottle));
+    static const uint16 kBottleItems[] = {
+      ITEM_BottleEmpty, ITEM_BottleWithFairy, ITEM_BottleWithBee,
+      ITEM_BottleWithGoodBee, ITEM_BottleWithRedPotion,
+      ITEM_BottleWithGreenPotion, ITEM_BottleWithBluePotion,
+      ITEM_BluePotion, ITEM_RedPotion,
+    };
+    for (size_t i = 0; i < countof(kBottleItems); i++) {
+      if (!Rando_ResolveGrantPlan(3, kBottleItems[i], &state, &plan))
+        continue;
+      bool retryable = plan.disposition == kRandoGrantDisposition_RetryableFailure;
+      bool clearable = rando_code_is_bottle_content(plan.receive_code);
+      GRANT_PLAN_CHECK(!retryable || clearable,
+                       "a refusal the player cannot clear was marked retryable",
+                       kBottleItems[i]);
+    }
   }
 
   // Intentional accepted no-ops must never fall through to the source item.
@@ -10071,6 +10153,7 @@ static void Rando_GrantTransactionSelfCheck(void) {
     {7008, ITEM_StartingHeart},
     {7009, ITEM_MagicPowder},
     {7010, ITEM_Rupee20},
+    {7099, ITEM_BluePotion},  // LOOSE potion: transient-refusal fixture
     {7011, ITEM_Soul_ArmosKnights},
     {7012, ITEM_Soul_Npc_Sahasrahla},
   };
@@ -10112,36 +10195,71 @@ static void Rando_GrantTransactionSelfCheck(void) {
                      "virtual preparation did not fail closed", 7008);
   }
 
-  // A full bottle is retryable and cannot mark, mutate, or confirm.
+  // A 5th bottle TERMINATES (fix-grant-refusal-contract): the refusal can never
+  // clear, so asking the caller to retry looped it forever -- and the sites that
+  // immobilize while retrying removed the player's only means of recovery. It
+  // consumes the check and grants nothing, exactly like any at-cap receive.
+  // Contents stay retryable, because drinking a potion frees a bottle.
   {
     RandoDeferredGrantToken token;
     memset(link_bottle_info, 3, 4);
     memcpy(before_ram, g_ram, sizeof(before_ram));
     uint8 before_queue = g_rando_pot_confirmation_count;
-    uint16 before_last = g_last_dispatched_item_id;
     GRANT_TX_CHECK(Rando_PrepareGrant(7001, ITEM_BottleEmpty, 0x16, &token) ==
-                         kRandoGrantResult_Retryable,
-                     "full bottle did not return Retryable", 7001);
-    GRANT_TX_CHECK(!Rando_IsLocationChecked(7001) && token.version == 0 &&
+                         kRandoGrantResult_Accepted &&
+                       token.plan.disposition ==
+                         kRandoGrantDisposition_AcceptedNoOp,
+                     "5th bottle did not prepare as a terminal no-op", 7001);
+    GRANT_TX_CHECK(!Rando_IsLocationChecked(7001) &&
                        memcmp(before_ram, g_ram, sizeof(before_ram)) == 0 &&
-                       g_rando_pot_confirmation_count == before_queue &&
-                       g_last_dispatched_item_id == before_last,
-                     "retryable preparation mutated/marked/confirmed", 7001);
+                       g_rando_pot_confirmation_count == before_queue,
+                     "no-op preparation mutated/marked/confirmed", 7001);
+    memcpy(before_ram, g_ram, sizeof(before_ram));
+    GRANT_TX_CHECK(Rando_CommitPreparedGrant(
+                         &token, kRandoGrantPresentation_Animated, 0, 0) ==
+                         kRandoGrantResult_Accepted &&
+                       Rando_IsLocationChecked(7001) &&
+                       // Nothing granted. (g_ram at large DOES change: the
+                       // at-cap class still shows its confirmation cue.)
+                       link_bottle_info[0] == 3 && link_bottle_info[1] == 3 &&
+                       link_bottle_info[2] == 3 && link_bottle_info[3] == 3,
+                     "5th bottle commit did not consume the check cleanly", 7001);
+    memset(g_rando_checked_bitmap, 0, sizeof(g_rando_checked_bitmap));
     memset(link_bottle_info, 0, 4);
 
+    // Capacity lost while the token is deferred is just as permanent, so the
+    // commit terminates rather than handing the caller an unbreakable retry.
     GRANT_TX_CHECK(Rando_PrepareGrant(7001, ITEM_BottleEmpty, 0x16, &token) ==
                          kRandoGrantResult_Accepted && token.version != 0,
                      "bottle with capacity did not prepare", 7001);
     memset(link_bottle_info, 3, 4);  // capacity lost while token is deferred
     memcpy(before_ram, g_ram, sizeof(before_ram));
-    before_queue = g_rando_pot_confirmation_count;
     GRANT_TX_CHECK(Rando_CommitPreparedGrant(
                          &token, kRandoGrantPresentation_Animated, 0, 0) ==
+                         kRandoGrantResult_Accepted &&
+                       Rando_IsLocationChecked(7001) &&
+                       link_bottle_info[0] == 3 && link_bottle_info[1] == 3 &&
+                       link_bottle_info[2] == 3 && link_bottle_info[3] == 3,
+                     "deferred bottle capacity loss must terminate, not loop", 7001);
+    memset(g_rando_checked_bitmap, 0, sizeof(g_rando_checked_bitmap));
+
+    // The TRANSIENT case is unchanged: contents with no empty bottle stay
+    // retryable, so the lossless-retry guarantee still holds where it can.
+    memset(link_bottle_info, 3, 4);
+    memcpy(before_ram, g_ram, sizeof(before_ram));
+    // NB: PrepareGrant resolves the PLACED item, so this needs its own row --
+    // 7001 is a bottle, and asking it for a potion would silently re-test the
+    // terminal case above.
+    GRANT_TX_CHECK(Rando_PrepareGrant(7099, ITEM_BluePotion, 0x2e, &token) ==
                          kRandoGrantResult_Retryable &&
-                       !Rando_IsLocationChecked(7001) &&
-                       memcmp(before_ram, g_ram, sizeof(before_ram)) == 0 &&
-                       g_rando_pot_confirmation_count == before_queue,
-                     "deferred bottle capacity loss was committed", 7001);
+                       !Rando_IsLocationChecked(7099) &&
+                       memcmp(before_ram, g_ram, sizeof(before_ram)) == 0,
+                     "contents without an empty bottle must stay retryable", 7099);
+    // ...and it delivers once a bottle is emptied, so retry is still lossless.
+    link_bottle_info[1] = 2;
+    GRANT_TX_CHECK(Rando_PrepareGrant(7099, ITEM_BluePotion, 0x2e, &token) ==
+                         kRandoGrantResult_Accepted,
+                     "contents with an empty bottle were refused", 7099);
     memset(link_bottle_info, 0, 4);
   }
 
@@ -10466,13 +10584,23 @@ static void Rando_GrantTransactionSelfCheck(void) {
     memset(g_rando_checked_bitmap, 0, sizeof(g_rando_checked_bitmap));
     event_entries[3].item_id = ITEM_BottleEmpty;
     memset(link_bottle_info, 3, 4);
+    // A take-any offering a 5th bottle now TERMINATES rather than looping, so
+    // it consumes the cave (chosen + forfeited sibling) and grants nothing.
+    // That is a deliberate, documented cost of the uniform permanent-refusal
+    // rule (design.md D6): the alternative is a plan the site can never satisfy.
+    // Unlike the frame-locked sites this rule exists to fix, the take-any retry
+    // was player-driven and not itself a softlock -- so this is the one place
+    // where the fix is a small net loss, accepted to keep one contract rather
+    // than a per-site policy.
     GRANT_TX_CHECK(Rando_TakeAnyGrant(
                          0x58, 0x56, 0, 0x16,
                          kRandoGrantPresentation_None, 0, 0) ==
-                         kRandoGrantResult_Retryable &&
-                       !Rando_IsLocationChecked(266) &&
-                       !Rando_IsLocationChecked(267),
-                     "take-any retry consumed chosen/sibling state", 266);
+                         kRandoGrantResult_Accepted &&
+                       Rando_IsLocationChecked(266) &&
+                       Rando_IsLocationChecked(267) &&
+                       link_bottle_info[0] == 3,
+                     "take-any 5th bottle must terminate, not loop", 266);
+    memset(g_rando_checked_bitmap, 0, sizeof(g_rando_checked_bitmap));
     memset(link_bottle_info, 0, 4);
     event_entries[3].item_id = ITEM_Rupee1;
 

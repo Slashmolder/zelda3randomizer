@@ -6484,14 +6484,19 @@ int Ancilla_RandoFallingPrizeSelfCheck(void) {
 
   // A capacity change between prepare and collision leaves both the token and
   // tablet cutscene state intact; no vanilla item is substituted.
-  entry.item_id = ITEM_BottleEmpty;
-  memset(link_bottle_info, 0, 4);
-  TABLET_CHECK(Rando_PrepareGrant(7000, ITEM_BottleEmpty, 0x16, &reparsed) ==
+  //
+  // Uses a LOOSE POTION, not a bottle: since fix-grant-refusal-contract a 5th
+  // bottle is a PERMANENT refusal and terminates instead of retrying, so it can
+  // no longer exercise the retry-preservation path. A potion with no empty
+  // bottle is the transient refusal that still must preserve caller state.
+  entry.item_id = ITEM_BluePotion;
+  link_bottle_info[0] = 2;  // one empty bottle: the potion prepares
+  TABLET_CHECK(Rando_PrepareGrant(7000, ITEM_BluePotion, 0x2e, &reparsed) ==
                     kRandoGrantResult_Accepted,
                 "retry collision fixture did not prepare");
   ancilla_type[k] = 0x29;
   Ancilla29_StoreRandoGrantToken(k, &reparsed);
-  memset(link_bottle_info, 3, 4);
+  memset(link_bottle_info, 3, 4);  // every bottle filled: transiently refused
   flag_custom_spell_anim_active = 7;
   link_force_hold_sword_up = 6;
   link_player_handler_state = 5;
