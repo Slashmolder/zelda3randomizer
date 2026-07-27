@@ -64,7 +64,15 @@
 //      semantic plan/digest, transactional paid queues, discovery journal,
 //      certified sidecar/snapshot replay, semantic mixes, and additive spoiler
 //      schema. Placement and sphere digests remain unchanged from 159.
-#define kGeneratorVersion 160u
+// 161: cave-entrance pool split by overworld DOOR ROW, 40 -> 46 entries. The
+//      four shop-hosting interiors each carried several doors in one pool entry
+//      (room 0x10F alone has four, all through entrance id 0x60), so those doors
+//      moved as a unit and shared one region. Each door row is now its own pool
+//      entry with its own region and gate. The pool size changed, so EVERY
+//      cave-entrance-shuffle permutation changes; seeds without that axis are
+//      byte-identical — including everything 160 moved, which was nothing on the
+//      placement side.
+#define kGeneratorVersion 161u  // cave pool split by overworld door row
 // The share-string binary layout packs version into 1 byte
 // (rando_share.h: ShareString.version is uint8). Compile-time enforce
 // kGeneratorVersion ≤ 255 so silent truncation can't ship.

@@ -146,10 +146,24 @@ void Entrance_WriteDecoupledSpoilerText(void *file, const uint8 *exit_assign, in
 // Worst-case added-edge load of all entrance modes combined (decoupled exits +
 // cross-category dungeon-behind-cave edges), for the shared-store budget check.
 int Entrance_AddedEdgeWorstCase(void);
-// D.4 runtime helpers: map an entrance-id → cave interior, and a cave interior's
+// D.4 runtime helpers: map a door → cave interior, and a cave interior's
 // representative entrance-id (for the decoupled arrival-table keying + replay).
+//
+// PREFER Entrance_InteriorOfDoorRow. The pool's identity unit is the overworld
+// DOOR ROW, not the entrance id: four pool entries load room 0x10F through id
+// 0x60 and two load room 0x112 through 0x58, so the id form returns the first
+// match and cannot say which door the player used. It is retained only for the
+// fall-hole path, which has no row available (a fall writes which_entrance
+// directly); assets/scripts/gen_entrance_table.py asserts no entrance id shared
+// by two entries lies in the fall-hole range, so that caller stays sound.
 int Entrance_InteriorOfEntranceId(uint8 ent_id);
+int Entrance_InteriorOfDoorRow(uint16 lx);
 uint8 Entrance_CaveRepresentativeId(int interior);
+// An interior's declared door rows / entrance-id membership. For the runtime
+// self-check that cross-validates the committed row map against the LIVE asset
+// tables (the offline validator is skipped in assetless profiles).
+int Entrance_CaveInteriorDoorRows(int interior, const uint8 **out_rows);
+bool Entrance_InteriorDeclaresEntranceId(int interior, uint8 ent_id);
 // D.3 capture helpers: total cave-interior count (decoupled pool size) + name.
 int Entrance_CaveInteriorCount(void);
 const char *Entrance_CaveInteriorName(int interior);
@@ -186,10 +200,12 @@ void Entrance_WriteDungeonDecoupledSpoilerText(void *file, const uint8 *exit_ass
 bool Entrance_IsCrossDecoupledActive(const RandoSettings *settings);
 int Entrance_ComputeCrossDecoupledExit(const RandoSettings *settings, uint64 seed,
                                        uint8 attempt, uint8 exit_assign[kEntranceMaxInteriors]);
-// Runtime: exit target for source door `vanilla_entrance_id` under cross-decoupled.
-// Returns 1 (*value = cave interior to emerge at), 2 (*value = dungeon entry room),
-// or 0 (self-map / non-pool → caller keeps the coupled return-to-source).
-int Entrance_CrossDecoupledExit(const uint8 *cross_net, int n,
+// Runtime: exit target for the source door at row `lx` (vanilla entrance id
+// `vanilla_entrance_id`) under cross-decoupled. Returns 1 (*value = cave interior
+// to emerge at), 2 (*value = dungeon entry room), or 0 (self-map / non-pool →
+// caller keeps the coupled return-to-source). Caves resolve by row, dungeons by
+// id — see Entrance_InteriorOfDoorRow.
+int Entrance_CrossDecoupledExit(const uint8 *cross_net, int n, uint16 lx,
                                 uint8 vanilla_entrance_id, uint16 *value);
 void Entrance_WriteCrossDecoupledSpoilerText(void *file, const uint8 *exit_assign, int n);
 void Entrance_WriteCrossDecoupledSpoilerJson(void *file, const uint8 *exit_assign, int n);

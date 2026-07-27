@@ -29,8 +29,19 @@ typedef struct RandoCaveInterior {
   uint16 room;                 // 0x1xx (cached-exit class [0x100,0x180)\{0x104})
   const char *region_name;     // vanilla logic region of the door (resolved at
                                // runtime via Rando_FindRegionByName; NULL = none)
-  const uint8 *entrance_ids;   // overworld entrance-ids that load this interior
+  const uint8 *entrance_ids;   // overworld entrance-ids that load this interior.
+                               // NOT unique across entries: the four Dark World
+                               // shop doors are four entries that all load room
+                               // 0x10F through id 0x60. Only ever use this to
+                               // WRITE a destination (which room to load) or to
+                               // ask "is this a cave id" — never to resolve
+                               // which pool entry a SOURCE door belongs to.
   uint8 entrance_count;
+  const uint8 *door_rows;      // overworld door-row indices (kOverworld_Entrance_Id
+                               // subscripts) that lead here. THIS is the pool's
+                               // identity unit: rows partition across entries, so
+                               // a source door resolves unambiguously by row.
+  uint8 door_row_count;
   const uint16 *location_ids;  // member locations (NULL when none)
   uint8 location_count;
 } RandoCaveInterior;
@@ -56,7 +67,7 @@ static const uint8 kEnt_ids_17[2] = { 0x3D, 0x55 };
 static const uint8 kEnt_ids_18[1] = { 0x5B };
 static const uint8 kEnt_ids_19[2] = { 0x6D, 0x6E };
 static const uint8 kEnt_ids_20[1] = { 0x57 };
-static const uint8 kEnt_ids_21[2] = { 0x58, 0x5A };
+static const uint8 kEnt_ids_21[1] = { 0x58 };
 static const uint8 kEnt_ids_22[1] = { 0x59 };
 static const uint8 kEnt_ids_23[1] = { 0x60 };
 static const uint8 kEnt_ids_24[2] = { 0x5C, 0x62 };
@@ -65,9 +76,9 @@ static const uint8 kEnt_ids_26[1] = { 0x63 };
 static const uint8 kEnt_ids_27[1] = { 0x67 };
 static const uint8 kEnt_ids_28[1] = { 0x61 };
 static const uint8 kEnt_ids_29[1] = { 0x68 };
-static const uint8 kEnt_ids_30[1] = { 0x51 };
-static const uint8 kEnt_ids_31[1] = { 0x52 };
-static const uint8 kEnt_ids_32[2] = { 0x46, 0x6B };
+static const uint8 kEnt_ids_30[1] = { 0x52 };
+static const uint8 kEnt_ids_31[1] = { 0x51 };
+static const uint8 kEnt_ids_32[1] = { 0x46 };
 static const uint8 kEnt_ids_33[1] = { 0x64 };
 static const uint8 kEnt_ids_34[2] = { 0x65, 0x66 };
 static const uint8 kEnt_ids_35[2] = { 0x69, 0x6A };
@@ -75,6 +86,59 @@ static const uint8 kEnt_ids_36[2] = { 0x6F, 0x70 };
 static const uint8 kEnt_ids_37[1] = { 0x71 };
 static const uint8 kEnt_ids_38[1] = { 0x72 };
 static const uint8 kEnt_ids_39[1] = { 0x83 };
+static const uint8 kEnt_ids_40[1] = { 0x5A };
+static const uint8 kEnt_ids_41[1] = { 0x58 };
+static const uint8 kEnt_ids_42[1] = { 0x60 };
+static const uint8 kEnt_ids_43[1] = { 0x60 };
+static const uint8 kEnt_ids_44[1] = { 0x60 };
+static const uint8 kEnt_ids_45[1] = { 0x6B };
+
+static const uint8 kEnt_rows_0[1] = { 0x3B };
+static const uint8 kEnt_rows_1[2] = { 0x3D, 0x3E };
+static const uint8 kEnt_rows_2[1] = { 0x3F };
+static const uint8 kEnt_rows_3[3] = { 0x41, 0x42, 0x43 };
+static const uint8 kEnt_rows_4[1] = { 0x44 };
+static const uint8 kEnt_rows_5[2] = { 0x48, 0x49 };
+static const uint8 kEnt_rows_6[1] = { 0x4A };
+static const uint8 kEnt_rows_7[1] = { 0x4B };
+static const uint8 kEnt_rows_8[2] = { 0x46, 0x47 };
+static const uint8 kEnt_rows_9[2] = { 0x52, 0x53 };
+static const uint8 kEnt_rows_10[2] = { 0x4C, 0x70 };
+static const uint8 kEnt_rows_11[1] = { 0x4D };
+static const uint8 kEnt_rows_12[2] = { 0x6A, 0x7F };
+static const uint8 kEnt_rows_13[1] = { 0x7C };
+static const uint8 kEnt_rows_14[2] = { 0x4E, 0x4F };
+static const uint8 kEnt_rows_15[1] = { 0x40 };
+static const uint8 kEnt_rows_16[1] = { 0x5E };
+static const uint8 kEnt_rows_17[2] = { 0x3C, 0x54 };
+static const uint8 kEnt_rows_18[1] = { 0x5A };
+static const uint8 kEnt_rows_19[2] = { 0x78, 0x79 };
+static const uint8 kEnt_rows_20[1] = { 0x74 };
+static const uint8 kEnt_rows_21[1] = { 0x57 };
+static const uint8 kEnt_rows_22[1] = { 0x58 };
+static const uint8 kEnt_rows_23[1] = { 0x56 };
+static const uint8 kEnt_rows_24[2] = { 0x5B, 0x61 };
+static const uint8 kEnt_rows_25[8] = { 0x55, 0x5C, 0x5D, 0x6B, 0x6C, 0x6F, 0x71, 0x80 };
+static const uint8 kEnt_rows_26[1] = { 0x62 };
+static const uint8 kEnt_rows_27[1] = { 0x66 };
+static const uint8 kEnt_rows_28[1] = { 0x60 };
+static const uint8 kEnt_rows_29[1] = { 0x67 };
+static const uint8 kEnt_rows_30[1] = { 0x51 };
+static const uint8 kEnt_rows_31[1] = { 0x50 };
+static const uint8 kEnt_rows_32[1] = { 0x45 };
+static const uint8 kEnt_rows_33[1] = { 0x63 };
+static const uint8 kEnt_rows_34[3] = { 0x64, 0x65, 0x72 };
+static const uint8 kEnt_rows_35[2] = { 0x68, 0x69 };
+static const uint8 kEnt_rows_36[2] = { 0x7A, 0x7B };
+static const uint8 kEnt_rows_37[2] = { 0x76, 0x77 };
+static const uint8 kEnt_rows_38[1] = { 0x7D };
+static const uint8 kEnt_rows_39[1] = { 0x7E };
+static const uint8 kEnt_rows_40[1] = { 0x59 };
+static const uint8 kEnt_rows_41[1] = { 0x6D };
+static const uint8 kEnt_rows_42[1] = { 0x5F };
+static const uint8 kEnt_rows_43[1] = { 0x6E };
+static const uint8 kEnt_rows_44[1] = { 0x73 };
+static const uint8 kEnt_rows_45[1] = { 0x75 };
 
 static const uint16 kEnt_locs_2[1] = { 168 };
 static const uint16 kEnt_locs_3[1] = { 153 };
@@ -100,48 +164,54 @@ static const uint16 kEnt_locs_31[1] = { 183 };
 static const uint16 kEnt_locs_38[1] = { 184 };
 static const uint16 kEnt_locs_39[1] = { 218 };
 
-#define kEntranceCaveInteriorCount 40
+#define kEntranceCaveInteriorCount 46
 static const RandoCaveInterior kCaveInteriors[kEntranceCaveInteriorCount] = {
-  { /* 0*/ "treasure_shell_game", 0x100, "LightWorld_NorthWest", kEnt_ids_0, 1, 0, 0 },
-  { /* 1*/ "snitch_house", 0x101, "LightWorld_NorthWest", kEnt_ids_1, 2, 0, 0 },
-  { /* 2*/ "sickboy_house", 0x102, "LightWorld_NorthWest", kEnt_ids_2, 1, kEnt_locs_2, 1 },
-  { /* 3*/ "kakariko_tavern", 0x103, "LightWorld_NorthWest", kEnt_ids_3, 3, kEnt_locs_3, 1 },
-  { /* 4*/ "sahasrahla_hut", 0x105, "LightWorld_NorthEast", kEnt_ids_4, 1, kEnt_locs_4, 3 },
-  { /* 5*/ "kakariko_library", 0x107, "LightWorld_South", kEnt_ids_5, 2, 0, 0 },
-  { /* 6*/ "chicken_house", 0x108, "LightWorld_NorthWest", kEnt_ids_6, 1, kEnt_locs_6, 1 },
-  { /* 7*/ "potion_shop", 0x109, "LightWorld_NorthEast", kEnt_ids_7, 1, kEnt_locs_7, 1 },
-  { /* 8*/ "village_chest_game", 0x106, "DarkWorld_NorthWest", kEnt_ids_8, 2, kEnt_locs_8, 2 },
-  { /* 9*/ "bomb_shop", 0x11C, "DarkWorld_NorthWest", kEnt_ids_9, 2, kEnt_locs_9, 1 },
-  { /*10*/ "aginah_cave", 0x10A, "LightWorld_South", kEnt_ids_10, 1, kEnt_locs_10, 1 },
-  { /*11*/ "watergate", 0x10B, "LightWorld_South", kEnt_ids_11, 1, kEnt_locs_11, 1 },
-  { /*12*/ "ice_rod_cave", 0x120, "LightWorld_South", kEnt_ids_12, 2, kEnt_locs_12, 1 },
-  { /*13*/ "mini_moldorm_cave", 0x123, "LightWorld_South", kEnt_ids_13, 1, kEnt_locs_13, 5 },
-  { /*14*/ "mimic_cave", 0x10C, "LightWorld_DeathMountain_East", kEnt_ids_14, 2, kEnt_locs_14, 1 },
-  { /*15*/ "byrna_gauntlet", 0x117, "DarkWorld_DeathMountain_West", kEnt_ids_15, 1, kEnt_locs_15, 1 },
-  { /*16*/ "mire_shed", 0x10D, "DarkWorld_Mire", kEnt_ids_16, 1, kEnt_locs_16, 2 },
-  { /*17*/ "hype_cave", 0x11E, "DarkWorld_South", kEnt_ids_17, 2, kEnt_locs_17, 5 },
-  { /*18*/ "hall_of_invisibility_cape", 0x113, "LightWorld_NorthWest", kEnt_ids_18, 1, kEnt_locs_18, 1 },
-  { /*19*/ "thief_hideout", 0x124, "LightWorld_NorthWest", kEnt_ids_19, 2, kEnt_locs_19, 1 },
-  { /*20*/ "general_store_1", 0x110, "DarkWorld_NorthWest", kEnt_ids_20, 1, 0, 0 },
-  { /*21*/ "general_store_2", 0x112, "LightWorld_NorthWest", kEnt_ids_21, 2, 0, 0 },
-  { /*22*/ "archery_game", 0x111, "DarkWorld_South", kEnt_ids_22, 1, 0, 0 },
-  { /*23*/ "general_store_3", 0x10F, "DarkWorld_NorthWest", kEnt_ids_23, 1, 0, 0 },
-  { /*24*/ "pond_of_wishing", 0x114, "LightWorld_NorthEast", kEnt_ids_24, 2, kEnt_locs_24, 2 },
-  { /*25*/ "pond_of_happiness", 0x115, "LightWorld_South", kEnt_ids_25, 2, 0, 0 },
-  { /*26*/ "warped_pond_of_wishing", 0x116, "DarkWorld_NorthEast", kEnt_ids_26, 1, 0, 0 },
-  { /*27*/ "chest_shell_game", 0x118, "LightWorld_NorthWest", kEnt_ids_27, 1, 0, 0 },
-  { /*28*/ "blinds_old_hideout", 0x119, "LightWorld_NorthWest", kEnt_ids_28, 1, kEnt_locs_28, 5 },
-  { /*29*/ "storyteller_cave_4", 0x11A, "DarkWorld_NorthEast", kEnt_ids_29, 1, 0, 0 },
-  { /*30*/ "refill_cave_1_graveyard", 0x11B, "LightWorld_NorthWest", kEnt_ids_30, 1, kEnt_locs_30, 1 },
-  { /*31*/ "refill_cave_1_cave_45", 0x11B, "LightWorld_South", kEnt_ids_31, 1, kEnt_locs_31, 1 },
-  { /*32*/ "kakariko_lame_shop", 0x11F, "LightWorld_NorthWest", kEnt_ids_32, 2, 0, 0 },
-  { /*33*/ "chez_smithies", 0x121, "LightWorld_NorthWest", kEnt_ids_33, 1, 0, 0 },
-  { /*34*/ "fortune_teller", 0x122, "LightWorld_NorthWest", kEnt_ids_34, 2, 0, 0 },
-  { /*35*/ "storyteller_cave_5", 0x10E, "DarkWorld_NorthEast", kEnt_ids_35, 2, 0, 0 },
-  { /*36*/ "thief_hideout_3", 0x125, "LightWorld_South", kEnt_ids_36, 2, 0, 0 },
-  { /*37*/ "fairy_cave_5_link_house", 0x126, "LightWorld_South", kEnt_ids_37, 1, 0, 0 },
-  { /*38*/ "fairy_cave_5_checkerboard", 0x126, "LightWorld_South", kEnt_ids_38, 1, kEnt_locs_38, 1 },
-  { /*39*/ "heart_piece_cave_3", 0x127, "DarkWorld_NorthWest", kEnt_ids_39, 1, kEnt_locs_39, 1 },
+  { /* 0*/ "treasure_shell_game", 0x100, "LightWorld_NorthWest", kEnt_ids_0, 1, kEnt_rows_0, 1, 0, 0 },
+  { /* 1*/ "snitch_house", 0x101, "LightWorld_NorthWest", kEnt_ids_1, 2, kEnt_rows_1, 2, 0, 0 },
+  { /* 2*/ "sickboy_house", 0x102, "LightWorld_NorthWest", kEnt_ids_2, 1, kEnt_rows_2, 1, kEnt_locs_2, 1 },
+  { /* 3*/ "kakariko_tavern", 0x103, "LightWorld_NorthWest", kEnt_ids_3, 3, kEnt_rows_3, 3, kEnt_locs_3, 1 },
+  { /* 4*/ "sahasrahla_hut", 0x105, "LightWorld_NorthEast", kEnt_ids_4, 1, kEnt_rows_4, 1, kEnt_locs_4, 3 },
+  { /* 5*/ "kakariko_library", 0x107, "LightWorld_South", kEnt_ids_5, 2, kEnt_rows_5, 2, 0, 0 },
+  { /* 6*/ "chicken_house", 0x108, "LightWorld_NorthWest", kEnt_ids_6, 1, kEnt_rows_6, 1, kEnt_locs_6, 1 },
+  { /* 7*/ "potion_shop", 0x109, "LightWorld_NorthEast", kEnt_ids_7, 1, kEnt_rows_7, 1, kEnt_locs_7, 1 },
+  { /* 8*/ "village_chest_game", 0x106, "DarkWorld_NorthWest", kEnt_ids_8, 2, kEnt_rows_8, 2, kEnt_locs_8, 2 },
+  { /* 9*/ "bomb_shop", 0x11C, "DarkWorld_NorthWest", kEnt_ids_9, 2, kEnt_rows_9, 2, kEnt_locs_9, 1 },
+  { /*10*/ "aginah_cave", 0x10A, "LightWorld_South", kEnt_ids_10, 1, kEnt_rows_10, 2, kEnt_locs_10, 1 },
+  { /*11*/ "watergate", 0x10B, "LightWorld_South", kEnt_ids_11, 1, kEnt_rows_11, 1, kEnt_locs_11, 1 },
+  { /*12*/ "ice_rod_cave", 0x120, "LightWorld_South", kEnt_ids_12, 2, kEnt_rows_12, 2, kEnt_locs_12, 1 },
+  { /*13*/ "mini_moldorm_cave", 0x123, "LightWorld_South", kEnt_ids_13, 1, kEnt_rows_13, 1, kEnt_locs_13, 5 },
+  { /*14*/ "mimic_cave", 0x10C, "LightWorld_DeathMountain_East", kEnt_ids_14, 2, kEnt_rows_14, 2, kEnt_locs_14, 1 },
+  { /*15*/ "byrna_gauntlet", 0x117, "DarkWorld_DeathMountain_West", kEnt_ids_15, 1, kEnt_rows_15, 1, kEnt_locs_15, 1 },
+  { /*16*/ "mire_shed", 0x10D, "DarkWorld_Mire", kEnt_ids_16, 1, kEnt_rows_16, 1, kEnt_locs_16, 2 },
+  { /*17*/ "hype_cave", 0x11E, "DarkWorld_South", kEnt_ids_17, 2, kEnt_rows_17, 2, kEnt_locs_17, 5 },
+  { /*18*/ "hall_of_invisibility_cape", 0x113, "LightWorld_NorthWest", kEnt_ids_18, 1, kEnt_rows_18, 1, kEnt_locs_18, 1 },
+  { /*19*/ "thief_hideout", 0x124, "LightWorld_NorthWest", kEnt_ids_19, 2, kEnt_rows_19, 2, kEnt_locs_19, 1 },
+  { /*20*/ "general_store_1", 0x110, "DarkWorld_NorthWest", kEnt_ids_20, 1, kEnt_rows_20, 1, 0, 0 },
+  { /*21*/ "general_store_2", 0x112, "LightWorld_South", kEnt_ids_21, 1, kEnt_rows_21, 1, 0, 0 },
+  { /*22*/ "archery_game", 0x111, "DarkWorld_South", kEnt_ids_22, 1, kEnt_rows_22, 1, 0, 0 },
+  { /*23*/ "general_store_3", 0x10F, "DarkWorld_NorthWest", kEnt_ids_23, 1, kEnt_rows_23, 1, 0, 0 },
+  { /*24*/ "pond_of_wishing", 0x114, "LightWorld_NorthEast", kEnt_ids_24, 2, kEnt_rows_24, 2, kEnt_locs_24, 2 },
+  { /*25*/ "pond_of_happiness", 0x115, "LightWorld_South", kEnt_ids_25, 2, kEnt_rows_25, 8, 0, 0 },
+  { /*26*/ "warped_pond_of_wishing", 0x116, "DarkWorld_NorthEast", kEnt_ids_26, 1, kEnt_rows_26, 1, 0, 0 },
+  { /*27*/ "chest_shell_game", 0x118, "LightWorld_NorthWest", kEnt_ids_27, 1, kEnt_rows_27, 1, 0, 0 },
+  { /*28*/ "blinds_old_hideout", 0x119, "LightWorld_NorthWest", kEnt_ids_28, 1, kEnt_rows_28, 1, kEnt_locs_28, 5 },
+  { /*29*/ "storyteller_cave_4", 0x11A, "DarkWorld_NorthEast", kEnt_ids_29, 1, kEnt_rows_29, 1, 0, 0 },
+  { /*30*/ "refill_cave_1_graveyard", 0x11B, "LightWorld_NorthWest", kEnt_ids_30, 1, kEnt_rows_30, 1, kEnt_locs_30, 1 },
+  { /*31*/ "refill_cave_1_cave_45", 0x11B, "LightWorld_South", kEnt_ids_31, 1, kEnt_rows_31, 1, kEnt_locs_31, 1 },
+  { /*32*/ "kakariko_lame_shop", 0x11F, "LightWorld_NorthWest", kEnt_ids_32, 1, kEnt_rows_32, 1, 0, 0 },
+  { /*33*/ "chez_smithies", 0x121, "LightWorld_NorthWest", kEnt_ids_33, 1, kEnt_rows_33, 1, 0, 0 },
+  { /*34*/ "fortune_teller", 0x122, "LightWorld_NorthWest", kEnt_ids_34, 2, kEnt_rows_34, 3, 0, 0 },
+  { /*35*/ "storyteller_cave_5", 0x10E, "DarkWorld_NorthEast", kEnt_ids_35, 2, kEnt_rows_35, 2, 0, 0 },
+  { /*36*/ "thief_hideout_3", 0x125, "LightWorld_South", kEnt_ids_36, 2, kEnt_rows_36, 2, 0, 0 },
+  { /*37*/ "fairy_cave_5_link_house", 0x126, "LightWorld_South", kEnt_ids_37, 1, kEnt_rows_37, 2, 0, 0 },
+  { /*38*/ "fairy_cave_5_checkerboard", 0x126, "LightWorld_South", kEnt_ids_38, 1, kEnt_rows_38, 1, kEnt_locs_38, 1 },
+  { /*39*/ "heart_piece_cave_3", 0x127, "DarkWorld_NorthWest", kEnt_ids_39, 1, kEnt_rows_39, 1, kEnt_locs_39, 1 },
+  { /*40*/ "general_store_2_dark_sanctuary", 0x112, "DarkWorld_NorthWest", kEnt_ids_40, 1, kEnt_rows_40, 1, 0, 0 },
+  { /*41*/ "general_store_2_dw_death_mountain", 0x112, "DarkWorld_DeathMountain_East", kEnt_ids_41, 1, kEnt_rows_41, 1, 0, 0 },
+  { /*42*/ "general_store_3_outcasts", 0x10F, "DarkWorld_NorthWest", kEnt_ids_42, 1, kEnt_rows_42, 1, 0, 0 },
+  { /*43*/ "general_store_3_potion", 0x10F, "DarkWorld_NorthEast", kEnt_ids_43, 1, kEnt_rows_43, 1, 0, 0 },
+  { /*44*/ "general_store_3_lake_hylia", 0x10F, "DarkWorld_South", kEnt_ids_44, 1, kEnt_rows_44, 1, 0, 0 },
+  { /*45*/ "kakariko_lame_shop_lumberjack_house", 0x11F, "LightWorld_NorthWest", kEnt_ids_45, 1, kEnt_rows_45, 1, 0, 0 },
 };
 // === end generated block ===
 
@@ -271,11 +341,34 @@ bool Entrance_IsActive(const RandoSettings *settings) {
   return true;
 }
 
-// Map a raw entrance-id to its cave-interior index, or -1 if not a cave.
+// Map a raw entrance-id to A cave-interior index that carries it, or -1 if no
+// entry does.
+//
+// AMBIGUOUS BY CONSTRUCTION — several entries may share an entrance id (the four
+// Dark World shop doors are four pool entries that all load room 0x10F through
+// id 0x60), and this returns the FIRST. It is therefore only sound for the
+// predicate question "is this id a cave id at all". To resolve which pool entry
+// a SOURCE door belongs to, use entry_of_door_row(): the door row is the
+// identity unit, and every caller that resolves a source has the row in hand.
 static int interior_of_entrance(uint8 ent_id) {
   for (int i = 0; i < kEntranceCaveInteriorCount; i++) {
     for (int k = 0; k < kCaveInteriors[i].entrance_count; k++) {
       if (kCaveInteriors[i].entrance_ids[k] == ent_id) return i;
+    }
+  }
+  return -1;
+}
+
+// Map an overworld DOOR ROW (a kOverworld_Entrance_Id subscript, which is what
+// every entry hook calls `lx`) to its cave-interior index, or -1 if that row is
+// not a cave door. Rows partition across entries — asserted by the generator and
+// by Entrance_SelfCheck (1) — so this is unambiguous where the entrance-id
+// lookup above is not.
+static int entry_of_door_row(uint16 lx) {
+  if (lx > 0xFF) return -1;                  // door rows are u8 subscripts
+  for (int i = 0; i < kEntranceCaveInteriorCount; i++) {
+    for (int k = 0; k < kCaveInteriors[i].door_row_count; k++) {
+      if (kCaveInteriors[i].door_rows[k] == (uint8)lx) return i;
     }
   }
   return -1;
@@ -340,12 +433,17 @@ void Entrance_BuildDoorOverlay(const uint8 *assign, int n,
   memcpy(overlay, vanilla, len);     // copy first (so a NULL assign = identity)
   if (assign == NULL) return;
   for (uint32 d = 0; d < len; d++) {
-    int i = interior_of_entrance(vanilla[d]);
+    // Resolve the SOURCE by door row, not by entrance id. `d` is the row. Keying
+    // on vanilla[d] would collapse the four room-0x10F doors onto one pool entry
+    // (they all carry id 0x60), which is exactly what the split exists to undo.
+    int i = entry_of_door_row((uint16)d);
     if (i < 0) continue;                 // not a cave door — leave unchanged
     int j = assign[i];
     if (j < 0 || j >= kEntranceCaveInteriorCount) continue;
     // The door for interior i now loads interior j; write j's representative
     // (first) entrance-id. Coupling is handled by the engine's entry caching.
+    // Several destination entries legitimately share that id — they are the same
+    // physical room reached through different doors, so the write is correct.
     overlay[d] = kCaveInteriors[j].entrance_ids[0];
   }
   (void)n;
@@ -632,9 +730,11 @@ void Entrance_BuildCrossOverlay(const uint8 *assign, int n, const uint8 *vanilla
   const int ncave = kEntranceCaveInteriorCount;
   if (n != ncave + ndun) return;
   for (uint32 d = 0; d < len; d++) {
-    // Determine the door's source endpoint from its vanilla entrance-id.
+    // Determine the door's source endpoint. Caves resolve by DOOR ROW (`d`) —
+    // the entrance id is ambiguous across the split shop entries — and dungeons,
+    // whose ids are unique, by id.
     int e = -1;
-    int ci = interior_of_entrance(vanilla[d]);
+    int ci = entry_of_door_row((uint16)d);
     if (ci >= 0) {
       e = ci;  // cave endpoint
     } else {
@@ -705,10 +805,12 @@ int Entrance_ComputeCrossDecoupledExit(const RandoSettings *settings, uint64 see
   return n;
 }
 
-// Source endpoint index of door `vanilla_entrance_id` in the cross combined pool
+// Source endpoint index of the door at row `lx` in the cross combined pool
 // (cave interior, or ncave + cross-dungeon slot). -1 if not a cross-pool door.
-static int cross_source_endpoint(uint8 vanilla_entrance_id) {
-  int ci = interior_of_entrance(vanilla_entrance_id);
+// Caves resolve by door row (the entrance id is ambiguous across the split shop
+// entries); dungeons, whose ids are unique, by the door's vanilla entrance id.
+static int cross_source_endpoint(uint16 lx, uint8 vanilla_entrance_id) {
+  int ci = entry_of_door_row(lx);
   if (ci >= 0) return ci;
   uint8 didx[kEntranceDungeonCount];
   int ndun = cross_dungeon_list(didx);
@@ -732,13 +834,14 @@ static int cross_endpoint_kind(int endpoint, uint16 *value) {
   return 0;
 }
 
-// Runtime: for source door `vanilla_entrance_id` under cross-decoupled, the exit
-// target kind (1 = cave interior, 2 = dungeon room) into *value, or 0 for a
-// self-map / non-pool door (caller keeps the coupled return-to-source).
-int Entrance_CrossDecoupledExit(const uint8 *cross_net, int n,
+// Runtime: for the source door at row `lx` (vanilla entrance id
+// `vanilla_entrance_id`) under cross-decoupled, the exit target kind (1 = cave
+// interior, 2 = dungeon room) into *value, or 0 for a self-map / non-pool door
+// (caller keeps the coupled return-to-source).
+int Entrance_CrossDecoupledExit(const uint8 *cross_net, int n, uint16 lx,
                                 uint8 vanilla_entrance_id, uint16 *value) {
   if (cross_net == NULL || n <= 0) return 0;
-  int e = cross_source_endpoint(vanilla_entrance_id);
+  int e = cross_source_endpoint(lx, vanilla_entrance_id);
   if (e < 0 || e >= n) return 0;
   int t = cross_net[e];
   if (t < 0 || t >= n || t == e) return 0;  // self-map → coupled return
@@ -787,10 +890,42 @@ void Entrance_WriteCrossDecoupledSpoilerJson(void *file, const uint8 *exit_assig
   fprintf(f, "  ],\n");
 }
 
-// Public: cave interior index that entrance-id `ent_id` belongs to, or -1.
-// Used by the decoupled runtime (D.4) to key the arrival table by interior.
+// Public: A cave interior index that entrance-id `ent_id` belongs to, or -1.
+// AMBIGUOUS where entries share an id — see interior_of_entrance. Reserved for
+// the fall-hole path, which has no door row available (a fall writes
+// which_entrance directly); the generator asserts no shared id is a fall-hole
+// id, so that one caller stays sound. Every caller that HAS a door row must use
+// Entrance_InteriorOfDoorRow instead.
 int Entrance_InteriorOfEntranceId(uint8 ent_id) {
   return interior_of_entrance(ent_id);
+}
+
+// Public: cave interior index of the door at overworld row `lx`, or -1 if that
+// row is not a cave door. The door-row keyed lookup — use this whenever the
+// caller knows which door the player used.
+int Entrance_InteriorOfDoorRow(uint16 lx) {
+  return entry_of_door_row(lx);
+}
+
+// Public: an interior's declared door rows (count; *out_rows may be NULL when
+// out of range). Exists so the runtime self-check can cross-validate the
+// committed row map against the LIVE asset tables — the row->entry map is a
+// constant, and the offline validator is skipped in assetless profiles.
+int Entrance_CaveInteriorDoorRows(int interior, const uint8 **out_rows) {
+  if (out_rows) *out_rows = NULL;
+  if (interior < 0 || interior >= kEntranceCaveInteriorCount) return 0;
+  if (out_rows) *out_rows = kCaveInteriors[interior].door_rows;
+  return kCaveInteriors[interior].door_row_count;
+}
+
+// Public: does `interior` declare `ent_id`? Companion to the above — lets the
+// runtime check assert that each door row's LIVE entrance id is one its entry
+// claims, without exposing the table itself.
+bool Entrance_InteriorDeclaresEntranceId(int interior, uint8 ent_id) {
+  if (interior < 0 || interior >= kEntranceCaveInteriorCount) return false;
+  for (int k = 0; k < kCaveInteriors[interior].entrance_count; k++)
+    if (kCaveInteriors[interior].entrance_ids[k] == ent_id) return true;
+  return false;
 }
 
 // Public: the representative (first) entrance-id of cave interior `interior`,
@@ -1135,22 +1270,86 @@ void Entrance_SelfCheck(void) {
     exit(2);
   }
 
-  // (1) Every entrance-id is unique across interiors (no id backs two interiors)
-  //     and every interior's room is in the cached-exit cave class
-  //     [0x100,0x180)\{0x104} (so a shuffled cave can never hit the room-keyed
-  //     exit SEARCH).
-  for (int i = 0; i < kEntranceCaveInteriorCount; i++) {
-    uint16 room = kCaveInteriors[i].room;
-    if (!(room >= 0x100 && room < 0x180 && room != 0x104)) {
-      fprintf(stderr, "Entrance_SelfCheck: interior %d room 0x%03X outside cave "
-                      "class [0x100,0x180)\\{0x104}\n", i, room);
-      exit(2);
-    }
-    for (int k = 0; k < kCaveInteriors[i].entrance_count; k++) {
-      if (interior_of_entrance(kCaveInteriors[i].entrance_ids[k]) != i) {
-        fprintf(stderr, "Entrance_SelfCheck: entrance-id 0x%02X maps to the wrong "
-                        "interior\n", kCaveInteriors[i].entrance_ids[k]);
+  // (1) DOOR ROWS PARTITION the pool, and every interior's room is in the
+  //     cached-exit cave class [0x100,0x180)\{0x104} (so a shuffled cave can
+  //     never hit the room-keyed exit SEARCH).
+  //
+  //     This check used to assert that every ENTRANCE ID resolved back to its
+  //     own interior, which hard-fails the moment two entries share an id. That
+  //     sharing is now legitimate and load-bearing: the four Dark World shop
+  //     doors are four pool entries that all load room 0x10F through id 0x60.
+  //     The invariant that actually has to hold is the door-row one — each row
+  //     belongs to exactly one entry — because the row is what resolves a source
+  //     door. ("No row dropped" needs the vanilla asset table and is checked by
+  //     assets/scripts/gen_entrance_door_rows.py --check.)
+  {
+    int row_owner[256];
+    for (int r = 0; r < 256; r++) row_owner[r] = -1;
+    for (int i = 0; i < kEntranceCaveInteriorCount; i++) {
+      uint16 room = kCaveInteriors[i].room;
+      if (!(room >= 0x100 && room < 0x180 && room != 0x104)) {
+        fprintf(stderr, "Entrance_SelfCheck: interior %d room 0x%03X outside cave "
+                        "class [0x100,0x180)\\{0x104}\n", i, room);
         exit(2);
+      }
+      if (kCaveInteriors[i].entrance_count == 0 ||
+          kCaveInteriors[i].door_row_count == 0) {
+        fprintf(stderr, "Entrance_SelfCheck: interior %d ('%s') has %u entrance-ids "
+                        "and %u door rows; both must be non-empty\n",
+                i, kCaveInteriors[i].name,
+                (unsigned)kCaveInteriors[i].entrance_count,
+                (unsigned)kCaveInteriors[i].door_row_count);
+        exit(2);
+      }
+      for (int k = 0; k < kCaveInteriors[i].door_row_count; k++) {
+        uint8 r = kCaveInteriors[i].door_rows[k];
+        if (row_owner[r] >= 0) {
+          fprintf(stderr, "Entrance_SelfCheck: door row 0x%02X claimed by interiors "
+                          "%d ('%s') and %d ('%s') — rows must partition the pool\n",
+                  r, row_owner[r], kCaveInteriors[row_owner[r]].name, i,
+                  kCaveInteriors[i].name);
+          exit(2);
+        }
+        row_owner[r] = i;
+        if (entry_of_door_row(r) != i) {
+          fprintf(stderr, "Entrance_SelfCheck: door row 0x%02X resolves to interior %d, "
+                          "want %d\n", r, entry_of_door_row(r), i);
+          exit(2);
+        }
+      }
+    }
+    // Entries that share an ENTRANCE ID must declare the same ROOM — the id
+    // determines the room through kEntranceData_rooms, so a disagreement means a
+    // door row is attributed to the wrong entry. (The converse is NOT required:
+    // two ids may load one room, e.g. 0x58/0x5A both reach room 0x112.)
+    //
+    // And a shared id must never be a FALL-HOLE id (0x76-0x81):
+    // Rando_RecordEnteredFallhole has no door row to key on — a fall writes
+    // which_entrance directly — so it resolves by id alone and could not tell
+    // two sharers apart. Enforced here as well as in gen_entrance_table.py so a
+    // hand-edit of the generated block cannot slip past.
+    for (int i = 0; i < kEntranceCaveInteriorCount; i++) {
+      for (int k = 0; k < kCaveInteriors[i].entrance_count; k++) {
+        uint8 id = kCaveInteriors[i].entrance_ids[k];
+        for (int j = i + 1; j < kEntranceCaveInteriorCount; j++) {
+          bool shares = false;
+          for (int m = 0; m < kCaveInteriors[j].entrance_count; m++)
+            if (kCaveInteriors[j].entrance_ids[m] == id) shares = true;
+          if (!shares) continue;
+          if (kCaveInteriors[i].room != kCaveInteriors[j].room) {
+            fprintf(stderr, "Entrance_SelfCheck: interiors %d/%d share entrance-id "
+                            "0x%02X but declare rooms 0x%03X/0x%03X\n",
+                    i, j, id, kCaveInteriors[i].room, kCaveInteriors[j].room);
+            exit(2);
+          }
+          if (id >= 0x76 && id <= 0x81) {
+            fprintf(stderr, "Entrance_SelfCheck: interiors %d/%d share entrance-id "
+                            "0x%02X, which is in the fall-hole range 0x76-0x81; "
+                            "Rando_RecordEnteredFallhole keys on the id alone\n",
+                    i, j, id);
+            exit(2);
+          }
+        }
       }
     }
   }
@@ -1284,40 +1483,80 @@ void Entrance_SelfCheck(void) {
     }
   }
 
-  // (7) Door overlay: build a synthetic vanilla table holding EVERY entrance-id
-  //     of every interior (exercise the non-representative ids of
-  //     multi-door interiors, e.g. 0x43/0x44 for the tavern, not just
-  //     entrance_ids[0]), plus a non-cave sentinel. Each cave door must rewrite
-  //     to the representative id of ITS interior's image; non-cave ids pass
-  //     through.
+  // (7) Door overlay: build a synthetic vanilla table INDEXED BY DOOR ROW, since
+  //     that is what the overlay now keys on. Every declared row gets one of its
+  //     interior's entrance-ids (cycling through them, so the non-representative
+  //     ids of multi-door interiors are still exercised — and, now, PROVEN
+  //     irrelevant to source resolution); unclaimed rows hold a non-cave
+  //     sentinel and must pass through untouched. Each claimed row must rewrite
+  //     to the representative id of ITS interior's image.
+  //
+  //     The array is sized to the full u8 door-row space rather than a
+  //     hand-counted 80 — the old bound was one split away from a stack
+  //     overflow, with no check.
   {
-    uint8 van[80];
-    int slot_interior[80];  // which interior each synthetic door belongs to
-    int ndoors = 0;
+    enum { kSelfCheckRows = 256 };
+    static uint8 van[kSelfCheckRows];
+    static uint8 ov[kSelfCheckRows];
+    static int slot_interior[kSelfCheckRows];
+    int max_row = -1;
+    for (int r = 0; r < kSelfCheckRows; r++) { van[r] = 0xFE; slot_interior[r] = -1; }
     for (int i = 0; i < kEntranceCaveInteriorCount; i++) {
-      for (int k = 0; k < kCaveInteriors[i].entrance_count; k++) {
-        van[ndoors] = kCaveInteriors[i].entrance_ids[k];
-        slot_interior[ndoors] = i;
-        ndoors++;
+      for (int k = 0; k < kCaveInteriors[i].door_row_count; k++) {
+        uint8 r = kCaveInteriors[i].door_rows[k];
+        van[r] = kCaveInteriors[i].entrance_ids[k % kCaveInteriors[i].entrance_count];
+        slot_interior[r] = i;
+        if ((int)r > max_row) max_row = (int)r;
       }
     }
-    van[ndoors] = 0xFE;  // non-cave sentinel
-    slot_interior[ndoors] = -1;
-    int total = ndoors + 1;
-    uint8 ov[80];
+    if (max_row < 0 || max_row + 2 > kSelfCheckRows) {
+      fprintf(stderr, "Entrance_SelfCheck: door-row span %d does not fit the %d-row "
+                      "synthetic table\n", max_row, kSelfCheckRows);
+      exit(2);
+    }
+    int total = max_row + 2;   // + one trailing unclaimed row as the sentinel
     Entrance_BuildDoorOverlay(assign, n, van, (uint32)total, ov);
-    for (int d = 0; d < ndoors; d++) {
+    for (int d = 0; d < total; d++) {
+      if (slot_interior[d] < 0) {
+        if (ov[d] != van[d]) {
+          fprintf(stderr, "Entrance_SelfCheck: non-cave door row 0x%02X was rewritten "
+                          "(0x%02X -> 0x%02X)\n", d, van[d], ov[d]);
+          exit(2);
+        }
+        continue;
+      }
       uint8 want = kCaveInteriors[assign[slot_interior[d]]].entrance_ids[0];
       if (ov[d] != want) {
-        fprintf(stderr, "Entrance_SelfCheck: door overlay door %d (id 0x%02X, "
+        fprintf(stderr, "Entrance_SelfCheck: door overlay row 0x%02X (id 0x%02X, "
                         "interior %d) = 0x%02X, want 0x%02X\n",
                 d, van[d], slot_interior[d], ov[d], want);
         exit(2);
       }
     }
-    if (ov[ndoors] != 0xFE) {
-      fprintf(stderr, "Entrance_SelfCheck: non-cave door id was rewritten\n");
-      exit(2);
+    // A door row belonging to a SPLIT interior must follow its own entry, not a
+    // room-sibling's. Pin that directly: find two entries sharing a room and
+    // confirm their rows resolve to different images whenever the permutation
+    // sends those entries to different places.
+    {
+      int a = -1, b = -1;
+      for (int i = 0; i < kEntranceCaveInteriorCount && a < 0; i++)
+        for (int j = i + 1; j < kEntranceCaveInteriorCount && a < 0; j++)
+          if (kCaveInteriors[i].room == kCaveInteriors[j].room &&
+              assign[i] != assign[j]) { a = i; b = j; }
+      if (a < 0) {
+        fprintf(stderr, "Entrance_SelfCheck: expected at least one pair of split "
+                        "interiors sharing a room with distinct images\n");
+        exit(2);
+      }
+      uint8 ra = kCaveInteriors[a].door_rows[0], rb = kCaveInteriors[b].door_rows[0];
+      if (ov[ra] != kCaveInteriors[assign[a]].entrance_ids[0] ||
+          ov[rb] != kCaveInteriors[assign[b]].entrance_ids[0] ||
+          entry_of_door_row(ra) == entry_of_door_row(rb)) {
+        fprintf(stderr, "Entrance_SelfCheck: split interiors %d/%d (room 0x%03X) did "
+                        "not resolve independently by door row\n",
+                a, b, kCaveInteriors[a].room);
+        exit(2);
+      }
     }
   }
 
@@ -1632,12 +1871,15 @@ void Entrance_SelfCheck(void) {
       }
       xseen[xa[i]] = 1;
     }
-    // Runtime resolver: cave 0's door → net[0]'s endpoint kind (0 self, 1 cave, 2 dun).
+    // Runtime resolver: cave 0's door ROW → net[0]'s endpoint kind (0 self,
+    // 1 cave, 2 dun), and a row outside the door space → 0. Row-keyed, so the
+    // split shop doors each get their own exit rather than sharing entry 23's.
     uint16 xval = 0;
     int t0 = xa[0];
     int want = (t0 == 0) ? 0 : ((t0 < kEntranceCaveInteriorCount) ? 1 : 2);
-    if (Entrance_CrossDecoupledExit(xa, xn, kCaveInteriors[0].entrance_ids[0], &xval) != want ||
-        Entrance_CrossDecoupledExit(xa, xn, 0x00, &xval) != 0) {
+    if (Entrance_CrossDecoupledExit(xa, xn, kCaveInteriors[0].door_rows[0],
+                                    kCaveInteriors[0].entrance_ids[0], &xval) != want ||
+        Entrance_CrossDecoupledExit(xa, xn, 0xFFFF, 0x00, &xval) != 0) {
       fprintf(stderr, "Entrance_SelfCheck: cross-decoupled exit resolver wrong\n");
       exit(2);
     }

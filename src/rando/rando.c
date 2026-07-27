@@ -3943,6 +3943,14 @@ static int   g_cross_decoupled_n;
 static uint8 g_cross_net[kEntranceMaxInteriors];
 static uint8 g_cross_decoupled_exit_kind;  // 0 none, 1 cave, 2 dungeon (consumed at exit)
 static uint8 g_cross_decoupled_exit_cave;  // target cave interior when kind == 1
+// The ENTRY permutation actually installed this session, indexed by cave-pool
+// entry (or by combined endpoint under Crossed). Kept because the door table on
+// its own can no longer answer "did this door move": several pool entries share
+// an entrance id — the four Dark World shop doors all load room 0x10F through
+// 0x60 — so an unchanged overlay byte does not imply an unchanged destination.
+// g_entry_net_n == 0 means no entry axis is installed.
+static uint8 g_entry_net[kEntranceMaxInteriors];
+static int   g_entry_net_n;
 typedef struct { uint8 block[0x32]; uint8 is_dark; uint8 save_dark; uint8 valid; } RandoCaveArrival;
 // Single per-interior overworld-arrival table used by BOTH the bake-capture and
 // the decoupled runtime. Persisted to cave_arrival_capture.bin and reloaded each
@@ -3955,14 +3963,11 @@ static void Rando_LoadArrivalCaptureIfNeeded(void);
 // Committed baked arrival table (the D.3 walkabout result) — the default source
 // so every door is one-way from the start, no on-disk capture needed.
 #include "cave_arrival_baked.h"
-// Baked-table length, used to bound reads FROM it. kEntranceCaveInteriorCount (the
-// runtime cave count) is private to shuffle_entrance.c, so couple at the bound we
-// can see here: the table must fit g_cave_capture[]. The load loop also clamps to
-// this length, so bumping the cave count without re-baking degrades to coupled
-// (valid 0) for the new interiors instead of reading past the array.
+// Baked-table length. The table is keyed by interior_id, so it is neither
+// index-aligned to nor bounded by the runtime cave count — a row whose name no
+// longer exists is reported and skipped, and an interior with no row keeps
+// valid == 0 (the runtime degrades that to the coupled exit).
 #define kCaveArrivalBakedCount ((int)(sizeof(kCaveArrivalBaked) / sizeof(kCaveArrivalBaked[0])))
-_Static_assert(kCaveArrivalBakedCount <= kEntranceMaxInteriors,
-               "baked cave-arrival table exceeds kEntranceMaxInteriors");
 
 // D.3 capture: vanilla cave interior of the door just entered, recorded at the
 // overworld entry hook for EVERY game (shuffle or not) so the capture-for-bake
@@ -3981,16 +3986,31 @@ void Rando_RecordEnteredDoorForCapture(uint16 lx) {
   // installed (shuffle), otherwise the live table (vanilla/non-entrance game).
   uint8 vid = (g_entrance_overlay_orig != NULL) ? g_entrance_overlay_orig[lx]
                                                 : ((const uint8 *)kOverworld_Entrance_Id)[lx];
-  if (g_entrance_overlay_orig != NULL && ((const uint8 *)kOverworld_Entrance_Id)[lx] != vid)
-    Rando_EntranceMarkDiscovered(lx);
+  (void)vid;
+  // The player physically walked through this door, so where it leads is now
+  // known to them — mark it discovered. Deliberately NOT gated on the overlay
+  // byte having changed: entries sharing an entrance id make an unchanged byte
+  // compatible with a moved destination. The "did it actually move" test lives
+  // in Rando_EntranceConnection, where the entry-level answer is available.
+  if (g_entrance_overlay_orig != NULL) Rando_EntranceMarkDiscovered(lx);
   // tracker-player-knowledge — the player just SAW the interior the door
   // actually loads (the CURRENT, possibly shuffled table id): persistently
   // mark that vanilla interior discovered so its contents join the
   // knowledge-limited view. A dungeon behind this door resolves to interior
   // -1 here; the per-frame dungeon observation covers it instead.
+  //
+  // This one is DESTINATION-side, so it can only key on the loaded entrance id
+  // and stays first-match where entries share one (the four room-0x10F shop
+  // entries). That is inert for the knowledge model today: every entry sharing
+  // an id is a location-less pool slot, so naming the wrong sibling reveals
+  // nothing either way. Giving those entries their own shop slots would make it
+  // load-bearing — resolving it then needs the live assignment, not the id.
   Rando_MarkCaveInteriorDiscovered(
       Entrance_InteriorOfEntranceId(((const uint8 *)kOverworld_Entrance_Id)[lx]));
-  int interior = Entrance_InteriorOfEntranceId(vid);
+  // SOURCE side: which door the player walked into. Keyed by row, so the four
+  // room-0x10F doors record four distinct interiors (their arrival positions,
+  // regions and shuffle slots all differ).
+  int interior = Entrance_InteriorOfDoorRow(lx);
   if (interior >= 0 && interior < kEntranceMaxInteriors)
     g_rando_entered_door_interior = (uint16)interior;
 }
@@ -4009,7 +4029,19 @@ bool Rando_EntranceConnection(uint16 lx, uint8 *from_id, uint8 *to_id) {
     return false;
   uint8 from = g_entrance_overlay_orig[lx];
   uint8 to = ((const uint8 *)kOverworld_Entrance_Id)[lx];
-  if (to == from) return false;
+  // "Unshuffled ⇒ report nothing" must be decided on POOL ENTRIES, not entrance
+  // ids. Four pool entries load room 0x10F through id 0x60 and two load 0x112
+  // through 0x58, so a permutation mapping one of those entries onto a sibling
+  // leaves the overlay byte identical while genuinely moving the door — the id
+  // compare alone would report it as unshuffled forever.
+  int src = Entrance_InteriorOfDoorRow(lx);
+  if (src >= 0 && g_entry_net_n > 0 && src < g_entry_net_n) {
+    if (g_entry_net[src] == (uint8)src) return false;   // true self-map
+  } else if (to == from) {
+    // Not a cave door (dungeon ids are unique, so the id compare is exact), or
+    // no entry axis installed — fall back to the id compare.
+    return false;
+  }
   if (from_id) *from_id = from;
   if (to_id) *to_id = to;
   return true;
@@ -4055,7 +4087,7 @@ void Rando_CrossDecoupledSetExit(uint16 lx) {
   if (!g_cross_decoupled_active || g_entrance_overlay_orig == NULL) return;
   if (lx >= kOverworld_Entrance_Id_SIZE) return;
   uint16 value = 0;
-  int kind = Entrance_CrossDecoupledExit(g_cross_net, g_cross_decoupled_n,
+  int kind = Entrance_CrossDecoupledExit(g_cross_net, g_cross_decoupled_n, lx,
                                          g_entrance_overlay_orig[lx], &value);
   // When active, cross-decoupled is AUTHORITATIVE over the coupled exit the prior
   // hook set: a cave target forces the cached branch (kind 1, replay), a dungeon
@@ -4106,7 +4138,10 @@ void Rando_DecoupledSetEnteredDoor(uint16 lx) {
   g_decoupled_entered = 0xFFFF;
   if (!g_decoupled_active || g_entrance_overlay_orig == NULL) return;
   if (lx >= kOverworld_Entrance_Id_SIZE) return;
-  int interior = Entrance_InteriorOfEntranceId(g_entrance_overlay_orig[lx]);
+  // Keyed by door ROW: the decoupled exit is a property of the door the player
+  // entered, and the four room-0x10F doors are four distinct pool entries with
+  // four distinct exits despite sharing entrance id 0x60.
+  int interior = Entrance_InteriorOfDoorRow(lx);
   if (interior >= 0 && interior < g_decoupled_n) g_decoupled_entered = (uint16)interior;
 }
 
@@ -4179,6 +4214,22 @@ bool Rando_CrossDecoupledReplayCave(uint8 target_cave) {
 // into cave_arrival_capture.{bin,txt} for re-baking. Off by default, so normal
 // play writes no files and prints nothing.
 // ---------------------------------------------------------------------------
+// Stamp for the positional cave_arrival_capture.bin dev sidecar: magic, pool
+// size, and a hash over the interior NAMES in order. The names change whenever
+// the pool is split, reordered or renamed, so a mismatch means the file's
+// positions no longer mean what they did when it was written.
+#define kCaveCaptureMagic 0x33564143u  /* "CAV3" */
+static uint32 Rando_CaveInteriorNameHash(void) {
+  uint32 h = 2166136261u;
+  int n = Entrance_CaveInteriorCount();
+  for (int i = 0; i < n; i++) {
+    for (const char *p = Entrance_CaveInteriorName(i); *p; p++)
+      h = (h ^ (uint8)*p) * 16777619u;
+    h = (h ^ 0xFFu) * 16777619u;   // separator, so "ab"+"c" != "a"+"bc"
+  }
+  return h;
+}
+
 static bool Rando_ArrivalCaptureEnabled(void) {
   static int cached = -1;  // -1 unknown, 0 off, 1 on
   if (cached < 0) {
@@ -4192,9 +4243,23 @@ static void Rando_LoadArrivalCaptureIfNeeded(void) {
   if (g_cave_capture_loaded) return;
   g_cave_capture_loaded = true;
   int n = Entrance_CaveInteriorCount();
-  // Committed baked table — the production source (every door one-way from launch).
-  for (int i = 0; i < n && i < kEntranceMaxInteriors && i < kCaveArrivalBakedCount; i++)
-    g_cave_capture[i] = kCaveArrivalBaked[i];
+  // Committed baked table — the production source. Matched BY NAME, never by
+  // position: the pool is append-and-split, so a positional load silently shifts
+  // rows onto the wrong door (it did, for eight interiors, until this was fixed).
+  // A name that no longer resolves is a data bug, so say so rather than absorb it.
+  for (int b = 0; b < kCaveArrivalBakedCount; b++) {
+    const char *want = kCaveArrivalBaked[b].interior_id;
+    int target = -1;
+    for (int i = 0; i < n && i < kEntranceMaxInteriors; i++) {
+      if (strcmp(Entrance_CaveInteriorName(i), want) == 0) { target = i; break; }
+    }
+    if (target < 0) {
+      fprintf(stderr, "Rando WARNING: baked cave arrival names unknown interior '%s' "
+                      "— that door will fall back to the coupled exit.\n", want);
+      continue;
+    }
+    g_cave_capture[target] = kCaveArrivalBaked[b].arrival;
+  }
   g_cave_capture_count = 0;
   for (int i = 0; i < n && i < kEntranceMaxInteriors; i++)
     if (g_cave_capture[i].valid) g_cave_capture_count++;
@@ -4202,12 +4267,28 @@ static void Rando_LoadArrivalCaptureIfNeeded(void) {
   // Dev re-capture overlay: a live capture file overrides matching entries so
   // re-captures take effect without rebaking (valid-only, so a partial file
   // never erases baked data).
+  //
+  // This sidecar is still POSITIONAL, which is the drift the committed table was
+  // just moved off. Its length does not change when the pool grows, so a file
+  // written before a pool split would land its rows on the wrong interiors,
+  // silently override the correct name-keyed ones, and then be re-emitted under
+  // the NEW names by Rando_DumpArrivalCapture — baking the corruption in during
+  // exactly the re-capture walkabout that is supposed to fix things. So stamp it
+  // with the pool shape and refuse anything that does not match.
   FILE *f = fopen("cave_arrival_capture.bin", "rb");
   if (f != NULL) {
     static RandoCaveArrival tmp[kEntranceMaxInteriors];
-    if (fread(tmp, sizeof(tmp), 1, f) == 1)
+    uint32 hdr[3] = {0, 0, 0};
+    if (fread(hdr, sizeof(hdr), 1, f) == 1 && hdr[0] == kCaveCaptureMagic &&
+        hdr[1] == (uint32)n && hdr[2] == Rando_CaveInteriorNameHash() &&
+        fread(tmp, sizeof(tmp), 1, f) == 1) {
       for (int i = 0; i < n && i < kEntranceMaxInteriors; i++)
         if (tmp[i].valid) g_cave_capture[i] = tmp[i];
+    } else {
+      fprintf(stderr, "[ARRIVAL-CAPTURE] ignoring cave_arrival_capture.bin — it was "
+                      "written against a different cave pool (it is positional). "
+                      "Delete it and re-walk; the baked table is used instead.\n");
+    }
     fclose(f);
     g_cave_capture_count = 0;
     for (int i = 0; i < n && i < kEntranceMaxInteriors; i++)
@@ -4219,20 +4300,30 @@ static void Rando_LoadArrivalCaptureIfNeeded(void) {
 
 static void Rando_DumpArrivalCapture(void) {
   // Binary sidecar first (the source of truth for resume across restarts).
+  // Stamped with the pool shape — see the loader for why a bare positional dump
+  // is a trap once the pool can grow.
   FILE *b = fopen("cave_arrival_capture.bin", "wb");
-  if (b != NULL) { fwrite(g_cave_capture, sizeof(g_cave_capture), 1, b); fclose(b); }
+  if (b != NULL) {
+    uint32 hdr[3] = { kCaveCaptureMagic, (uint32)Entrance_CaveInteriorCount(),
+                      Rando_CaveInteriorNameHash() };
+    fwrite(hdr, sizeof(hdr), 1, b);
+    fwrite(g_cave_capture, sizeof(g_cave_capture), 1, b);
+    fclose(b);
+  }
   FILE *f = fopen("cave_arrival_capture.txt", "wb");
   if (f == NULL) { fprintf(stderr, "[ARRIVAL-CAPTURE] dump fopen failed\n"); return; }
   int n = Entrance_CaveInteriorCount();
-  fprintf(f, "// Generated by the D.3 arrival capture walkabout — paste into\n"
-             "// src/rando/cave_arrival_baked.h. interior order matches kCaveInteriors.\n");
-  fprintf(f, "static const RandoCaveArrival kCaveArrivalBaked[%d] = {\n", n);
+  fprintf(f, "// Generated by the D.3 arrival capture walkabout — paste the rows into\n"
+             "// src/rando/cave_arrival_baked.h. Rows are keyed by interior_id, so they\n"
+             "// may be pasted in any order and survive pool splits; uncaptured doors\n"
+             "// are omitted (the runtime degrades those to the coupled exit).\n");
+  fprintf(f, "static const RandoCaveArrivalBaked kCaveArrivalBaked[] = {\n");
   for (int i = 0; i < n && i < kEntranceMaxInteriors; i++) {
     const RandoCaveArrival *e = &g_cave_capture[i];
-    fprintf(f, "  {{");
+    if (!e->valid) continue;
+    fprintf(f, "  { \"%s\",\n   {{", Entrance_CaveInteriorName(i));
     for (int b = 0; b < 0x32; b++) fprintf(f, "0x%02X,", e->block[b]);
-    fprintf(f, "}, 0x%02X, 0x%02X, %u},  // %d %s\n",
-            e->is_dark, e->save_dark, e->valid, i, Entrance_CaveInteriorName(i));
+    fprintf(f, "}, 0x%02X, 0x%02X, %u} },\n", e->is_dark, e->save_dark, e->valid);
   }
   fprintf(f, "};\n");
   fclose(f);
@@ -4281,6 +4372,7 @@ static void Entrance_RuntimeTeardown(void) {
     g_entrance_overlay_orig = NULL;
   }
   memset(g_entrance_discovered, 0, sizeof(g_entrance_discovered));
+  g_entry_net_n = 0;
   Entrance_ClearRegionOverrides();
   Entrance_ClearEdgeOverrides();
   g_rando_entrance_exit_room = 0;
@@ -4495,6 +4587,21 @@ static void Entrance_RuntimeInstall(const RandoSlotHeader *h) {
   // Shared with the replay helper — see Entrance_ApplyLogicOverrides.
   Entrance_ApplyLogicOverrides(lay);
   memcpy(g_entrance_overlay, lay->overlay, lay->overlay_len);
+  // Keep the ENTRY permutation for the runtime "did this door move" test — the
+  // overlay byte can't answer it once pool entries share an entrance id. Under
+  // Crossed the combined net is the entry permutation; otherwise it's the cave
+  // one (dungeon-only shuffle leaves this empty, and the id compare is exact
+  // there because dungeon entrance-ids are unique).
+  g_entry_net_n = 0;
+  if (lay->cross && lay->cross_n > 0) {
+    g_entry_net_n = (lay->cross_n > kEntranceMaxInteriors) ? kEntranceMaxInteriors
+                                                           : lay->cross_n;
+    memcpy(g_entry_net, lay->cross_assign, (size_t)g_entry_net_n);
+  } else if (lay->cave && lay->cave_n > 0) {
+    g_entry_net_n = (lay->cave_n > kEntranceMaxInteriors) ? kEntranceMaxInteriors
+                                                          : lay->cave_n;
+    memcpy(g_entry_net, lay->cave_assign, (size_t)g_entry_net_n);
+  }
   // Decoupled (D.4): install the one-way exit permutation(s) + the exit edges
   // for the tracker. Reset all first so a re-install starts clean; the cave
   // path also arms the runtime arrival replay.
@@ -9367,6 +9474,78 @@ static void Rando_ShuffleInstallSelfCheck(void) {
         tsc_die("ShuffleInstall: boss_shuffle=0 must produce no render redirect (vanilla)");
   }
   Rando_DeactivateSlot();
+
+  // Baked cave-arrival table resolves BY NAME against the live interior pool.
+  // This is the guard for the drift class that motivated the name keying: while
+  // the table was positional, splitting two interiors mid-list shifted eight
+  // rows onto the wrong door and nothing noticed for the whole life of the bug
+  // (a wrong arrival is a valid overworld position, so it never crashes — the
+  // player just emerges at some other cave). Assert every row still binds, and
+  // that no two rows claim the same interior.
+  {
+    Rando_LoadArrivalCaptureIfNeeded();
+    int n = Entrance_CaveInteriorCount();
+    const uint16 *ent_area = kOverworld_Entrance_Area;
+    uint32 n_rows = kOverworld_Entrance_Id_SIZE;
+    uint8 seen[kEntranceMaxInteriors];
+    memset(seen, 0, sizeof(seen));
+    for (int b = 0; b < kCaveArrivalBakedCount; b++) {
+      const char *want = kCaveArrivalBaked[b].interior_id;
+      int target = -1;
+      for (int i = 0; i < n && i < kEntranceMaxInteriors; i++)
+        if (strcmp(Entrance_CaveInteriorName(i), want) == 0) { target = i; break; }
+      if (target < 0)
+        tsc_die("ShuffleInstall: baked cave arrival names an interior that no longer "
+                "exists — re-bake or rename, do not let it silently degrade");
+      if (seen[target])
+        tsc_die("ShuffleInstall: two baked cave-arrival rows claim one interior");
+      seen[target] = 1;
+      if (!g_cave_capture[target].valid)
+        tsc_die("ShuffleInstall: baked cave arrival did not load onto its interior");
+      // The block's first word is overworld_area_index_exit — the area of the door
+      // the capture was taken at. Two things follow, and neither was checked while
+      // a row shipped whose world flags contradicted its own area:
+      //  (a) it must be one of THIS interior's door rows' areas, which also
+      //      cross-checks the registry's door_rows against the live asset table;
+      //  (b) the replayed world flags must agree with that area's dark bit,
+      //      because Rando_ReplayCaveArrival writes both verbatim and save_dark
+      //      is SRAM-persisted.
+      const RandoCaveArrival *e = &kCaveArrivalBaked[b].arrival;
+      uint16 blk_area = (uint16)(e->block[0] | (e->block[1] << 8));
+      const uint8 *rows = NULL;
+      int nrows = Entrance_CaveInteriorDoorRows(target, &rows);
+      bool area_ok = false;
+      for (int r = 0; r < nrows; r++)
+        if (rows[r] < n_rows && ent_area[rows[r]] == blk_area) area_ok = true;
+      if (!area_ok)
+        tsc_die("ShuffleInstall: baked cave arrival's recorded overworld area is not "
+                "any of its interior's door rows — it was captured at a different door");
+      bool dark = (blk_area & 0x40) != 0;
+      if ((e->is_dark != 0) != dark || (e->save_dark != 0) != dark)
+        tsc_die("ShuffleInstall: baked cave arrival's world flags disagree with its own "
+                "recorded area — replaying it would write the wrong world to SRAM");
+    }
+    // Every door row must carry an entrance id its entry declares. The row->entry
+    // map is a committed constant; this is the runtime cross-check against the
+    // live table (the offline one is skipped in assetless profiles).
+    for (int i = 0; i < n && i < kEntranceMaxInteriors; i++) {
+      const uint8 *rows = NULL;
+      int nrows = Entrance_CaveInteriorDoorRows(i, &rows);
+      for (int r = 0; r < nrows; r++) {
+        if (rows[r] >= n_rows)
+          tsc_die("ShuffleInstall: cave door row past the end of the live entrance table");
+        if (Entrance_InteriorOfDoorRow(rows[r]) != i)
+          tsc_die("ShuffleInstall: cave door row does not resolve to its own interior");
+        if (!Entrance_InteriorDeclaresEntranceId(
+                i, ((const uint8 *)kOverworld_Entrance_Id)[rows[r]]))
+          tsc_die("ShuffleInstall: a cave door row's LIVE entrance id is not one its "
+                  "interior declares — registry/asset drift");
+      }
+    }
+    fprintf(stderr, "[Rando_CaveArrivalBakeSelfCheck] OK (%d/%d doors baked, areas and "
+                    "world flags agree; the rest degrade to the coupled exit)\n",
+            kCaveArrivalBakedCount, n);
+  }
 
   fprintf(stderr, "[Rando_ShuffleInstallSelfCheck] OK\n");
 }

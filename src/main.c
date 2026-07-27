@@ -1863,11 +1863,16 @@ int main(int argc, char** argv) {
       LoadAssets();
       uint32 n = kOverworld_Entrance_Id_SIZE;
       for (uint32 s = 0; s < n; s++) {
-        int interior = Entrance_InteriorOfEntranceId(kOverworld_Entrance_Id[s]);
+        // Keyed by door ROW (`s`): several pool entries share an entrance id, so
+        // the id form would print the same interior for all four room-0x10F
+        // doors — the exact confusion this dump exists to resolve.
+        int interior = Entrance_InteriorOfDoorRow((uint16)s);
         if (interior < 0) continue;
         uint16 area = kOverworld_Entrance_Area[s], pos = kOverworld_Entrance_Pos[s];
-        fprintf(stderr, "cave %2d %-26s id=0x%02X  %s screen 0x%02X  tile(col %2d,row %2d)\n",
-                interior, Entrance_CaveInteriorName(interior), kOverworld_Entrance_Id[s],
+        fprintf(stderr, "cave %2d %-36s row=0x%02X door=0x%02X id=0x%02X  %s screen 0x%02X"
+                        "  tile(col %2d,row %2d)\n",
+                interior, Entrance_CaveInteriorName(interior), s, s + 1,
+                kOverworld_Entrance_Id[s],
                 (area & 0x40) ? "DARK " : "LIGHT", area & 0x3f,
                 (pos >> 1) & 0x3f, (pos >> 7) & 0x3f);
       }

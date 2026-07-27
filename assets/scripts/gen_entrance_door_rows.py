@@ -1,17 +1,29 @@
 #!/usr/bin/env python3
-"""Derive each cave-interior's overworld DOOR ROWS from zelda3_assets.dat.
+"""Validate each cave-interior's overworld DOOR ROWS against zelda3_assets.dat.
 
 The cave-entrance pool's identity unit is the overworld door row, not the
 entrance id: four Dark World shop doors load room 0x10F through entrance id
 0x60 and two load room 0x112 through 0x58, so an entrance-id lookup cannot tell
-them apart. `entrance_registry.yaml` therefore records `door_rows` per entry,
-and this script derives them from the vanilla tables rather than having anyone
-hand-transcribe 70 indices.
+them apart. `entrance_registry.yaml` therefore records `door_rows` per entry.
 
-Emits a YAML fragment (one `door_rows:` line per interior, in registry order)
-plus a report of which entries carry several rows — the split candidates.
+Those four interiors are now SPLIT one entry per door row, which means several
+entries legitimately share an entrance id and the id can no longer be used to
+derive the rows — the split itself is the one fact the asset tables cannot
+express, so it lives in the registry. Everything else is still checked against
+the vanilla tables rather than trusted:
+
+  * every declared row's entrance id must be one of its entry's entrance_ids;
+  * no row may be claimed by two entries;
+  * the declared rows must be EXACTLY the set of overworld door rows whose
+    entrance id belongs to some registry entry (none dropped, none invented);
+  * an entry's declared region must be in the same world as its doors.
 
     python assets/scripts/gen_entrance_door_rows.py [--assets zelda3_assets.dat]
+    python assets/scripts/gen_entrance_door_rows.py --check   # CI form
+
+Without --check it re-emits the `door_rows:` fragment in registry order (rows
+sorted, taken from the registry's own partition but verified against the tables)
+plus a report of the entries that still carry several rows.
 
 The blob layout mirrors LoadAssets() in src/main.c: 48-byte signature, u32 asset
 count at +80, u32 extra at +84, a count-long u32 size table at +88, then
@@ -106,31 +118,64 @@ def main() -> int:
     with open(REG, "r", encoding="utf-8") as f:
         interiors = yaml.safe_load(f)["interiors"]
 
-    # entrance id -> registry entry index. Several ids may map to one entry; an
-    # id belonging to two entries is a registry bug, so flag it.
-    eid_to_entry: dict[int, int] = {}
-    for idx, it in enumerate(interiors):
-        for e in it.get("entrance_ids") or []:
-            if e in eid_to_entry:
-                sys.exit(f"entrance id 0x{e:02X} claimed by entries "
-                         f"{eid_to_entry[e]} and {idx}")
-            eid_to_entry[e] = idx
-
+    # The registry's declared partition of door rows. Several entries may share
+    # an entrance id (the shop splits), so the rows come from the file — but
+    # every one of them is cross-checked against the asset tables below.
     rows_by_entry: dict[int, list[int]] = {}
+    row_owner: dict[int, int] = {}
+    bad = 0
+    for idx, it in enumerate(interiors):
+        rows = sorted(it.get("door_rows") or [])
+        rows_by_entry[idx] = rows
+        if not rows:
+            print(f"  entry {idx:2d} {it['interior_id']:<36} declares no door_rows",
+                  file=sys.stderr)
+            bad += 1
+        eids = set(it.get("entrance_ids") or [])
+        for r in rows:
+            if r >= len(ent_id):
+                print(f"  entry {idx:2d} {it['interior_id']:<36} door row 0x{r:02X} is "
+                      f"past the end of kOverworld_Entrance_Id ({len(ent_id)} rows)",
+                      file=sys.stderr)
+                bad += 1
+                continue
+            if r in row_owner:
+                print(f"  door row 0x{r:02X} claimed by entries {row_owner[r]} "
+                      f"({interiors[row_owner[r]]['interior_id']}) and {idx} "
+                      f"({it['interior_id']})", file=sys.stderr)
+                bad += 1
+                continue
+            row_owner[r] = idx
+            if ent_id[r] not in eids:
+                print(f"  entry {idx:2d} {it['interior_id']:<36} claims door row "
+                      f"0x{r:02X}, but that row's entrance id is 0x{ent_id[r]:02X} "
+                      f"and the entry declares {sorted('0x%02X' % e for e in eids)}",
+                      file=sys.stderr)
+                bad += 1
+
+    # Completeness: every overworld door row whose entrance id belongs to SOME
+    # registry entry must be claimed by exactly one. This is what catches a row
+    # silently dropped when an entry is split.
+    all_eids = {e for it in interiors for e in (it.get("entrance_ids") or [])}
     for lx in range(len(ent_id)):
-        idx = eid_to_entry.get(ent_id[lx])
-        if idx is not None:
-            rows_by_entry.setdefault(idx, []).append(lx)
+        if ent_id[lx] in all_eids and lx not in row_owner:
+            print(f"  door row 0x{lx:02X} (entrance id 0x{ent_id[lx]:02X}) is a cave "
+                  f"door but no entry claims it", file=sys.stderr)
+            bad += 1
 
     if args.check:
-        bad = check_world_consistency(interiors, rows_by_entry, area)
+        bad += check_world_consistency(interiors, rows_by_entry, area)
         if bad:
-            print(f"gen_entrance_door_rows: {bad} interior(s) declare a region in the "
-                  f"wrong world — see above.", file=sys.stderr)
+            print(f"gen_entrance_door_rows: {bad} problem(s) — see above.",
+                  file=sys.stderr)
             return 1
-        print(f"gen_entrance_door_rows: OK — all {len(interiors)} interiors declare a "
-              f"region in the same world as their doors.")
+        print(f"gen_entrance_door_rows: OK — {len(row_owner)} cave door rows partitioned "
+              f"across {len(interiors)} interiors, every row's entrance id and world "
+              f"consistent with the vanilla tables.")
         return 0
+    if bad:
+        print(f"gen_entrance_door_rows: {bad} problem(s) — see above.", file=sys.stderr)
+        return 1
 
     print("# --- door_rows fragment (registry order) ---")
     total = 0

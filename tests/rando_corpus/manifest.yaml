@@ -34,7 +34,7 @@
 # Bump policy: when kGeneratorVersion advances (per tasks.md §13.6),
 # tools/bump_rando_corpus.py regenerates digests and updates this manifest.
 
-generator_version: 160  # Rebased Hints v2/configuration; placement digests unchanged from 159
+generator_version: 161  # bump_rando_corpus.py --apply - cave pool split by overworld door row
 
 # Smoke seeds: exercise the placer + codegen + bump-corpus pipeline end-to-end.
 # Each digest is captured against the current `kGeneratorVersion`; when the
@@ -395,8 +395,8 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, race_mode: true }
     seed: "0x00000000C0FFEE01"
     label: "c-entrance-caves-open-fg-race"
-    expected_digest: "aae62cb8c18a0b7480b3773fc50f1bbc87f7ad85b2146e0ff7a9753608cd7739"
-    expected_sphere_digest: "f51776c2e831e23b744779d6bdb3f7f624d08474b1e14b431b1ae1c26a7038bb"
+    expected_digest: "1c91fb5073bef06867c7711838b53e931eb73000778fa7a5c4ec86e86ed98d62"
+    expected_sphere_digest: "5b1cace616d54c138b065d92e8c31d97bf1400d895b9f38935e864212f5d2992"
   # Phase C — entrance shuffle (coupled cave shuffle). These exercise the cave
   # permutation + per-seed region overrides through the placer, locking in the
   # deterministic digest. shuffle_cave_entrances active ⇒ digest differs from the
@@ -404,8 +404,8 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true }
     seed: "0x00000000C0FFEE01"
     label: "c-entrance-caves-open-fast-ganon"
-    expected_digest: "aae62cb8c18a0b7480b3773fc50f1bbc87f7ad85b2146e0ff7a9753608cd7739"
-    expected_sphere_digest: "f51776c2e831e23b744779d6bdb3f7f624d08474b1e14b431b1ae1c26a7038bb"
+    expected_digest: "1c91fb5073bef06867c7711838b53e931eb73000778fa7a5c4ec86e86ed98d62"
+    expected_sphere_digest: "5b1cace616d54c138b065d92e8c31d97bf1400d895b9f38935e864212f5d2992"
   # add-rando-pot-sanity audit fix (kGen 92): cave-entrance shuffle FORCES pot_shuffle
   # off (cave/house pots miss the entrance region-override → false certification).
   # This locks that: pot_shuffle=all here generates a pot-LESS seed; a regression that
@@ -413,8 +413,8 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, pot_shuffle: all }
     seed: "0x00000000C0FFEE0A"
     label: "c-entrance-caves-pot-forced-off"
-    expected_digest: "b59b811b0621c9d402b702e002d0b47878e948bc740b5eeac98349630ab24cd6"
-    expected_sphere_digest: "833f3b15d623f8a69d2564d237d0a8ea1cd02dfcd6fd8dd7108d57ac0f36defa"
+    expected_digest: "e8d89bbd1eaf338d38ec584a08259241820a18d09b84f44b154d4c59921dcffb"
+    expected_sphere_digest: "e4dabb98118734fdadd76909c12332b62657463251cba2835e81836f2638a5cb"
   # add-rando-pot-sanity audit fix (kGen 93): cave-entrance shuffle must force pots
   # off for NON-default key modes too. Pre-fix the door-only pot-key predicates
   # (eval_pot_keys_wild/dungeon, pot_keys_dungeon_active) fired under cave shuffle
@@ -424,13 +424,13 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, dungeon_items.small_keys: dungeon, pot_shuffle: all }
     seed: "0x00000000C0FFEE0B"
     label: "c-entrance-caves-pot-forced-off-dungeon-keys"
-    expected_digest: "9bc141edf00fb0c666a35c2513d5ab5f286da40807548e4c2135f22759e4c0ce"
-    expected_sphere_digest: "14ec90bd6bdba3cdb3e3c2587607d11c66837a844d07c97ef5c35c81039e1fee"
+    expected_digest: "d1113ac498af338c4f987049732996edfd35194bf972cda36d331c79efe08d78"
+    expected_sphere_digest: "1c801fea9a079ef03dff1382965ee3fe0fcc4b05ca0fd58fe2ee5acd7ee1158a"
   - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, dungeon_items.small_keys: wild, pot_shuffle: all }
     seed: "0x00000000C0FFEE0C"
     label: "c-entrance-caves-pot-forced-off-wild-keys"
-    expected_digest: "3823c014b59d6fc5f3bfc2acb0c677443c7a8d366d103abf44eb56602da7e5aa"
-    expected_sphere_digest: "0394b6ea36ae1c64cb1b3e978d8da373eb9684eb1c7fe57152af88efe0367989"
+    expected_digest: "b2635e1a16dfd2f1b5d3354cbb94aadf31d9f8a353556bf6883e00b4282071ad"
+    expected_sphere_digest: "d104ea431c5b5d20e170b5331823946e8ace59f49e07d9ce2b43e9e476fdf3d5"
   # add-rando-pot-sanity (audit fix kGen 94): under Inverted/Retro the cave-entrance
   # axis is INERT (apply_derived_rules zeroes it), so a retained cave bit must NOT
   # force pots off — Settings_EffectiveShuffleCaveEntrances. These lock that
@@ -449,8 +449,8 @@ entries:
   - settings: { mode.state: standard, goal: fast_ganon, shuffle_cave_entrances: true }
     seed: "0x00000000C0FFEE02"
     label: "c-entrance-caves-standard-fast-ganon"
-    expected_digest: "cffe21896d881871efe2e3bd4871633403d86179db864e610331e45636a74c03"
-    expected_sphere_digest: "58a1ab9e1f2299b49fa772477f8738db549c8f2350c32d77e3d2ae3888f10112"
+    expected_digest: "fbfe4e8669165f0ed347145a3ee19eeb60b41a02b31fa40bdface1fb2530dd24"
+    expected_sphere_digest: "38aee8e150705cc9e6eb94f559bd7d75e8f1bd2570fd6299465ecae7f33fa919"
   # Phase C Stage 2 — dungeon entrance shuffle (6 single-entrance dungeons via the
   # per-seed edge overlay), and caves+dungeons together.
   - settings: { mode.state: open, goal: fast_ganon, shuffle_dungeon_entrances: true }
@@ -477,16 +477,16 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, shuffle_dungeon_entrances: true }
     seed: "0x00000000C0FFEE04"
     label: "c-entrance-both-open-fast-ganon"
-    expected_digest: "e62a859ea29bf2c351cf36c49bd77d761b7c3575cf554710afbe4be1ff6cab01"
-    expected_sphere_digest: "1e7d86c117be13acc70524027cd7f18d356e6f4cee7be34fffc5b200ebdf9085"
+    expected_digest: "fc8cecc1499176c9987d746b6c0af7f35844ac84b448dd9f12d725dee3458508"
+    expected_sphere_digest: "06d2ee09acf316d889acb43e172f1622d015484e55bf095340706e538ee053e2"
   # Cross-category (Stage 3): caves and dungeons share one shuffle pool, so a
   # cave door can lead to a dungeon interior and vice versa. The full-reachability
   # gate (Logic_ComputeSpheres all-reachable) must accept the permutation.
   - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, shuffle_dungeon_entrances: true, cross_category: true }
     seed: "0x00000000C0FFEE05"
     label: "c-entrance-cross-open-fast-ganon"
-    expected_digest: "4ebd98cc6c123f7edce14007b506443358e78ce9b0c5b2eda6e933c740fa993b"
-    expected_sphere_digest: "3c173305692cbca58574ef5aec2ad6d19fb65d9e576b42b2bece8ff5055530a4"
+    expected_digest: "1faa92a99fab1b1e2ccfb5d0bd56fbd0874dc0b931773bc398a9ede92f862234"
+    expected_sphere_digest: "2d4ad1f72eeafe3b0f1230b5b834b3c447aa2864647c3a281bc3a11516afb97b"
   # Decoupled / "Insanity" (Stage 4 D.1/D.2): caves + decoupled one-way exit warps.
   # LOGIC + GENERATION only (runtime exit redirect D.3/D.4 not yet wired, so this is
   # a headless-only entry — no playable slot). Reject-and-retry with the full-
@@ -495,8 +495,8 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, decoupled: true }
     seed: "0x00000000C0FFEE07"
     label: "c-entrance-decoupled-caves-open-fast-ganon"
-    expected_digest: "1ef936327dfca7ddb868e1d960a03eaa7e57f9345880a3ed3c64c7470f56afdd"
-    expected_sphere_digest: "485d5ae07dac658ea533ffa1733fd548d425ac83533ae261d6e53e9c191643b2"
+    expected_digest: "6929f9c31c4c0c9c75cf674d9f35057340124b3c562169ea548f107868cb0448"
+    expected_sphere_digest: "39686f61e11657a48fb597299e04e2575185b10b7c79e62f01178eba518b5596"
   # Dungeon decoupled (Stage 4): dungeon shuffle + one-way dungeon EXITS. Fully
   # PLAYABLE (no arrival asset - the runtime reuses the static kExitData room-keyed
   # exit search). Reject-and-retry suffices (8/8 test seeds). Logic is coupled-
@@ -513,8 +513,8 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, shuffle_dungeon_entrances: true, decoupled: true }
     seed: "0x00000000F0FFFFFF"
     label: "c-entrance-decoupled-both-open-fast-ganon"
-    expected_digest: "e64c8045d09ead0ba2025138de38bfb547c798b2c700c07d849fb17f6633e908"
-    expected_sphere_digest: "5035081c84993662003b98dcd74fa279e5ce60001356480edf5bce9901270487"
+    expected_digest: "8339f0d4c3301c21609d27180a9b8c5f3e4ed16706137f2f302e1a09572a5758"
+    expected_sphere_digest: "cb634870dac7c2b2937657189495946543d73371163cabed3b8c5d646ec5a567"
   # Cross + decoupled (Crossed preset + Decoupled exits): one-way exits over the
   # MIXED cave+dungeon pool. Each exit target may be a cave (replay baked arrival)
   # or a dungeon (kExitData room). No logic edges (coupled-equivalent reachability,
@@ -522,8 +522,8 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, shuffle_dungeon_entrances: true, cross_category: true, decoupled: true }
     seed: "0x00000000C2055DEC"
     label: "c-entrance-cross-decoupled-open-fast-ganon"
-    expected_digest: "53b8bc9a54a710f57e5da994a79b92460a00da3bf9a0e293d45db8919c76bbbf"
-    expected_sphere_digest: "9d8011fb57000ea4d460ed45072c3854ec18194350cee5ec8f82915670c59836"
+    expected_digest: "8806b891d93a3cf29ef5830943b53587a3da4f3c71d6379e0f95b8d6135e685f"
+    expected_sphere_digest: "52357192b976d522df22e27b64124bec84e2bd90707ee4e34983e6217fcc6903"
 
   # Phase B Slice 7/8 (add-rando-shuffles-and-minigames) — boss + drop shuffle.
   # DROP shuffle stays ORTHOGONAL to item placement (a drop-on seed is byte-
@@ -1021,8 +1021,8 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, shuffle_cave_entrances: true, enemy_drop_checks: all }
     seed: "0x45414C4C0000000B"
     label: "enemy-drop-all-cave-entrance-degrades-to-dungeon"
-    expected_digest: "8b53016fa3c5881b580a5469df67c9d6d3a07c48803479799f71e55305325ac8"
-    expected_sphere_digest: "8501d8b24c8a0360bd730f410d9c700f151fc5402a2601e8ea0c633eb7e5c92e"
+    expected_digest: "173cd89851003f1599187ea036ad095a421a4107d160faf48c61d4a1b0a14211"
+    expected_sphere_digest: "5e0ee0390c87b7f72b5a96711c6db50131cf859c3cddcf2cd0fb8e272eeb7f04"
 
   # dungeon-chains MVP corpus (kGeneratorVersion 113): five seed shapes covering
   # Open/Standard activation, prize shuffle composition, forced dungeon-key
@@ -1141,8 +1141,8 @@ entries:
   - settings: { mode.state: open, goal: ganon, npc_souls: true, shuffle_cave_entrances: true }
     seed: "0x4E50430000000005"
     label: "npc-souls-entrance-shuffle"
-    expected_digest: "0ed344f8190ec1a7328af4ce1c4688c42c73ad4e1dad7e2d19d561614097a0ca"
-    expected_sphere_digest: "6a8708ff5fdb12f45a3854de37a38cce4d6221505fc0fd6a2297d3c76d4dad01"
+    expected_digest: "061bb74eb946051f9df32d1f4a57db15d08a0575f7ab433d02aa4ed0bd2c5de0"
+    expected_sphere_digest: "67ad7ce3b962b98eab3cfb429c47cd11bcc901b61c0d199be280695206837b39"
   - settings: { mode.state: open, goal: ganon, npc_souls: true, dungeon_chains: true }
     seed: "0x4E50430000000006"
     label: "npc-souls-chains-pod-seam"
@@ -1230,8 +1230,8 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, grass_shuffle: all, rock_shuffle: all }
     seed: "0x4752524F434B0007"
     label: "terrain-cave-entrance-composes"
-    expected_digest: "f4ba9510a3a709046d1306a75d46bbee3ca80ec9b13981921832bc0303e14ac0"
-    expected_sphere_digest: "57f041f26445ebe1b042b69e815d527d956f483b81a988bc0c4ece5a98feaa68"
+    expected_digest: "2c7fc0e548b955980e104ba6b955081f93e7c415e24044932a4f5f72d2cda9a3"
+    expected_sphere_digest: "6ae1c75c08382f41e9e9be8d7d696c272f0e846ad0bdb599d3e1f332d72788d2"
   - settings: { mode.state: open, goal: fast_ganon, dungeon_items.small_keys: wild, enemy_drop_checks: keys, grass_shuffle: all, rock_shuffle: all }
     seed: "0x4752524F434B0008"
     label: "terrain-enemy-drop"
@@ -1420,8 +1420,8 @@ entries:
   - settings: { mode.state: open, goal: fast_ganon, shuffle_cave_entrances: true, shopsanity: true }
     seed: "0x53484F5000000005"
     label: "shopsanity-entrance-caves-forced-off"
-    expected_digest: "f497c759e9eb9a391f42bfbae99bcd940bb1042446fb49e96a2c45ed2d310041"
-    expected_sphere_digest: "0164aab3d1647da59062b183bd7f5c7325183ee4143f6b1d9c89a7a54646437a"
+    expected_digest: "cdc46e521015c0e95d631e446fec16351b964b77668cd26ee6b3c4c25e7123f0"
+    expected_sphere_digest: "41b9ae455ae6d1c751314901b4b67df01ada4a54800873399d7ba36c320f3162"
   - settings: { mode.state: open, goal: fast_ganon, shopsanity: true, traps: insanity }
     seed: "0x53484F5000000007"
     label: "shopsanity-traps-shops-excluded"
