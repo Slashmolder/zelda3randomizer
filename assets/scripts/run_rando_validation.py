@@ -357,8 +357,12 @@ def runtime_common(runner: Runner, binary: Path, object_dir: Path,
                env=env)
     # A cave interior's declared region is the SOURCE region entrance shuffle
     # rebinds through, but Entrance_SelfCheck only cross-validates it for entries
-    # that HAVE locations — the empty ones are unguarded. Asset-driven, self-skips.
-    runner.run("cave-interior region world consistency",
+    # that HAVE locations. The location-less ones are pinned instead to the
+    # committed `upstream_regions`, which this also enforces. Asset-driven,
+    # self-skips. (Re-deriving those values from the ALTTPR PHP is
+    # gen_entrance_upstream_regions.py --check, which needs a sibling checkout
+    # and so is NOT wired here — run it when touching the registry.)
+    runner.run("cave-interior region world consistency + upstream pin",
                script("gen_entrance_door_rows.py", "--check", "--allow-missing-assets"))
     corpus_args = ["--binary", str(binary), "--timings-json", str(corpus_timings)]
     if not corpus_local:

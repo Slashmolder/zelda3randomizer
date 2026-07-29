@@ -95,6 +95,89 @@ def check_world_consistency(interiors, rows_by_entry, area: bytes) -> int:
     return bad
 
 
+def is_pinnable(rows, ups) -> bool:
+    """Can upstream DECIDE this entry's region?
+
+    Only when every one of its door rows carries an upstream declaration AND
+    they all name the same region. Both halves are load-bearing, and each was
+    added because the looser rule produced a false positive on an entry whose
+    region is independently proven correct by Entrance_SelfCheck (2):
+
+      * SPLIT coverage is normal, not a bug. A pool entry groups every door that
+        loads one interior room, and those doors can sit in different regions —
+        `pond_of_happiness` spans six across both worlds. The pool is coarser
+        than upstream's per-door model on purpose, so "declared is not one of
+        them" proves nothing.
+      * PARTIAL coverage cannot decide either, because upstream's declaration
+        for a door is a TakeAny/shop REPURPOSING of that door, not a statement
+        about the interior's primary entrance. `hype_cave`, `thief_hideout` and
+        `pond_of_wishing` each have one door carrying an upstream take-any in a
+        region their verified location bindings disagree with — the other,
+        undeclared door is the canonical one.
+
+    That leaves the single-door (or unanimous multi-door) entries, which is
+    exactly the class the general_store_1 drift fixed at kGeneratorVersion 159
+    and the chest_shell_game drift fixed at 164 both belonged to.
+
+    THE one definition of this rule; gen_entrance_upstream_regions.py imports it
+    rather than restating it, so the reporting tool and the CI gate can never
+    disagree about what counts as decidable.
+    """
+    if not rows or not ups:
+        return False
+    if {int(u["door"]) - 1 for u in ups} != set(rows):
+        return False
+    return len({u["region"] for u in ups}) == 1
+
+
+def check_upstream_regions(interiors) -> int:
+    """Pin every entry's region against upstream where upstream can decide.
+
+    Entrance_SelfCheck (2) cross-validates `region` against an entry's own
+    locations, so the location-less entries had nothing checking them at all —
+    which is where the general_store_1 drift fixed at kGeneratorVersion 159 hid,
+    and where the chest_shell_game drift found by this check hid.
+
+    Entries that DO have locations are covered too, deliberately. Their
+    self-check compares the registry against our own generated logic table, so
+    the two agree by construction if both drifted together; upstream is an
+    INDEPENDENT third source. mimic_cave is the worked example — registry,
+    upstream and the logic table all say LightWorld_DeathMountain_East while
+    ow_graph says West, and the tie is broken by the fact that SCREEN_REGIONS
+    documents 0x05 as a split screen whose east half is East.
+
+    `upstream_regions` is derived from the ALTTPR PHP by
+    gen_entrance_upstream_regions.py and committed, so this runs with no
+    upstream checkout. Two rules:
+
+      * every location-less entry MUST carry the field (an omitted one is a new
+        entry that slipped in unpinned, not a pass);
+      * `region` is ENFORCED only when upstream can actually decide — every door
+        covered and all rows agreeing. Partial or split coverage is normal and
+        proves nothing; see is_pinnable() in the generator for the three entries
+        whose verified regions a looser rule would have flagged.
+    """
+    bad = 0
+    for idx, it in enumerate(interiors):
+        ups = it.get("upstream_regions")
+        if ups is None:
+            print(f"  entry {idx:2d} {it['interior_id']:<36} has no upstream_regions — "
+                  f"run assets/scripts/gen_entrance_upstream_regions.py --emit",
+                  file=sys.stderr)
+            bad += 1
+            continue
+        if not is_pinnable(it.get("door_rows") or [], ups):
+            continue                      # upstream cannot decide — see docstring
+        want = ups[0]["region"]
+        if it.get("region") != want:
+            src = ", ".join(sorted(u["src"] for u in ups))
+            print(f"  entry {idx:2d} {it['interior_id']:<36} declares "
+                  f"{it.get('region')} but every one of its doors is upstream's "
+                  f"{want} ({src})", file=sys.stderr)
+            bad += 1
+    return bad
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--assets", default="zelda3_assets.dat")
@@ -165,13 +248,20 @@ def main() -> int:
 
     if args.check:
         bad += check_world_consistency(interiors, rows_by_entry, area)
+        bad += check_upstream_regions(interiors)
         if bad:
             print(f"gen_entrance_door_rows: {bad} problem(s) — see above.",
                   file=sys.stderr)
             return 1
+        enforced = sum(1 for it in interiors
+                       if is_pinnable(it.get("door_rows") or [],
+                                      it.get("upstream_regions") or []))
+        recorded = sum(1 for it in interiors if it.get("upstream_regions"))
         print(f"gen_entrance_door_rows: OK — {len(row_owner)} cave door rows partitioned "
               f"across {len(interiors)} interiors, every row's entrance id and world "
-              f"consistent with the vanilla tables.")
+              f"consistent with the vanilla tables; upstream regions recorded for "
+              f"{recorded}/{len(interiors)} entries and ENFORCED on the {enforced} "
+              f"upstream can decide.")
         return 0
     if bad:
         print(f"gen_entrance_door_rows: {bad} problem(s) — see above.", file=sys.stderr)

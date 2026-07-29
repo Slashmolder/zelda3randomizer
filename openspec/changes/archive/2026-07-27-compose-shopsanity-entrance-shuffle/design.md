@@ -198,16 +198,54 @@ door in `DarkWorld_NorthWest`. That was invisible because
 locations, and all four shop entries had none. Giving them their shops' slot ids
 brings them under that check, so the split is guarded going in.
 
-**Out of scope but recorded:** the same sweep flags roughly a dozen further
-entries, including several SINGLE-door ones (`archery_game`,
-`warped_pond_of_wishing`, both `refill_cave_1_*`, `kakariko_library`,
-`mimic_cave`) whose declared region matches none of their doors. If real, those
-mis-bind locations under cave-entrance shuffle today, independently of shops.
-The screen-to-zone lookup is only a hypothesis for non-shop doors — an overworld
-screen can host several logic regions (ledges, the Death Mountain east/west
-split) — so they are NOT changed here; they are spun out as their own audit.
-Multi-door entries whose region matches one of their doors are a known
-approximation of the coarse pool, not necessarily a bug.
+**Out of scope but recorded:** the same sweep flags further entries, including
+several SINGLE-door ones (`archery_game`, `warped_pond_of_wishing`, both
+`refill_cave_1_*`, `kakariko_library`, `mimic_cave`) whose declared region
+matches none of their doors. If real, those mis-bind locations under
+cave-entrance shuffle today, independently of shops. The screen-to-zone lookup is
+only a hypothesis for non-shop doors — an overworld screen can host several logic
+regions (ledges, the Death Mountain east/west split) — so they are NOT changed
+here; they are spun out as their own audit. Multi-door entries whose region
+matches one of their doors are a known approximation of the coarse pool, not
+necessarily a bug.
+
+> **CORRECTION, kGeneratorVersion 164.** That follow-up audit ran, and the
+> paragraph above overstates the problem in one direction and understates it in
+> another. It should not be read as a list of suspects.
+>
+> **Every entry it names is correct.** `warped_pond_of_wishing` had already been
+> fixed at 159 and the note was stale even when written. `archery_game`
+> (`DarkWorld_South`) and `kakariko_library` (`LightWorld_South`) are confirmed
+> by upstream — ALTTPR declares those very doors in `DarkWorld/South.php:44` and
+> the Library in `LightWorld/South.php:45` — and by our own
+> `location_registry.yaml`, which binds their screen-mates the same way.
+> `mimic_cave` is *provably* a false positive: it has locations, so
+> `Entrance_SelfCheck` (2) already validates its region against the generated
+> logic table, and that check passes.
+>
+> **The method, not the registry, was wrong.** `ow_graph.gen.yaml`'s `zone` is
+> screen-granular, and a screen can straddle a region boundary. Dark screen
+> `0x29` carries both the Archery Game (upstream South) and the Frog area
+> (upstream NorthWest) and is labelled NorthWest throughout; light screen `0x29`
+> is labelled NorthWest while everything upstream and `location_registry` place
+> on it is South. Three flags, three false positives.
+>
+> **And it missed the one real drift.** `chest_shell_game` declared
+> `LightWorld_NorthWest` for a door upstream declares in `LightWorld/South.php:64`
+> — the sweep did not flag it precisely because it agreed with `ow_graph`. Fixed
+> at 164, along with the sibling contradiction it exposed: that door shares a
+> single `ow_graph` component with `kakariko_library`'s door, so the two entries
+> could not both be right.
+>
+> The replacement method derives each door's region from the upstream PHP by door
+> id (`assets/scripts/gen_entrance_upstream_regions.py`), commits it as
+> `upstream_regions:`, and enforces it in `gen_entrance_door_rows.py --check` —
+> but only where upstream can actually decide (every door covered, all agreeing).
+> Partial or split coverage decides nothing: a pool entry deliberately groups
+> doors that may sit in different regions, and an upstream take-any is a
+> repurposing of one door rather than a claim about the interior's primary
+> entrance. A looser rule flags `hype_cave`, `thief_hideout` and
+> `pond_of_wishing`, all three of which the self-check proves correct.
 
 ## D10. Coupled exits are safe by construction
 

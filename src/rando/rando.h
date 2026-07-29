@@ -80,7 +80,25 @@
 //      is gone. Only seeds carrying BOTH axes move — a cave-shuffle seed with
 //      shopsanity off is byte-identical (the new overrides land on locations
 //      that are not fill locations there, verified by regen, not assumed).
-#define kGeneratorVersion 162u  // shopsanity x cave-entrance shuffle compose
+// 164: cave-interior region drift — chest_shell_game (the Kakariko Gamble Game
+//      door) declared LightWorld_NorthWest for a door upstream declares in
+//      LightWorld/South.php. Same class as the general_store_1 /
+//      warped_pond_of_wishing drift fixed at 159, and found the same way: the
+//      entry has no locations, so Entrance_SelfCheck (2) never cross-validated
+//      it. Location-less entries are now pinned to upstream by
+//      `upstream_regions` in entrance_registry.yaml, enforced by
+//      gen_entrance_door_rows.py --check.
+//      ALL 246 corpus digests are UNCHANGED: the two regions are
+//      reachability-equivalent on every corpus seed, so assumed fill sees the
+//      swapped location become available in the same sphere either way. The
+//      bump is taken anyway under the "when in doubt" clause of the
+//      inert-change exception (docs/randomizer.md), because unlike the cases
+//      that exception lists this one is not inert BY CONSTRUCTION — it is inert
+//      only for the settings the corpus covers. It is also not invisible: the
+//      region feeds hint_effective_region, so a hint naming what lies behind
+//      that door now says Light World South, and the live tracker groups it
+//      there. (163 is claimed by the unmerged codex/bomb-grass-logic branch.)
+#define kGeneratorVersion 164u  // chest_shell_game region drift
 // The share-string binary layout packs version into 1 byte
 // (rando_share.h: ShareString.version is uint8). Compile-time enforce
 // kGeneratorVersion ≤ 255 so silent truncation can't ship.
