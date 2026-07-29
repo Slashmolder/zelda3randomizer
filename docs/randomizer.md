@@ -1423,6 +1423,23 @@ YAML/runtime version before refreshing the lock, or normal codegen fails. The
 Git diff guard conservatively requires both axes to advance for intertwined
 runtime, hint-codegen, or authoritative metadata/approval changes.
 
+That guard treats entrance-region rebinding (`shuffle_entrance.c`,
+`region_ids.lock.json`, and region-bearing `assets/rando/*.yaml`) as a plan
+*input* rather than a schema change. Those edits move `RandoHintFact.region_id`,
+which the persisted plan digest covers, so they require a `kGeneratorVersion`
+advance across the shipped `base..head` range instead of a hint-axis bump.
+Advancing an axis there would assert a schema change that did not happen and
+would downgrade that slot from an accurate digest mismatch to a wrong
+"unsupported". The digest is what makes the rebinding visible: the plan is
+rebuilt and re-digested at load, so the slot reports `DigestMismatch`. The
+generator bump is what marks the slot stale, and how loudly depends on the
+seed — an entrance/door-shuffle slot hard-fails its layout digest gate, while a
+plain slot emits a one-time version-drift warning and loads its embedded
+placement as-is (`Rando_ActivateSlot`). Rendered strings are deliberately
+outside plan identity, so naming and template changes remain text-schema
+business — enforced by `hint_metadata.lock.json`'s `text_fingerprint`, which
+includes every region name and fails codegen closed when one drifts.
+
 **Delivery and discovery.** Only the retained telepathic sources carry a plan
 fact; a tile discovers its fact only after the complete message buffer is
 installed. The paid queues advance transactionally:
