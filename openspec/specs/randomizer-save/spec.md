@@ -15,6 +15,32 @@ Randomizer state SHALL be stored in `saves/sram_rando.dat` parallel to `saves/sr
 - **WHEN** `sram_rando.dat` does not exist
 - **THEN** all three slots load as vanilla and the file-select screen shows no rando metadata
 
+### Requirement: Unreadable is distinguished from absent
+
+An ABSENT sidecar and an UNREADABLE one SHALL be distinguishable to callers. Absent is the normal vanilla case above. Present-but-unparseable — corrupt, truncated, or written by a newer format — means the player HAS randomizer saves this build cannot recognise, and SHALL NOT be silently reported as "no sidecar": the runtime SHALL surface a diagnostic naming the file and stating that randomizer saves will present as vanilla this session, and SHALL leave the file untouched.
+
+No destructive housekeeping SHALL run against a sidecar file that failed to parse. This closes a fail-open where a single boolean collapsed both cases, so a corrupt or newer-version sidecar made every randomizer save classify — and play — as an ordinary vanilla file with no indication anything was wrong.
+
+#### Scenario: Corrupt sidecar warns instead of failing open silently
+- **WHEN** `sram_rando.dat` exists but does not parse
+- **THEN** a diagnostic names the file and the session's degraded classification, and no slot of the file is rewritten or scrubbed
+
+### Requirement: Orphan scrub runs only on confirmed evidence
+
+A randomizer sidecar slot whose paired `sram.dat` slot carries no valid-save marker is an ORPHAN, and the file-select load SHALL treat it as absent in memory so no consumer classifies, loads, or renders it as a randomizer slot.
+
+Erasing the orphan on disk is destructive and SHALL additionally require that the evidence for "the paired slot is empty" is real: the `sram.dat` image SHALL have been read in full this session, and `sram_rando.dat` SHALL have parsed. The in-memory suppression is unconditional; only the write is gated. Until `sram.dat` is read, the SRAM buffer is zero-filled and byte-identical to three empty slots — so an unreadable save file made every sidecar look orphaned and the scrub deleted all of them. That is reachable without disk corruption, because the save writer renames `sram.dat` aside before writing its replacement and one failed write leaves none for the next launch.
+
+Clearing a randomizer sidecar when its slot is ERASED SHALL read the sidecar from disk rather than from the file-select render cache, because the cache is invalidated by the first erase and is not reloaded before a second erase in the same visit.
+
+#### Scenario: A transiently unreadable save file destroys nothing
+- **WHEN** `saves/sram.dat` cannot be read at launch and randomizer sidecars exist
+- **THEN** every slot renders as empty and `sram_rando.dat` is left byte-identical, so a later launch that reads the save file classifies the slots correctly
+
+#### Scenario: Two erases in one visit both clear their sidecars
+- **WHEN** the player erases two randomizer slots without leaving the file-select screen
+- **THEN** both slots' sidecar entries are cleared on disk, so neither can re-attach to a save later created in that slot
+
 ### Requirement: Sidecar slot contents
 
 The sidecar SHALL contain a **16-byte file header** followed by three slot regions (one per `sram.dat` slot, in the same order).
@@ -660,6 +686,22 @@ behind a shuffled cave door marks that interior entered. Backfill SHALL never
 derive discovery from placement, settings, or layout data — checked state is
 the only source, because having checked a location implies the player was
 there, so backfill can under-reveal but never over-reveal.
+
+Backfill is an OR onto whatever discovery is already live, so accepting a
+snapshot's randomizer state SHALL first CLEAR discovery, exactly as it clears
+the checked-location bitmap and soul ownership. Without that clear a snapshot
+carrying no discovery TLV inherits the discovery of whatever seed the current
+session had loaded — replaying a pre-v13 snapshot of seed B during a seed-A
+session over-revealed B's tracker, and the backfill then persisted the
+over-reveal into B's sidecar. "Under-reveal but never over-reveal" is only true
+with the clear in place.
+
+#### Scenario: Snapshot without the discovery TLV does not inherit the session's
+
+- **WHEN** a snapshot with no discovery TLV is replayed while the live session
+  has discovered dungeons and cave interiors from a different seed
+- **THEN** discovery is cleared before backfill, so the restored state reveals
+  only what the snapshot's own checked-location bitmap implies
 
 #### Scenario: In-flight save does not regress to all-hidden
 

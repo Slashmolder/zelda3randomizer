@@ -1116,16 +1116,43 @@ to plan construction, so every present and future caller inherits it.
 
 While a grant refusal is pending retry, the delivering site SHALL NOT hold
 `flag_is_link_immobilized`, `flag_block_link_menu`, or any equivalent input lock
-across frames. A site that must lock the player during delivery SHALL determine
+across frames on any path where the refusal condition requires player action to
+clear. A site that must lock the player during delivery SHALL determine
 acceptance first using the side-effect-free preparation API, and lock only on a
 path that will complete.
 
-#### Scenario: A refused grant leaves the player in control
+The qualifier is load-bearing and was missing: this requirement was written
+unconditionally, but the shipped cutscene-resume sites deliberately RESTORE the
+pre-delivery lock bytes verbatim on a retryable refusal — `Ancilla29_Commit-
+StoredRandoGrant` saves and restores `flag_custom_spell_anim_active`,
+`link_force_hold_sword_up`, `link_player_handler_state`,
+`link_disable_sprite_damage`, `flag_is_link_immobilized` and
+`flag_block_link_menu` so the tablet cutscene can retry losslessly. Restoring a
+vanilla cutscene's own lock is correct; the spec text as written declared it a
+violation. What actually matters is the pairing: a site MAY carry a lock across
+frames only where the refusal it is waiting on cannot require the locked input
+to clear.
+
+Those sites refuse only when capacity changes BETWEEN preparation and commit,
+which no shipped path reaches today, so the distinction is currently
+theoretical. It is stated because the unconditional form is false about shipped
+code, and a future site that both locks and refuses on a player-clearable
+condition would be a softlock this requirement is supposed to forbid.
+
+#### Scenario: A refused grant leaves the player able to clear the refusal
 
 - **WHEN** a grant is refused at a site that would immobilize the player to
-  deliver it
-- **THEN** the player retains movement and menu access, so any state the refusal
-  depends on can still be changed
+  deliver it, and the refusal condition requires a player action to clear (for
+  example emptying a bottle)
+- **THEN** the player retains the movement and menu access that action needs
+
+#### Scenario: A cutscene-resume site restores its own lock
+
+- **WHEN** a stored-token commit is refused as retryable inside a vanilla
+  cutscene that had already locked input
+- **THEN** the site restores every saved lock byte verbatim so the cutscene
+  resumes unchanged, and the refusal does not depend on input the cutscene
+  is suppressing
 
 ### Requirement: A refused grant leaves caller state consistent
 

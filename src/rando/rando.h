@@ -776,6 +776,22 @@ bool Rando_ShopSlotCheckInfo(uint16 room, uint8 door, uint8 pos_plus1,
                              uint16 *out_loc, uint16 *out_item,
                              uint16 *out_price);
 
+// add-rando-shopsanity — would buying this shop check deliver NOTHING?
+//
+// A check sells the PLACED item and deliberately bypasses the vanilla refusal
+// gates (keeping them would make the location missable), so a slot holding a
+// 5th bottle or a maxed progressive resolves AcceptedNoOp: terminal, check
+// consumed, inventory untouched. Terminating is right — a refusal the player
+// cannot clear must never ask for a retry — but this site is PAID, and the
+// refusal contract was written for free sites. Charging full price for a
+// provably empty delivery is the part that is not defensible, so the shop
+// front-end asks this first and skips the debit.
+//
+// Side-effect free: resolves the live plan without touching inventory,
+// checked state or the last-dispatch record. Must be called BEFORE the grant —
+// afterwards the inventory it reasons about has already moved.
+bool Rando_ShopSlotGrantIsNoOp(uint16 room, uint8 door, uint8 pos_plus1);
+
 // Shop resolution alone — no active-slot, placement or already-checked gating.
 // For the --rando-shop-doorwalk identity audit, which must run without a
 // generated slot on disk. 0xFFFF = not a shop tuple. Answers identity, not

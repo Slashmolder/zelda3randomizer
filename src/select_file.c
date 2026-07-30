@@ -347,9 +347,20 @@ void SelectFile_Func16() {
       // so the erased slot renders the stale rando banner; picking it
       // would CopySaveToWRAM zero bytes and either soft-crash or start
       // a corrupted save.
-      if (g_selectfile_slots_loaded &&
-          g_selectfile_slots[k].has_sidecar_data &&
-          g_selectfile_slots[k].sidecar.header.slot_kind == kSlotKind_Randomizer) {
+      //
+      // Read the sidecar back from DISK rather than consulting the render
+      // cache. The cache is not a reliable witness here: the branch below ends
+      // with SelectFile_ResetSidecarCache(), and the post-erase return path
+      // goes to submodule 1, which does not reload it — only Module_SelectFile_0
+      // does. So on a SECOND erase within the same file-select visit the cache
+      // was empty, this gate was false, and that slot's sidecar survived on
+      // disk. It then re-attaches to whatever save later occupies the slot,
+      // which is exactly the stale-rando-data-on-a-vanilla-file hazard the
+      // clear exists to prevent. Disk is cheap on a button press and is the
+      // only source that is always current.
+      RandoSidecarSlot existing;
+      if (Rando_LoadSidecarSlot(k, &existing) &&
+          existing.header.slot_kind == kSlotKind_Randomizer) {
         RandoSidecarSlot empty_slot;
         memset(&empty_slot, 0, sizeof(empty_slot));
         empty_slot.header.slot_kind = kSlotKind_Empty;
@@ -1331,6 +1342,27 @@ static void SelectFile_LoadSidecarCache(void) {
     g_selectfile_slots[k].render_kind = kRandoSlotKind_Empty;
     g_selectfile_slots[k].has_sidecar_data = 0;
   }
+
+  // "Could not read the sidecar" is not the same as "there is no sidecar", and
+  // the orphan scrub below is destructive, so establish which one we are in
+  // before touching anything. A present-but-unparseable file means the player
+  // HAS rando saves this build cannot read; say so loudly instead of silently
+  // presenting them as vanilla, and never scrub on the strength of a file we
+  // could not parse.
+  RandoSidecarFileState sidecar_state = Rando_SidecarFileState();
+  if (sidecar_state == kRandoSidecarFile_Unreadable) {
+    static bool warned;
+    if (!warned) {
+      warned = true;
+      fprintf(stderr,
+              "Rando WARNING: saves/sram_rando.dat exists but could not be "
+              "parsed (corrupt, truncated, or written by a newer build). Any "
+              "randomizer saves will be shown as ordinary vanilla files this "
+              "session, and starting or erasing one WILL diverge from the seed. "
+              "The file has been left untouched — back it up before playing.\n");
+    }
+  }
+
   for (int k = 0; k < 3; k++) {
     RandoSidecarSlot slot;
     // Per Rando_LoadSidecarSlot contract: returns false if the file is
@@ -1357,13 +1389,32 @@ static void SelectFile_LoadSidecarCache(void) {
     // placement table would silently re-attach (no code clears the sidecar on
     // a vanilla new game). So scrub the orphan to Empty on disk and treat the
     // slot as having no sidecar in memory; it renders as a clean "NEW GAME".
+    //
+    // The scrub is a DELETE, so it may only run on evidence we actually have.
+    // g_zenv.sram is zero-filled until saves/sram.dat is read in full, and a
+    // zero-filled buffer reads as "all three slots invalid" — so a save file
+    // that was merely unreadable this launch used to make every rando sidecar
+    // on disk look orphaned, and the scrub deleted all of them. That is
+    // reachable without any disk corruption: ZeldaWriteSram renames sram.dat to
+    // sram.bak before writing the replacement, so one failed write leaves no
+    // sram.dat for the next launch to find. Require a confirmed SRAM image.
+    // Without one, skip the scrub and leave the slot classified Empty — which
+    // is what the sram_valid gate in SelectFile_GetSlotRenderKind does anyway,
+    // and it costs nothing but a stale sidecar that the next good launch will
+    // scrub properly.
     bool sram_valid =
         (*(const uint16 *)(g_zenv.sram + k * 0x500 + 0x3E5) == 0x55AA);
     if (!sram_valid && slot.header.slot_kind == kSlotKind_Randomizer) {
-      RandoSidecarSlot empty_slot;
-      memset(&empty_slot, 0, sizeof(empty_slot));
-      empty_slot.header.slot_kind = kSlotKind_Empty;
-      Rando_WriteSidecarSlot(k, &empty_slot, g_zenv.sram + k * 0x500, 0x500);
+      // In MEMORY an orphan is always treated as absent, whether or not we
+      // scrub it: several consumers (the erase gate, the load path at
+      // Rando_ActivateSidecarSlot) read has_sidecar_data without repeating the
+      // sram_valid test, so leaving it set would hand them an orphan.
+      if (g_sram_image_loaded && sidecar_state == kRandoSidecarFile_Ok) {
+        RandoSidecarSlot empty_slot;
+        memset(&empty_slot, 0, sizeof(empty_slot));
+        empty_slot.header.slot_kind = kSlotKind_Empty;
+        Rando_WriteSidecarSlot(k, &empty_slot, g_zenv.sram + k * 0x500, 0x500);
+      }
       continue;  // leave has_sidecar_data = 0 -> classified Empty
     }
 

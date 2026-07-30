@@ -186,17 +186,28 @@ def main() -> int:
     ap.add_argument("--allow-missing-assets", action="store_true",
                     help="skip (exit 0) when the asset blob is absent, for assetless profiles")
     args = ap.parse_args()
-    if not os.path.exists(args.assets):
-        if args.allow_missing_assets:
-            print(f"gen_entrance_door_rows: SKIPPED — {args.assets} not present")
-            return 0
+    have_assets = os.path.exists(args.assets)
+    if not have_assets and not args.allow_missing_assets:
         sys.exit(f"{args.assets} not found — run from a checkout with extracted assets")
 
-    assets = load_assets(args.assets)
-    ent_id = assets[ASSET_ENTRANCE_ID]
-    area = assets[ASSET_ENTRANCE_AREA]
-    rooms_b = assets[ASSET_ENTRANCE_ROOMS]
-    rooms = struct.unpack_from("<%dH" % (len(rooms_b) // 2), rooms_b, 0)
+    # Only SOME of what follows needs the asset blob. The registry's self
+    # consistency (every entry declares door rows; no two entries claim the same
+    # row) and the upstream region pin compare committed YAML against committed
+    # YAML — they are valid with no assets at all.
+    #
+    # This used to return 0 the moment the blob was missing, which meant public
+    # CI — which runs on a ROM-less checkout — never executed the upstream region
+    # pin. That is exactly the drift class kGen 159/164 had to fix, so the guard
+    # for it was inert on the only machine that mattered. Run the YAML-only half
+    # unconditionally and skip just the table cross-checks.
+    if have_assets:
+        assets = load_assets(args.assets)
+        ent_id = assets[ASSET_ENTRANCE_ID]
+        area = assets[ASSET_ENTRANCE_AREA]
+        rooms_b = assets[ASSET_ENTRANCE_ROOMS]
+        rooms = struct.unpack_from("<%dH" % (len(rooms_b) // 2), rooms_b, 0)
+    else:
+        ent_id = area = rooms = None
 
     with open(REG, "r", encoding="utf-8") as f:
         interiors = yaml.safe_load(f)["interiors"]
@@ -216,7 +227,7 @@ def main() -> int:
             bad += 1
         eids = set(it.get("entrance_ids") or [])
         for r in rows:
-            if r >= len(ent_id):
+            if ent_id is not None and r >= len(ent_id):
                 print(f"  entry {idx:2d} {it['interior_id']:<36} door row 0x{r:02X} is "
                       f"past the end of kOverworld_Entrance_Id ({len(ent_id)} rows)",
                       file=sys.stderr)
@@ -229,7 +240,7 @@ def main() -> int:
                 bad += 1
                 continue
             row_owner[r] = idx
-            if ent_id[r] not in eids:
+            if ent_id is not None and ent_id[r] not in eids:
                 print(f"  entry {idx:2d} {it['interior_id']:<36} claims door row "
                       f"0x{r:02X}, but that row's entrance id is 0x{ent_id[r]:02X} "
                       f"and the entry declares {sorted('0x%02X' % e for e in eids)}",
@@ -240,19 +251,32 @@ def main() -> int:
     # registry entry must be claimed by exactly one. This is what catches a row
     # silently dropped when an entry is split.
     all_eids = {e for it in interiors for e in (it.get("entrance_ids") or [])}
-    for lx in range(len(ent_id)):
-        if ent_id[lx] in all_eids and lx not in row_owner:
-            print(f"  door row 0x{lx:02X} (entrance id 0x{ent_id[lx]:02X}) is a cave "
-                  f"door but no entry claims it", file=sys.stderr)
-            bad += 1
+    if ent_id is not None:
+        for lx in range(len(ent_id)):
+            if ent_id[lx] in all_eids and lx not in row_owner:
+                print(f"  door row 0x{lx:02X} (entrance id 0x{ent_id[lx]:02X}) is a cave "
+                      f"door but no entry claims it", file=sys.stderr)
+                bad += 1
 
     if args.check:
-        bad += check_world_consistency(interiors, rows_by_entry, area)
-        bad += check_upstream_regions(interiors)
+        if area is not None:
+            bad += check_world_consistency(interiors, rows_by_entry, area)
+        bad += check_upstream_regions(interiors)   # committed YAML only — always runs
         if bad:
             print(f"gen_entrance_door_rows: {bad} problem(s) — see above.",
                   file=sys.stderr)
             return 1
+        if not have_assets:
+            recorded = sum(1 for it in interiors if it.get("upstream_regions"))
+            enforced = sum(1 for it in interiors
+                           if is_pinnable(it.get("door_rows") or [],
+                                          it.get("upstream_regions") or []))
+            print(f"gen_entrance_door_rows: OK (assetless) — {len(row_owner)} door rows "
+                  f"partitioned across {len(interiors)} interiors with no collisions; "
+                  f"upstream regions recorded for {recorded}/{len(interiors)} entries and "
+                  f"ENFORCED on the {enforced} upstream can decide. Entrance-id, world "
+                  f"and completeness cross-checks need {args.assets} and were SKIPPED.")
+            return 0
         enforced = sum(1 for it in interiors
                        if is_pinnable(it.get("door_rows") or [],
                                       it.get("upstream_regions") or []))
@@ -266,6 +290,13 @@ def main() -> int:
     if bad:
         print(f"gen_entrance_door_rows: {bad} problem(s) — see above.", file=sys.stderr)
         return 1
+
+    if not have_assets:
+        # Emitting the fragment reads the vanilla entrance tables; there is
+        # nothing to emit without them. (--check has its own assetless result.)
+        print(f"gen_entrance_door_rows: SKIPPED — {args.assets} not present, "
+              f"cannot emit the door_rows fragment without the vanilla tables")
+        return 0
 
     print("# --- door_rows fragment (registry order) ---")
     total = 0

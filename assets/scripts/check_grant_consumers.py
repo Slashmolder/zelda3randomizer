@@ -32,6 +32,7 @@ RAW_CORE_ALLOWED_CALLS = {
     ("Rando_OnLocationCheck", "Rando_DispatchVanillaGrant"): "legacy compatibility adapter",
     ("Rando_ResolveLiveGrantPlan", "Rando_DispatchVanillaGrant"): "legacy compatibility plan",
     ("Rando_ResolveLiveGrantPlan", "Rando_CommitRepeatableShopIdentity"): "validated vanilla-identity commit",
+    ("Rando_ResolveLiveGrantPlan", "Rando_ShopSlotGrantIsNoOp"): "side-effect-free no-op probe (paid-site pricing)",
     ("Rando_ResolveLiveGrantPlan", "rando_show_direct_grant_icon_only"): "presentation-only plan lookup",
     ("Rando_ResolveLiveGrantPlan", "rando_item_display_lttp"): "presentation-only plan lookup",
     ("Rando_ResolveLiveGrantPlan", "rando_placed_item_icon"): "presentation-only plan lookup",

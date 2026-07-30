@@ -417,6 +417,41 @@ typed target.
 - **THEN** its value/count follows directly from typed eligible placements and
   does not label another region barren, foolish, or required
 
+### Requirement: Hint regions describe the shuffled world graph
+
+Every region a hint names SHALL be the location's EFFECTIVE region under the
+active seed — world-state predicate override first, then the active per-seed
+entrance override — matching the region the placer and the runtime reachability
+engine use. A hint SHALL NOT name a location's vanilla region when entrance
+shuffle has moved it, because the resulting hint would be false.
+
+This is a deliberate exception to the player-knowledge invariant in
+`randomizer-player-knowledge`, and the two capabilities SHALL be read together.
+That capability limits surfaces to statements true under EVERY assignment the
+player's observations allow; a hint is instead an intentional disclosure whose
+entire payload is seed-specific truth, so consuming the true entrance overlay
+is correct here and only here. The consumption is pinned by
+`assets/scripts/check_knowledge_consumers.py`, whose allowlist for
+`Rando_GetEntranceRegionOverride` names the hint builder explicitly; a new
+consumer of that getter is a build break until classified.
+
+Hint text SHALL remain race-gated at display, so this disclosure never reaches
+a race player before the reveal flow.
+
+#### Scenario: Entrance shuffle moves a location's region
+
+- **WHEN** an entrance-shuffle slot relocates a location and a hint names that
+  location's region
+- **THEN** the hint states the effective (shuffled) region, identical to the
+  region the reachability engine and placer use for that location
+
+#### Scenario: Entrance-override consumption stays enumerated
+
+- **WHEN** a source file outside the audited allowlist calls
+  `Rando_GetEntranceRegionOverride`
+- **THEN** the knowledge-consumer guard fails the build rather than allowing a
+  new surface to consume true topology silently
+
 ### Requirement: Complete semantic rendering and localized neutral fallback
 
 Every eligible delivery fact SHALL have a stable template id and compact typed

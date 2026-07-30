@@ -1055,11 +1055,24 @@ void PatchCommand(char c) {
 }
 
 
+// True only once saves/sram.dat has actually been read in full. On any other
+// outcome g_zenv.sram keeps its zero-initialised contents, which is
+// byte-identical to "three empty save slots" -- and at least one consumer keys
+// DESTRUCTIVELY on that reading: the file-select orphan scrub erases every rando
+// sidecar whose paired slot looks invalid. A transiently unreadable save file
+// must not be allowed to masquerade as "the player has no saves", and
+// ZeldaWriteSram makes that reachable in one step by renaming sram.dat to
+// sram.bak BEFORE writing its replacement -- if that write fails, the next
+// launch finds no sram.dat at all.
+bool g_sram_image_loaded;
+
 void ZeldaReadSram() {
   FILE *f = fopen("saves/sram.dat", "rb");
   if (f) {
     if (fread(g_zenv.sram, 1, 8192, f) != 8192)
       fprintf(stderr, "Error reading saves/sram.dat\n");
+    else
+      g_sram_image_loaded = true;
     fclose(f);
     EmuSynchronizeWholeState();
   }

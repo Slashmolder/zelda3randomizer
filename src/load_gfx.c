@@ -1054,6 +1054,16 @@ int Decomp_bg(uint8 *dst, int gfx) {  // 80e78f
 }
 
 int Decompress(uint8 *dst, const uint8 *src) {  // 80e79e
+  // With no zelda3_assets.dat every g_asset_ptrs[] entry is NULL, so each
+  // kSprGfx/kBgGfx lookup hands us a null source and the first `*src++` below
+  // faults. That is reachable headlessly and it is not hypothetical: the
+  // grant self-checks commit real receipts, and a vanilla receipt
+  // (AncillaAdd_ItemReceipt) decodes the item's tile bundle -- which segfaulted
+  // --rando-selftest and --rando-grant-check on every ROM-less CI checkout.
+  // Decompress is the single funnel every graphics read passes through, so
+  // fail soft here: with assets present src is never NULL and this is inert.
+  if (src == NULL)
+    return 0;
   uint8 *dst_org = dst;
   int len;
   for (;;) {
@@ -2066,12 +2076,19 @@ void Palette_Load_Sp6L() {  // 9bece4
 }
 
 void Palette_Load_Sword() {  // 9bed03
+  // Assetless (headless CI): kPalette_Sword is NULL, so the read below faults.
+  // Reached from AncillaAdd_ItemReceipt for the sword receive codes, which the
+  // grant self-checks exercise. See the Decompress() null guard.
+  if (kPalette_Sword == NULL)
+    return;
   const uint16 *src = kPalette_Sword + ((int8)link_sword_type > 0 ? link_sword_type - 1 : 0) * 3;  // wtf: zelda reads offset 0xff
   Palette_LoadMultiple_Arbitrary(src, kPal_Sword, 2);
   flag_update_cgram_in_nmi += 1;
 }
 
 void Palette_Load_Shield() {  // 9bed29
+  if (kPalette_Shield == NULL)   // assetless — see Palette_Load_Sword
+    return;
   const uint16 *src = kPalette_Shield + (link_shield_type ? link_shield_type - 1 : 0) * 4;
   Palette_LoadMultiple_Arbitrary(src, kPal_Shield, 3);
   flag_update_cgram_in_nmi += 1;

@@ -2310,6 +2310,17 @@ void Rando_ApplyCustomItemGfxPalette(uint8 gfx) {
 }
 
 void Rando_EnsureRecvItemSlotGfx(uint8 gfx) {
+  // Assetless guard. Every branch below reads the asset blob — the custom-art
+  // palette (asset 80), the custom item tiles (165), and every
+  // Decomp_spr/DecodeAnimatedSpriteTile_variable bundle (64) — so with no
+  // zelda3_assets.dat they all dereference NULL inside Decompress. That is
+  // reachable headlessly: --rando-selftest / --rando-grant-check run on a
+  // ROM-less CI checkout, and the grant transaction's at-cap class shows a
+  // confirmation icon, which spawns Ancilla44_RandoIconReceipt and lands here.
+  // Nothing renders in those runs; skip the load and leave the slot unowned so
+  // the next owner (in a real, asset-bearing session) still repaints it.
+  if (g_asset_ptrs[64] == NULL)
+    return;
   // Custom item art (add-rando-field-item-custom-art): tile + dedicated
   // palette for the ALTTPR items with no vanilla receive bundle. The palette
   // is re-applied per call even when the slot already holds the tiles (see

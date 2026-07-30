@@ -394,16 +394,12 @@ static void rando_grant_generic_key(void) {
 //   GreenPendant (EP)  → link_which_pendants bit 2 (mask 0x04)
 //   RedPendant   (DP)  → link_which_pendants bit 1 (mask 0x02)
 //   BluePendant  (ToH) → link_which_pendants bit 0 (mask 0x01)
-//   Crystal1 (PoD)  → link_has_crystals bit 4 (mask 0x10)
-//   Crystal2 (SP)   → link_has_crystals bit 1 (mask 0x02)
-//   Crystal3 (SW)   → link_has_crystals bit 0 (mask 0x01)
-//   Crystal4 (TT)   → link_has_crystals bit 6 (mask 0x40)
-//   Crystal5 (IP)   → link_has_crystals bit 2 (mask 0x04)
-//   Crystal6 (MM)   → link_has_crystals bit 5 (mask 0x20)
-//   Crystal7 (TR)   → link_has_crystals bit 3 (mask 0x08)
-// Bits derived by cross-referencing kDungeonCrystalPendantBit[13] in
-// src/zelda_rtl.c against the vanilla dungeon→prize assignment in
-// app/Region/Standard/<Dungeon>.php.
+// The crystal rows are NOT restated here. This comment used to carry its own
+// copy of them, and that copy was the pre-fix permutation — it still read
+// C1→0x10 / C2→0x02 / C3→0x01 / C4→0x40 / C6→0x20 long after the table below
+// was corrected, i.e. it was a fifth wrong mirror of exactly the data whose
+// mirroring caused the bug. kRandoCrystalItemBit[] below is the single source;
+// Rando_PrizeBitSelfCheck re-derives it rather than restating it.
 //
 // Returns 1 on success.
 // Crystal N's link_has_crystals bit, indexed by (item id - ITEM_Prize_Crystal1),
@@ -5297,6 +5293,19 @@ bool Rando_ShopSlotCheckInfo(uint16 room, uint8 door, uint8 pos_plus1,
   return true;
 }
 
+// add-rando-shopsanity — see rando.h. Side-effect-free "this purchase would
+// grant nothing" probe, so the paid front-end can consume the check (terminal,
+// as the refusal contract requires) without debiting for an empty delivery.
+bool Rando_ShopSlotGrantIsNoOp(uint16 room, uint8 door, uint8 pos_plus1) {
+  uint16 loc, placed;
+  if (!Rando_ShopSlotCheckInfo(room, door, pos_plus1, &loc, &placed, NULL))
+    return false;
+  RandoGrantPlan plan;
+  if (!Rando_ResolveLiveGrantPlan(loc, placed, &plan))
+    return false;  // fail closed: an unresolvable plan is not a proven no-op
+  return plan.disposition == kRandoGrantDisposition_AcceptedNoOp;
+}
+
 static bool rando_trap_decoy_icon_for_seed(uint64 seed, uint16 item_id,
                                            uint16 location_id,
                                            DirectGrantIconEntry *out) {
@@ -9626,6 +9635,15 @@ static void Rando_ShuffleInstallSelfCheck(void) {
     int n = Entrance_CaveInteriorCount();
     const uint16 *ent_area = kOverworld_Entrance_Area;
     uint32 n_rows = kOverworld_Entrance_Id_SIZE;
+    // Half of what follows cross-checks the committed registry against the LIVE
+    // entrance tables (assets 126 / Entrance_Area). On a ROM-less checkout those
+    // are absent — n_rows is 0 and ent_area is NULL — which is not drift, it is
+    // "nothing to compare against". Without this split the area check could never
+    // succeed and the very first baked row killed the whole runtime self-check
+    // group in the assetless CI profile. The name binding, the one-row-per-
+    // interior rule, the capture-load assertion, the world-flag agreement, and
+    // the row->interior map are all derived from committed data and still run.
+    bool have_entrance_assets = (n_rows != 0 && ent_area != NULL);
     uint8 seen[kEntranceMaxInteriors];
     memset(seen, 0, sizeof(seen));
     for (int b = 0; b < kCaveArrivalBakedCount; b++) {
@@ -9653,12 +9671,14 @@ static void Rando_ShuffleInstallSelfCheck(void) {
       uint16 blk_area = (uint16)(e->block[0] | (e->block[1] << 8));
       const uint8 *rows = NULL;
       int nrows = Entrance_CaveInteriorDoorRows(target, &rows);
-      bool area_ok = false;
-      for (int r = 0; r < nrows; r++)
-        if (rows[r] < n_rows && ent_area[rows[r]] == blk_area) area_ok = true;
-      if (!area_ok)
-        tsc_die("ShuffleInstall: baked cave arrival's recorded overworld area is not "
-                "any of its interior's door rows — it was captured at a different door");
+      if (have_entrance_assets) {
+        bool area_ok = false;
+        for (int r = 0; r < nrows; r++)
+          if (rows[r] < n_rows && ent_area[rows[r]] == blk_area) area_ok = true;
+        if (!area_ok)
+          tsc_die("ShuffleInstall: baked cave arrival's recorded overworld area is not "
+                  "any of its interior's door rows — it was captured at a different door");
+      }
       bool dark = (blk_area & 0x40) != 0;
       if ((e->is_dark != 0) != dark || (e->save_dark != 0) != dark)
         tsc_die("ShuffleInstall: baked cave arrival's world flags disagree with its own "
@@ -9671,19 +9691,24 @@ static void Rando_ShuffleInstallSelfCheck(void) {
       const uint8 *rows = NULL;
       int nrows = Entrance_CaveInteriorDoorRows(i, &rows);
       for (int r = 0; r < nrows; r++) {
-        if (rows[r] >= n_rows)
-          tsc_die("ShuffleInstall: cave door row past the end of the live entrance table");
+        // Registry-internal: holds with or without the asset blob.
         if (Entrance_InteriorOfDoorRow(rows[r]) != i)
           tsc_die("ShuffleInstall: cave door row does not resolve to its own interior");
+        if (!have_entrance_assets)
+          continue;  // the remaining two compare against the LIVE table
+        if (rows[r] >= n_rows)
+          tsc_die("ShuffleInstall: cave door row past the end of the live entrance table");
         if (!Entrance_InteriorDeclaresEntranceId(
                 i, ((const uint8 *)kOverworld_Entrance_Id)[rows[r]]))
           tsc_die("ShuffleInstall: a cave door row's LIVE entrance id is not one its "
                   "interior declares — registry/asset drift");
       }
     }
-    fprintf(stderr, "[Rando_CaveArrivalBakeSelfCheck] OK (%d/%d doors baked, areas and "
-                    "world flags agree; the rest degrade to the coupled exit)\n",
-            kCaveArrivalBakedCount, n);
+    fprintf(stderr, "[Rando_CaveArrivalBakeSelfCheck] OK (%d/%d doors baked, world flags "
+                    "agree%s; the rest degrade to the coupled exit)\n",
+            kCaveArrivalBakedCount, n,
+            have_entrance_assets ? " and areas cross-check against the live table"
+                                 : "; area/entrance-id cross-checks SKIPPED (no assets)");
   }
 
   fprintf(stderr, "[Rando_ShuffleInstallSelfCheck] OK\n");

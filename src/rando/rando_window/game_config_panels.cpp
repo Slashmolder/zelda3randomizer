@@ -1180,19 +1180,27 @@ void DbgInventory_Render(void) {
       // The Flags editor used to duplicate this (disabled under rando); pendants
       // and crystals are dungeon prizes, so they live here with the dungeon items
       // and work under rando too. Edits do NOT update rando prize/goal tracking.
-      // Pendant bits (link_which_pendants 0xF374) per rando.c:312-314, by in-game
-      // display color: bit2 green/Courage (EP), bit1 blue/Power (DP), bit0 red/
-      // Wisdom (ToH). (The registry's Red/Blue Pendant item names are swapped.)
+      // Pendant bits (link_which_pendants 0xF374) per prize_item_direct_grant, by
+      // in-game display color: bit2 green/Courage (EP), bit1 blue/Power (DP), bit0
+      // red/Wisdom (ToH). (The registry's Red/Blue Pendant item names are swapped.)
       ImGui::SeparatorText("Pendants");
       Cheats_BitCheckbox("Pendant of Courage", 0xF374, 2);
       Cheats_BitCheckbox("Pendant of Power", 0xF374, 1);
       Cheats_BitCheckbox("Pendant of Wisdom", 0xF374, 0);
-      // Crystal bits (link_has_crystals 0xF37A) by dungeon per rando.c:315-321.
-      // (The numbered "Crystal N" goal-counter name does NOT track this bit order.)
+      // Crystal bits (link_has_crystals 0xF37A) labelled by the dungeon whose
+      // VANILLA prize sets each bit — i.e. kDungeonCrystalPendantBit[] read
+      // backwards (MM=0x01, PoD=0x02, IP=0x04, TR=0x08, SP=0x10, TT=0x20,
+      // SW=0x40). The numbered "Crystal N" goal-counter name does NOT track this
+      // bit order; kRandoCrystalItemBit[] in rando.c is that mapping.
+      //
+      // This widget was the FIFTH mirror of the crystal convention and the last
+      // one still carrying the old permutation — 5 of these 7 labels named the
+      // wrong dungeon, so toggling "Skull Woods" set Misery Mire's bit. Do not
+      // re-transcribe the order here; derive it from kDungeonCrystalPendantBit.
       ImGui::SeparatorText("Crystals");
       static const char *const kCrystalLabel[7] = {
-          "Skull Woods", "Swamp Palace", "Ice Palace", "Turtle Rock",
-          "Palace of Darkness", "Misery Mire", "Thieves' Town" };
+          "Misery Mire", "Palace of Darkness", "Ice Palace", "Turtle Rock",
+          "Swamp Palace", "Thieves' Town", "Skull Woods" };
       for (int b = 0; b < 7; b++) Cheats_BitCheckbox(kCrystalLabel[b], 0xF37A, b);
       ImGui::TreePop();
     }

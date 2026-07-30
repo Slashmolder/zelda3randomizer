@@ -7046,7 +7046,17 @@ void Sprite_HeartContainer(int k) {  // 85ef47
       // after the boss dies. The flag is ours -- we are the ones who left Link
       // immobilized for the falling heart -- so release it on the terminal
       // path. The fallback deliberately does not, to stay lossless.
-      flag_is_link_immobilized = 0;
+      //
+      // ONLY when no receipt exists, though. Releasing unconditionally clobbers
+      // the normal path: a live 0x22 receipt owns this flag until its own
+      // teardown, and for receive code 0x3e that same teardown is what banks the
+      // +8 capacity (Ancilla22_ItemReceipt). Handing control back mid-fanfare
+      // lets the player walk out of the receipt and lose the heart container
+      // while Rando_CommitPreparedGrant has already consumed the check. That is
+      // the third time this success-path clobber has been reintroduced here --
+      // scope any future release to the no-receipt case it is actually for.
+      if (!AncillaAdd_CheckForPresence(kAncillaType_ItemReceipt))
+        flag_is_link_immobilized = 0;
     }
     sprite_state[k] = 0;
     dung_savegame_state_bits |= 0x8000;
@@ -26658,8 +26668,8 @@ void NiceThiefUnderRock(int k) {  // 9ef14f
 // empty bottle", "health/ammo full") belong to the vanilla ITEM, and keeping
 // them on a check would make it missable (the location-guard bug class).
 // Checked slots / axis-off return false -> the vanilla body runs (vanilla
-// restock at the vanilla price; Rando_ShopDispatch's checked branch keeps a
-// re-buy from re-granting the placed item). Rando_ShopSlotCheckInfo
+// restock at the vanilla price; Rando_ShopGrant's already-checked branch keeps
+// a re-buy from re-granting the placed item). Rando_ShopSlotCheckInfo
 // re-verifies "unchecked" every frame, so a bought slot can't sell twice.
 // The purchase transaction charges rupees, despawns the slot, and marks the
 // location checked BEFORE Link_ReceiveItem's receipt ancilla exists — and the
@@ -26686,13 +26696,23 @@ static bool ShopItem_ShopsanityCheckSlot(int k, uint8 vanilla_code) {
       Sprite_ShowMessageUnconditional(0x17c);
       ShopItem_PlayBeep(k);
     } else {
+      // Resolve "this would grant nothing" BEFORE the grant moves the
+      // inventory it reasons about. A slot holding a 5th bottle or a maxed
+      // progressive resolves AcceptedNoOp: the sale still TERMINATES and
+      // consumes the check (refusing instead would be a refusal the player can
+      // never clear, i.e. a missable location), but charging full price for a
+      // provably empty delivery is not something the refusal contract ever
+      // signed up for -- it was written for free sites. Skip the debit.
+      bool no_op = Rando_ShopSlotGrantIsNoOp(
+          dungeon_room_index, g_ram[kRam_RandoOverworldDoor], sprite_subtype[k]);
       RandoGrantResult result = Rando_ShopGrant(
           dungeon_room_index, g_ram[kRam_RandoOverworldDoor],
           (uint8)(sprite_subtype[k] - 1), vanilla_code,
           kRandoGrantPresentation_Animated, 0, 0);
       if (result == kRandoGrantResult_Accepted) {
         // Delivery accepted first; payment and source consumption follow.
-        Sprite_ApplyPostGrantPrice(price);
+        if (!no_op)
+          Sprite_ApplyPostGrantPrice(price);
         sprite_state[k] = 0;
         ShopKeeper_RapidTerminateReceiveItem();
       } else if (result == kRandoGrantResult_AlreadyChecked) {

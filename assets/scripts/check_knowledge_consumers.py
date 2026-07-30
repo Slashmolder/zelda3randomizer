@@ -109,15 +109,29 @@ GUARDS: dict[str, set[str]] = {
         "src/rando/rando_dialogue.c",       # delivery messages at the location
         "src/rando/rando_hints.c",          # hint text (race-gated at display)
         "src/rando/rando_spoiler.c",        # spoiler writer (intentional)
-        "src/rando/rando_generate.c",       # generation logs/spoiler
         "src/rando/rando_placement.c",      # placer diagnostics (generation)
         "src/rando/customizer.c",           # pre-generation pool editor UI
         "src/rando/seed_shape.c",           # pre-generation pool summary
-        "src/main.c",                       # CLI spoiler/debug output
         "src/rando/rando_window/tracker_windows.cpp",   # race-gated "Show items (spoiler)" (audited)
         "src/rando/rando_window/rando_reach_panel.cpp", # race-gated item column (audited)
         "src/rando/rando_window/rando_window.cpp",      # race-gated spoiler tab (audited)
-        "src/rando/rando_window/panels_selftest.cpp",   # selfcheck
+    },
+    # Effective-region override under entrance shuffle: answers "where does this
+    # location actually live in the shuffled world graph", which is true
+    # topology. It was not guarded at all, so any future display surface could
+    # have consumed it silently — the gap this entry closes.
+    #
+    # rando_hints.c is the one display-adjacent consumer and it is deliberate:
+    # a hint's whole payload is a disclosure, the region is part of that
+    # payload, and hint text is race-gated at display. It must describe the
+    # SHUFFLED graph or it would name a region the item is not in (see
+    # randomizer-hints "Hint regions describe the shuffled world graph").
+    "Rando_GetEntranceRegionOverride": {
+        "src/rando/rando_logic.c",          # definition
+        "src/rando/rando.c",                # store/activation + selfchecks
+        "src/rando/rando_hints.c",          # hint region text (race-gated; audited)
+        "src/rando/rando_snapshot_tail.c",  # layout persistence + selfcheck
+        "src/rando/shuffle_entrance.c",     # entrance-shuffle selfchecks
     },
 }
 
@@ -169,6 +183,30 @@ def main() -> int:
     args = parser.parse_args()
 
     violations: list[str] = []
+    # An allowlist entry is a standing PERMISSION to read full-knowledge state.
+    # When the call it was written for goes away the permission silently
+    # outlives it, and the next edit to that file inherits an exemption nobody
+    # audited. Three such entries had already accumulated for Rando_GetItemName
+    # (src/main.c, rando_generate.c, panels_selftest.cpp) with no call sites
+    # left. The allowlist only stays meaningful if it has to shrink, so an
+    # unused entry is an error, not a note.
+    #
+    # Keyed on any MENTION of the symbol, not on a call: several entries are the
+    # defining file, whose definition line is (correctly) skipped as a
+    # declaration by the scan below. Mention-granularity still catches the real
+    # rot — a file that has genuinely stopped touching the API mentions it zero
+    # times — without flagging every definition entry.
+    stale: list[tuple[str, str]] = []
+    for sym, files in GUARDS.items():
+        mention = re.compile(r"\b" + re.escape(sym) + r"\b")
+        for rel in sorted(files):
+            src = REPO / rel
+            try:
+                if not mention.search(src.read_text(encoding="utf-8", errors="replace")):
+                    stale.append((sym, rel))
+            except OSError:
+                stale.append((sym, rel))  # allowlisted file is gone entirely
+
     for path in sorted(iter_source_files()):
         rel = path.relative_to(REPO).as_posix()
         if rel.startswith("third_party/"):
@@ -196,6 +234,14 @@ def main() -> int:
                     print(f"{verdict:9} {sym:40} {rel}:{i + 1}")
                 if not allowed and not escaped:
                     violations.append(f"{rel}:{i + 1}: {sym} outside the audited allowlist")
+
+    if stale:
+        print("check_knowledge_consumers: allowlist entries with no remaining "
+              "call site — delete them so the exemption cannot be inherited by "
+              "an unaudited future edit:", file=sys.stderr)
+        for sym, rel in stale:
+            print(f"  {rel}: no longer calls {sym}", file=sys.stderr)
+        return 1
 
     if violations:
         print("check_knowledge_consumers: full-knowledge API consumed outside the "

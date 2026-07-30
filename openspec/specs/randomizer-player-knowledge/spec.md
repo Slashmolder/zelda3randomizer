@@ -12,7 +12,17 @@ player's in-game observations so far. Where a surface cannot compute a
 knowledge-consistent statement, it SHALL degrade toward showing less
 (under-report availability), never toward revealing the true assignment. This
 gating SHALL be unconditional — no setting, toggle, or non-race status disables
-it; the spoiler reveal flow remains the only intentional disclosure path.
+it.
+
+Intentional disclosure channels are enumerated, and there are exactly two: the
+spoiler reveal flow, and the hint system specified in `randomizer-hints`. A
+hint's payload is a disclosure by construction — it names an item and where it
+is — so hint content is governed by that capability's own rules (including
+race-gating at display) and is NOT constrained by the knowledge-consistency
+requirement above. This paragraph previously read "the spoiler reveal flow
+remains the only intentional disclosure path", which contradicted the shipped
+hint system and left the hints surface with no stated knowledge model at all.
+Any THIRD disclosure channel SHALL be specified before it ships.
 
 #### Scenario: Sphere-0 dungeon shuffle seed shows no hidden-dungeon availability
 

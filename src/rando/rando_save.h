@@ -562,6 +562,21 @@ uint32 RandoSave_ComputeSramSlotChecksum(const uint8 *slot_bytes, uint32 size);
 // ---------------------------------------------------------------------------
 bool Rando_LoadSidecarSlot(int slot_index, RandoSidecarSlot *out);
 
+// Why the file could not be loaded — step 2 above collapses "no sidecar" and
+// "unreadable sidecar" into one `false`, and they are NOT the same thing.
+// Absent is the normal vanilla case. Present-but-unparseable means the player
+// HAS rando saves that this build is refusing to recognise: a corrupt file, a
+// truncated write, or one written by a newer format. Treating that as "vanilla"
+// is a silent fail-open, and it is also the state in which destructive
+// housekeeping (the file-select orphan scrub) must not run.
+typedef enum RandoSidecarFileState {
+  kRandoSidecarFile_Absent = 0,      // no saves/sram_rando.dat — normal vanilla
+  kRandoSidecarFile_Ok = 1,          // present and parsed
+  kRandoSidecarFile_Unreadable = 2,  // present but corrupt/truncated/newer
+} RandoSidecarFileState;
+
+RandoSidecarFileState Rando_SidecarFileState(void);
+
 // ---------------------------------------------------------------------------
 // Rando_WriteSidecarSlot (tasks.md §8.4).
 //

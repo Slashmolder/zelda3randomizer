@@ -986,6 +986,16 @@ bool Rando_LoadSidecarSlot(int slot_index, RandoSidecarSlot *out) {
   return true;
 }
 
+RandoSidecarFileState Rando_SidecarFileState(void) {
+  FILE *probe = fopen("saves/sram_rando.dat", "rb");
+  if (probe == NULL) return kRandoSidecarFile_Absent;
+  fclose(probe);
+  RandoSidecarSlot all_slots[kRandoSidecar_SlotCount];
+  if (!RandoSave_ReadFile("saves/sram_rando.dat", all_slots))
+    return kRandoSidecarFile_Unreadable;
+  return kRandoSidecarFile_Ok;
+}
+
 // ---------------------------------------------------------------------------
 // Rando_WriteSidecarSlot — atomic write of saves/sram_rando.dat.
 // ---------------------------------------------------------------------------

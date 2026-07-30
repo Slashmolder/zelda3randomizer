@@ -50,10 +50,27 @@ LEGACY_TEXT_SCHEMA_VERSION = 1
 # Canonical byte [28] bits 5-7 were refused by generator 156.  Hints v2 uses
 # bit 5 as part of tile coverage, so accepting it while replaying the frozen
 # 1/1 plan would silently reinterpret a crossed legacy/current container.
-POLICY_MUTATION_OFFSET = SETTINGS_OFFSET + 28
-POLICY_MUTATION_BIT = 1 << 5
-NPC_REWARD_PREVIEW_MUTATION_OFFSET = SETTINGS_OFFSET + 25
-NPC_REWARD_PREVIEW_MUTATION_BIT = 1 << 7
+# The SEVEN configurable-hint policy bits generator 156 did not define. The
+# reveal path refuses a legacy container that sets ANY of them (the `legacy_156`
+# gate in rando.c, whose own comment says "those seven bits"), because accepting
+# one would let a CRC-correct foreign artifact smuggle configurable policy into
+# the frozen 1/1 builder.
+#
+# Driven as an exhaustive table rather than a few hand-picked mutations: this
+# guard first exercised one bit, then four, while claiming to cover the refusal.
+# Every canon[29] and canon[30] bit — the whole hint-mix-high and paid-depth
+# axes — had no negative test at all, so a build that started accepting either
+# would have passed. Keep this table in lockstep with that gate; a bit added
+# there and not here is silently unguarded.
+LEGACY_REFUSED_BITS = (
+    (SETTINGS_OFFSET + 25, 1 << 7, "npc_reward_preview"),
+    (SETTINGS_OFFSET + 28, 1 << 5, "tile_coverage_bit0"),
+    (SETTINGS_OFFSET + 28, 1 << 6, "tile_coverage_bit1"),
+    (SETTINGS_OFFSET + 28, 1 << 7, "hint_mix_low"),
+    (SETTINGS_OFFSET + 29, 1 << 7, "hint_mix_high"),
+    (SETTINGS_OFFSET + 30, 1 << 6, "paid_depth_bit0"),
+    (SETTINGS_OFFSET + 30, 1 << 7, "paid_depth_bit1"),
+)
 
 EXPECTED_FIXTURE_SHA256 = (
     "737017237f941bc15a0514d39ed44814d9c11353fbce5c5cdd5d41e3374ff8ec"
@@ -168,10 +185,11 @@ def validate_fixture(data: bytes) -> None:
     canonical = data[SETTINGS_OFFSET : SETTINGS_OFFSET + SETTINGS_SIZE]
     if canonical.hex() != EXPECTED_CANONICAL_HEX:
         fail("fixture canonical settings differ from the provenance pin")
-    if canonical[28] & 0xE0:
-        fail("legacy fixture unexpectedly sets generator-156 reserved policy bits")
-    if canonical[25] & NPC_REWARD_PREVIEW_MUTATION_BIT:
-        fail("legacy fixture unexpectedly sets the NPC reward-preview bit")
+    for offset, bit, name in LEGACY_REFUSED_BITS:
+        if data[offset] & bit:
+            fail(f"legacy fixture unexpectedly sets the {name} policy bit "
+                 f"(canon[{offset - SETTINGS_OFFSET}] bit {bit.bit_length() - 1}) "
+                 f"— it would be refused, so the success case could not run")
 
 
 def invoke_reveal(
@@ -428,15 +446,28 @@ def main() -> int:
         )
         refresh_crc(former_configurable_mutation)
 
-        policy_mutation = bytearray(fixture)
-        policy_mutation[POLICY_MUTATION_OFFSET] |= POLICY_MUTATION_BIT
-        refresh_crc(policy_mutation)
+        policy_mutations = []
+        for offset, bit, name in LEGACY_REFUSED_BITS:
+            mutation = bytearray(fixture)
+            mutation[offset] |= bit
+            refresh_crc(mutation)
+            policy_mutations.append((name, bytes(mutation)))
 
-        npc_reward_preview_mutation = bytearray(fixture)
-        npc_reward_preview_mutation[
-            NPC_REWARD_PREVIEW_MUTATION_OFFSET
-        ] |= NPC_REWARD_PREVIEW_MUTATION_BIT
-        refresh_crc(npc_reward_preview_mutation)
+        # Every other mutation here repairs the CRC, which means all four of
+        # them are refused BEFORE the reveal ever regenerates a placement --
+        # so the stamp comparison itself, the check that actually detects a
+        # doctored spoiler body, had no negative test at all. Corrupt the
+        # RECORDED stamp instead: CRC, share string, generator version and
+        # policy bits all stay valid, the regeneration runs and succeeds, and
+        # the only thing left to disagree is the stamp.
+        stamp_mutation = bytearray(fixture)
+        stamp_mutation[STAMP_OFFSET] ^= 0x01
+        refresh_crc(stamp_mutation)
+        if bytes(stamp_mutation) == fixture:
+            fail("stamp mutation did not change the fixture")
+        if disk_crc(bytes(stamp_mutation)) != computed_crc(bytes(stamp_mutation)):
+            fail("stamp mutation left an invalid CRC — it would be refused as "
+                 "CrcMismatch and never reach the stamp comparison")
 
         # TemporaryDirectory creates a unique, closed path instead of holding
         # NamedTemporaryFile handles across the child process.  That is
@@ -464,22 +495,24 @@ def main() -> int:
                 "Suppressed file was produced by a different generator version.",
                 args.timeout,
             )
+            for name, mutation in policy_mutations:
+                assert_failure_case(
+                    binary,
+                    root,
+                    f"policy_{name}_refused",
+                    mutation,
+                    8,
+                    "Embedded settings are corrupt.",
+                    args.timeout,
+                )
             assert_failure_case(
                 binary,
                 root,
-                "policy_bit_refused",
-                bytes(policy_mutation),
-                8,
-                "Embedded settings are corrupt.",
-                args.timeout,
-            )
-            assert_failure_case(
-                binary,
-                root,
-                "npc_reward_preview_bit_refused",
-                bytes(npc_reward_preview_mutation),
-                8,
-                "Embedded settings are corrupt.",
+                "stamp_mismatch",
+                bytes(stamp_mutation),
+                6,
+                "Stamp mismatch — regenerated placement does not match the "
+                "recorded stamp.",
                 args.timeout,
             )
             assert_success_case(binary, root, fixture, args.timeout)
@@ -490,8 +523,10 @@ def main() -> int:
         print(f"  revealed/stamp SHA-256: {EXPECTED_STAMP_SHA256}")
         print(f"  hint-plan digest: {EXPECTED_PLAN['digest']}")
         print(
-            "  refusal guards: generators 155 and 157 => VersionMismatch; "
-            "legacy policy bit and NPC reward-preview bit => SettingsCorrupt"
+            f"  refusal guards: generators 155 and 157 => VersionMismatch; "
+            f"all {len(LEGACY_REFUSED_BITS)} undefined policy bits "
+            f"({', '.join(n for _, _, n in LEGACY_REFUSED_BITS)}) => "
+            f"SettingsCorrupt; doctored stamp => StampMismatch"
         )
         return 0
     except (CheckFailure, OSError) as exc:

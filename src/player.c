@@ -3987,6 +3987,24 @@ void Link_APress_LiftCarryThrow() {  // 87b1ca
             link_player_handler_state = 24;
             flag_is_sprite_to_pick_up = 1;
             Sprite_SpawnThrowableTerrain((what & 0xf) + 1, pt.x, pt.y);
+          } else {
+            // Refused: no throwable spawns, so nothing will ever reach the
+            // carry/throw teardown above that clears what Link_PerformThrow set
+            // up front for this animation -- link_state_bits 0x80 and the slow
+            // carry speed_setting 12. Left alone the player walks out of the
+            // lift empty-handed but still flagged as carrying and still moving
+            // at carry speed until some other handler happens to reset it.
+            //
+            // Abort the whole lift rather than just clearing the bits: this
+            // function early-returns on `!link_state_bits`, so zeroing that
+            // alone would strand link_picking_throw_state set forever and
+            // freeze Link in the pick-up pose -- a worse bug than the one being
+            // fixed. Still rando-gated; the vanilla path never lifts nothing.
+            link_picking_throw_state = 0;
+            link_cant_change_direction &= ~1;
+            link_state_bits = 0;
+            bitmask_of_dragstate = 0;
+            link_speed_setting = 0;
           }
           filtered_joypad_L &= ~kJoypadL_A;
         }

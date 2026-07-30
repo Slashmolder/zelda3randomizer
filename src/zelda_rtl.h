@@ -77,6 +77,12 @@ void ZeldaDumpDebugState(void);  // F12 dev diagnostic: dump WRAM/SRAM/rando/PPU
 void ZeldaWriteSram();
 void ZeldaReadSram();
 
+// Set by ZeldaReadSram once saves/sram.dat has been read in full. False means
+// g_zenv.sram is still zero-filled, which LOOKS exactly like three empty slots.
+// Any code that would DESTROY data on the strength of "this slot is empty" must
+// check this first -- see the file-select orphan scrub.
+extern bool g_sram_image_loaded;
+
 // Headless helper for the §11.2 / §1.2 initialization + snapshot guard. Loads
 // the savestate at `path` into the state recorder in replay mode (which
 // restores g_ram from the snapshot's base_snapshot without running any

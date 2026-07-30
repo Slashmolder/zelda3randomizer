@@ -942,6 +942,18 @@ int RandoSnapshotTail_Load(FILE *f) {
       // after type-1) restores the real bitfield below.
       Souls_ResetFlags();
 
+      // tracker-player-knowledge — same clean-restore contract again, and the
+      // one that was missing: topology discovery is C-global state outside the
+      // g_ram dump, so a snapshot with no type-10 TLV INHERITED whatever the
+      // live session had discovered. Replaying a pre-kGen-157 snapshot of seed B
+      // during a seed-A session therefore over-revealed B's tracker — and the
+      // FINISH_LOAD backfill then persisted it to B's sidecar, which the save
+      // spec's "never over-reveal" invariant forbids. The type-10 restore's own
+      // comment already promised "Absent TLV → zeros + backfill"; this is the
+      // zeros half. A current snapshot's type-10 TLV overwrites it below, and
+      // the backfill re-derives whatever the checked bitmap legitimately implies.
+      Rando_ResetDiscoveryState();
+
       // Optional TLV contexts are scoped to this accepted RandoState. A current
       // snapshot's later type-2/type-4 TLVs repopulate them; an older snapshot
       // that lacks those TLVs must not inherit stale context from a previous
@@ -3183,6 +3195,17 @@ void RandoSnapshotTail_SelfCheck(void) {
     if (fwrite(t1, 1, sizeof(t1), fold) != sizeof(t1)) selfcheck_die("absent-type-3: short write");
     // Pre-seed the live bitmap with stale bits the load MUST clear.
     memset(g_rando_checked_bitmap, 0xFF, kRandoCheckedBitmapBytes);
+    // tracker-player-knowledge: the SAME contract for topology discovery, which
+    // is where it was actually broken. Seed live discovery from a different seed
+    // (all bits set) — an absent type-10 TLV must clear it, not inherit it. The
+    // positive type-10 test above cannot catch this: it wipes discovery by hand
+    // before loading, so it never asks whether the accept path does the wipe.
+    {
+      uint8 kc[8], ke[8];
+      memset(kc, 0xFF, sizeof(kc));
+      memset(ke, 0xFF, sizeof(ke));
+      Rando_SetDiscoveryState(0xFFFFu, 0xFFu, kc, ke);
+    }
     Placement_Install(NULL);
     Rando_ClearSnapshotContext();
     fseek(fold, 0, SEEK_SET);
@@ -3191,6 +3214,19 @@ void RandoSnapshotTail_SelfCheck(void) {
     for (int i = 0; i < kRandoCheckedBitmapBytes; i++) {
       if (g_rando_checked_bitmap[i] != 0)
         selfcheck_die("absent-type-3: type-1 accept must clear the checked bitmap (no stale bits)");
+    }
+    {
+      uint16 kd; uint8 kw; uint8 kc[8], ke[8];
+      Rando_GetDiscoveryState(&kd, &kw, kc, ke);
+      bool any = (kd != 0) || (kw != 0);
+      for (int i = 0; i < 8; i++) any = any || kc[i] != 0 || ke[i] != 0;
+      // All-zero is the right expectation even with the FINISH_LOAD backfill in
+      // play: it derives discovery from the checked bitmap, which the accept
+      // just cleared.
+      if (any)
+        selfcheck_die("absent-type-10: type-1 accept must clear topology discovery "
+                      "(a snapshot with no discovery TLV must never inherit the "
+                      "live session's — that over-reveals another seed's tracker)");
     }
     const RandoPlacementTable *ro = Placement_GetActive();
     if (ro == NULL || ro->count != 2)
