@@ -571,12 +571,14 @@ static bool eval_instant_flute(Cursor *c, const PredicateContext *ctx) {
 
 // add-rando-ow-warp-shuffle — the CanFly neutralization conjunct: true iff
 // flute spots are VANILLA (flute_shuffle off). NULL-settings contexts are
-// vanilla by definition. Reads the normalized axis (apply_derived_rules
-// zeroes it under Inverted), so Inverted's CanFly uses stay intact.
+// vanilla by definition. Must read the EFFECTIVE axis: the VM is handed the raw
+// settings struct, so the Inverted force-off apply_derived_rules applies to the
+// canonical copy is not visible here. Reading the raw field made Inverted's
+// CanFly uses evaluate as shuffled — the opposite of the intent.
 static bool eval_ow_flute_vanilla(Cursor *c, const PredicateContext *ctx) {
   (void)c;
   return ctx->settings == NULL ||
-         ctx->settings->flute_shuffle == kFluteShuffle_Off;
+         Settings_EffectiveFluteShuffle(ctx->settings) == kFluteShuffle_Off;
 }
 
 // add-npc-souls — the npc_souls toggle (no operands; no derived rules).
@@ -1865,9 +1867,7 @@ static const RandoReachability *logic_compute_reachability_internal(
     // kRandoEdges suffix; when no warp axis is active the scan bounds at
     // kRandoNonWarpEdgesCount so the substrate is free for non-warp seeds
     // (the terrain inert-suffix pattern, edge-side). NULL settings = vanilla.
-    uint32 edge_scan_n = (ctx.settings != NULL &&
-                          (ctx.settings->flute_shuffle != kFluteShuffle_Off ||
-                           ctx.settings->whirlpool_shuffle))
+    uint32 edge_scan_n = Settings_OwWarpActive(ctx.settings)
                              ? kRandoEdgesCount
                              : kRandoNonWarpEdgesCount;
     for (uint32 e = 0; e < edge_scan_n; e++) {

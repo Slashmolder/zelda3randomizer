@@ -1462,7 +1462,7 @@ static void Panel_Shuffles() {
     // Open/Standard/Retro honor them.
     {
       static const char *kFluteShuffleLabels[3] = {"Off", "Balanced", "Random"};
-      bool inv = s->world_state == kWorldState_Inverted;
+      bool inv = Settings_OwWarpForcedOff(s);
       if (inv) ImGui::BeginDisabled();
       uint8 flute_value = s->flute_shuffle;
       if (EnumCombo("Flute spots", &flute_value, kFluteShuffleLabels, 3)) {

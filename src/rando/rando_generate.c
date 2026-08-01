@@ -57,9 +57,10 @@ const OwWarpLayout *Rando_GetOwWarpGenerationLayout(void) {
 // (axis requested, graph tables absent) — no attempt can fix that.
 static bool ow_warp_apply_attempt(const RandoSettings *settings,
                                   uint64 seed_u64, uint32 att) {
-  bool warp_on = settings != NULL &&
-                 (settings->flute_shuffle != kFluteShuffle_Off ||
-                  settings->whirlpool_shuffle != 0);
+  // Settings_OwWarpActive, not the raw fields: the axes are forced off under
+  // Inverted and only the accessor re-derives that (apply_derived_rules
+  // normalizes a private copy for the hash, never this struct).
+  bool warp_on = Settings_OwWarpActive(settings);
   g_ow_gen_attempt = 0;
   g_ow_gen_digest24 = 0;
   memset(&g_ow_gen_layout, 0, sizeof(g_ow_gen_layout));
@@ -651,9 +652,7 @@ bool Rando_PlaceWithEntrances(const RandoSettings *settings, uint64 seed_u64,
     // sphere/goal computation must see the chain reachability.
     if (!placed)
       Entrance_ClearEdgeOverrides();
-  } else if (settings != NULL &&
-             (settings->flute_shuffle != kFluteShuffle_Off ||
-              settings->whirlpool_shuffle != 0)) {
+  } else if (Settings_OwWarpActive(settings)) {
     // add-rando-ow-warp-shuffle — warp-only retry loop (no other retrying
     // feature active): the layout varies per attempt so a warp arrangement
     // the accessibility tier rejects can be retried (mirrors the entrance

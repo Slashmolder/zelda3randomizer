@@ -109,6 +109,26 @@ def local_ow_graph_available() -> bool:
     return bool(match) and int(match.group(1)) != 0
 
 
+def local_enemy_registry_available() -> bool:
+    """Return whether this checkout's generated enemy-drop registry has rows.
+
+    Without it the generator refuses any enemy_drop_checks seed for the
+    REGISTRY-ABSENT reason, which pre-empts every semantic refusal downstream of
+    it -- so a cell asserting one of those reasons has to be gated on this the
+    same way the pot/owgraph cells are.
+    """
+    header = REPO / "src" / "rando" / "enemy_drop_lookup.h"
+    try:
+        text = header.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    for macro in ("kRandoEnemyDropRegistryCount", "kRandoEnemyDropLookup_COUNT"):
+        match = re.search(rf"^#define\s+{macro}\s+(\d+)\b", text, re.MULTILINE)
+        if match:
+            return int(match.group(1)) > 0
+    return False
+
+
 # (label, settings_csv, seed, expect_ok, check_parity, expect_world_state,
 #  required_local_artifact, expected_refusal_reason)
 # - expect_ok:        slot generation should succeed (True) or be refused (False)
@@ -116,11 +136,15 @@ def local_ow_graph_available() -> bool:
 #                     (only meaningful for accepted, attempt-0-success cells)
 # - expect_world_state: persisted slot header world_state (0=open,1=standard,
 #                     2=inverted,3=retro per WorldState enum); None to skip
-# - required_local_artifact: None, "pots", or "owgraph". Public CI has no
-#                     ROM-derived pot registry and no OW warp graph; with the
-#                     matching --allow-missing-* flag, such cells become
-#                     fail-closed refusal tests: BOTH slot and CLI paths must
-#                     reject specifically because that artifact is absent.
+# - required_local_artifact: None, "pots", "owgraph", or "enemy". Public CI has
+#                     no ROM-derived pot registry, no OW warp graph and no
+#                     enemy-drop registry; with the matching --allow-missing-*
+#                     flag, such cells become fail-closed refusal tests: BOTH
+#                     slot and CLI paths must reject specifically because that
+#                     artifact is absent. Tag every cell whose settings TOUCH a
+#                     local artifact, not just the ones whose feature it is --
+#                     the artifact-absent refusal pre-empts whatever semantic
+#                     reason the cell would otherwise assert.
 # - expected_refusal_reason: stable semantic reason required from BOTH paths for
 #                     an intentionally rejected cell; None for accepted cells.
 MATRIX = [
@@ -139,7 +163,10 @@ MATRIX = [
     ("warp-both-open",      "mode.state=open,goal=fast_ganon,flute_shuffle=random,whirlpool_shuffle=true", "0x159", True, True, 0, "owgraph", None),
     # Stable slot/CLI rejection: all-tier overworld checks include missable
     # pre/post-Aga windows, so 100%-locations is intentionally unsupported.
-    ("all-enemy-locations-REJECT", "mode.state=open,goal=fast_ganon,dungeon_items.small_keys=wild,enemy_drop_checks=all,accessibility=locations", "0x12", False, False, None, None, "unsupported-enemy-locations"),
+    # Tagged "enemy": assetlessly the REGISTRY-ABSENT refusal fires first and
+    # pre-empts this semantic one, so without the tag the cell asserted a reason
+    # public CI structurally cannot produce.
+    ("all-enemy-locations-REJECT", "mode.state=open,goal=fast_ganon,dungeon_items.small_keys=wild,enemy_drop_checks=all,accessibility=locations", "0x12", False, False, None, "enemy", "unsupported-enemy-locations"),
     # Seed reselected 3 -> 1 (2026-07-16): regenerating the stale Jul-7
     # gitignored artifacts (the room-0x099 big-key self-lock gates + the
     # CanKillHceThings alignment) tipped seed 3 from feasible to the
@@ -210,6 +237,11 @@ def semantic_refusal(stderr: str) -> str | None:
         and "refusing" in stderr
     ):
         return "missing-ow-graph"
+    if (
+        "enemy_drop_checks requires the generated" in stderr
+        and "enemy-drop registry" in stderr
+    ):
+        return "missing-enemy-registry"
     return None
 
 
@@ -275,6 +307,12 @@ def main(argv: list[str]) -> int:
         help="when the baked OW warp graph is absent, require both slot and "
              "CLI warp-axis paths to refuse specifically for that reason",
     )
+    parser.add_argument(
+        "--allow-missing-enemy-registry", action="store_true",
+        help="when the generated enemy-drop registry is absent, require both "
+             "slot and CLI enemy-drop paths to refuse specifically for that "
+             "reason",
+    )
     args = parser.parse_args(argv)
 
     if not args.binary.is_file():
@@ -304,10 +342,19 @@ def main(argv: list[str]) -> int:
               "pass --allow-missing-ow-graph explicitly (public assetless CI).",
               file=sys.stderr)
         return 2
+    enemy_registry_present = local_enemy_registry_available()
+    if not enemy_registry_present and not args.allow_missing_enemy_registry:
+        print("check_rando_slot_path: generated enemy-drop registry is absent; the "
+              "requested matrix includes enemy-drop cells. Prepare local artifacts "
+              "or pass --allow-missing-enemy-registry explicitly (public assetless "
+              "CI).", file=sys.stderr)
+        return 2
     # required_local_artifact -> (present?, semantic refusal reason, label)
     artifact_state = {
         "pots": (pot_registry_present, "missing-pot-registry", "pot registry"),
         "owgraph": (ow_graph_present, "missing-ow-graph", "OW warp graph"),
+        "enemy": (enemy_registry_present, "missing-enemy-registry",
+                  "enemy-drop registry"),
     }
     jobs = max(1, args.jobs)
 

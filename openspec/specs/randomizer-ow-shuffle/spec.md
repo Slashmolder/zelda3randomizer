@@ -7,9 +7,16 @@ TBD - created by archiving change add-rando-ow-warp-shuffle. Update Purpose afte
 
 The generator SHALL expose two independent settings axes — `whirlpool_shuffle`
 (boolean, default off) and `flute_shuffle` (`off`/`balanced`/`random`, default
-`off`) — available under the Open, Standard, and Retro world states and
-normalized to off under Inverted by `apply_derived_rules` (v1 scope; Inverted
-flute semantics differ and its composition is deferred). When either axis is
+`off`) — available under the Open, Standard, and Retro world states and forced
+off under Inverted (v1 scope; Inverted flute semantics differ and its
+composition is deferred). The force-off SHALL be enforced on BOTH sides:
+`apply_derived_rules` normalizes the canonical copy so the settings hash and
+share string record the axes as off, and `Settings_OwWarpForcedOff` /
+`Settings_OwWarpActive` re-derive it for the raw settings struct that
+generation, the logic VM, and slot activation actually consume. Normalizing
+only the canonical copy is insufficient: the axes then stay live at generation
+while the share string says they are off, so one share string reproduces two
+different worlds. When either axis is
 requested and the compiled overworld graph data is absent or empty
 (missing/failed `ow_graph.gen.yaml` codegen), generation SHALL refuse the seed
 loudly rather than silently producing a vanilla-warp seed, and slot activation

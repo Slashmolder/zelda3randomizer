@@ -614,6 +614,22 @@ bool Settings_EffectiveShuffleCaveEntrances(const RandoSettings *s);
 // entrance shuffle is edge-based and does NOT mis-bind dungeon pots.
 bool Settings_PotShuffleForcedOff(const RandoSettings *s);
 
+// add-rando-ow-warp-shuffle — the overworld warp axes are out of v1 scope under
+// Inverted (it rewrites the overworld and the flute semantics; the spot data is
+// LW-indexed). apply_derived_rules normalizes them off there, but ONLY on the
+// private copy Settings_CanonicalSerialize takes — the placer, the spoiler and
+// slot activation all consume the RAW struct, so they must re-derive the
+// force-off through these. Reading s->flute_shuffle / s->whirlpool_shuffle
+// directly in generation or activation code is the bug this exists to prevent:
+// the axes stay live while the canonical hash and share string say they are
+// off, so one share string reproduces two different worlds.
+bool Settings_OwWarpForcedOff(const RandoSettings *s);
+uint8 Settings_EffectiveFluteShuffle(const RandoSettings *s);  // FluteShuffle
+bool Settings_EffectiveWhirlpoolShuffle(const RandoSettings *s);
+// True when either effective warp axis is live — the single predicate every
+// compute/install/digest site should gate on.
+bool Settings_OwWarpActive(const RandoSettings *s);
+
 // add-rando-shopsanity — true when the 27 regular shop slots are live fill
 // locations. The axis composes with everything, including cave-entrance
 // shuffle: each cave-resident shop is its own pool entry (keyed by overworld

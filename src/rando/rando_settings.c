@@ -467,6 +467,34 @@ bool Settings_PotShuffleForcedOff(const RandoSettings *s) {
   return s != NULL && Settings_EffectiveShuffleCaveEntrances(s);
 }
 
+// add-rando-ow-warp-shuffle — v1 scope excludes Inverted (it rewrites the
+// overworld and the flute semantics, and the spot data is LW-indexed).
+// apply_derived_rules zeroes both axes there, but that only ever runs on the
+// PRIVATE copy Settings_CanonicalSerialize normalizes -- generation and slot
+// activation read the RAW struct. Without this re-derivation an Inverted seed
+// really does shuffle warps while its share string encodes the axes as off, so
+// the same share string reproduces a DIFFERENT world (measured: 6 of 12 sampled
+// Inverted seeds moved placement_digest). Same consumer contract as
+// Settings_PotShuffleForcedOff: read these, never the raw fields.
+bool Settings_OwWarpForcedOff(const RandoSettings *s) {
+  return s != NULL && s->world_state == kWorldState_Inverted;
+}
+
+uint8 Settings_EffectiveFluteShuffle(const RandoSettings *s) {
+  if (s == NULL || Settings_OwWarpForcedOff(s))
+    return kFluteShuffle_Off;
+  return s->flute_shuffle;
+}
+
+bool Settings_EffectiveWhirlpoolShuffle(const RandoSettings *s) {
+  return s != NULL && !Settings_OwWarpForcedOff(s) && s->whirlpool_shuffle != 0;
+}
+
+bool Settings_OwWarpActive(const RandoSettings *s) {
+  return Settings_EffectiveFluteShuffle(s) != kFluteShuffle_Off ||
+         Settings_EffectiveWhirlpoolShuffle(s);
+}
+
 // True when the 27 regular shop slots are live fill locations. Single source of
 // truth for the placer, the spoiler and the runtime gate, so they can't drift
 // apart. No derived-rule normalization: the axis composes with everything,

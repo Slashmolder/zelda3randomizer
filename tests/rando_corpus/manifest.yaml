@@ -1630,9 +1630,15 @@ entries:
     expected_digest: "ec3998501175114525b400840424233eecc9055a337337189778311b08bfce51"
     expected_sphere_digest: "a6b5863b17c2e12692d6b77f70b131ac51e8acc76801df4c45a9020ae4ccaa68"
   # Twin of the row above WITHOUT the warp axes: both rows must stay
-  # byte-identical forever. A future bump_rando_corpus re-pin absorbs digest
-  # movement silently; a broken Inverted warp normalization would make this
-  # pair DIVERGE in the regen diff, which is the visible tripwire.
+  # byte-identical forever.
+  #
+  # NOTE this pair is a WEAK tripwire, not the guard. Seed 0x159 is one of the
+  # inverted seeds whose placement does NOT move when the warp axes leak, so
+  # the pair stayed byte-identical through the entire period the Inverted
+  # force-off was applied to the canonical copy only and generation really did
+  # shuffle warps (measured: 6 of 12 sampled inverted seeds DID move). The
+  # authoritative guard is OwWarp_SelfCheck's Inverted force-off block, which
+  # asserts the effective-accessor path directly and is seed-independent.
   - settings: { mode.state: inverted, goal: fast_ganon }
     seed: "0x0000000000000159"
     label: "warp-inverted-normalized-off-twin"

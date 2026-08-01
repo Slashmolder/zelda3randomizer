@@ -5384,8 +5384,12 @@ static bool install_active_shuffles(const RandoSettings *s, uint64 base_seed,
   // layout. Runs AFTER any entrance overlay install (activation order) and
   // composes on it; Begins the overlay itself when warp runs alone.
   rando_clear_ow_warp_runtime();
-  bool warp_on = s != NULL && (s->flute_shuffle != kFluteShuffle_Off ||
-                               s->whirlpool_shuffle != 0);
+  // Must match ow_warp_apply_attempt's gate EXACTLY or a slot regenerates a
+  // layout generation never installed (or vice versa) and the digest gate below
+  // refuses it. Settings_OwWarpActive is that shared authority — it re-derives
+  // the Inverted force-off that apply_derived_rules only applies to the
+  // canonical copy.
+  bool warp_on = Settings_OwWarpActive(s);
   if (!warp_on) return true;
   OwWarpLayout l;
   if (!OwWarp_Compute(s, base_seed, ow_attempt, &l)) {

@@ -117,8 +117,13 @@ bool OwWarp_Compute(const RandoSettings *settings, uint64 seed,
   memset(out, 0, sizeof(*out));
   for (uint32 i = 0; i < kOwWarpWhirlpoolMax; i++) out->wp_partner[i] = (uint8)i;
   if (settings == NULL) return true;
-  bool want_flute = settings->flute_shuffle != kFluteShuffle_Off;
-  bool want_wp = settings->whirlpool_shuffle != 0;
+  // Effective, not raw: Inverted forces both axes off (v1 scope) and only these
+  // accessors re-derive it on the un-normalized struct generation actually
+  // carries. Gating here as well as at the two callers keeps this funnel safe
+  // for any future caller — an Inverted request must return the identity layout
+  // rather than reach the fail-closed refusal below.
+  bool want_flute = Settings_EffectiveFluteShuffle(settings) != kFluteShuffle_Off;
+  bool want_wp = Settings_EffectiveWhirlpoolShuffle(settings);
   if (!want_flute && !want_wp) return true;
   if (!kRandoOwGraphPresent || kRandoOwFluteCandidatesCount == 0 ||
       kRandoOwWhirlpoolsCount == 0) {
@@ -130,7 +135,8 @@ bool OwWarp_Compute(const RandoSettings *settings, uint64 seed,
     RandoRng rng;
     Rng_SeedFromU64(&rng, seed ^ ((uint64)attempt * 0x9E3779B97F4A7C15ull) ^
                               kOwWarpSaltFlute);
-    ow_pick_flute(&rng, settings->flute_shuffle, out->flute_cand);
+    ow_pick_flute(&rng, Settings_EffectiveFluteShuffle(settings),
+                  out->flute_cand);
     out->active |= 1;
   }
   if (want_wp) {
@@ -292,10 +298,6 @@ uint8 Rando_OwWarp_WhirlpoolBirdRow(uint8 entered_row) {
 }
 
 void OwWarp_SelfCheck(void) {
-  if (!kRandoOwGraphPresent) {
-    fprintf(stderr, "[OwWarp_SelfCheck] SKIP (graph absent)\n");
-    return;
-  }
 #define OWSC(cond, msg)                                              \
   do {                                                               \
     if (!(cond)) {                                                   \
@@ -303,6 +305,49 @@ void OwWarp_SelfCheck(void) {
       exit(2);                                                       \
     }                                                                \
   } while (0)
+
+  // Inverted force-off (randomizer-ow-shuffle: "no warp layout is generated or
+  // installed"). apply_derived_rules only normalizes the private copy
+  // Settings_CanonicalSerialize takes, so this asserts the EFFECTIVE-accessor
+  // path the raw struct actually travels.
+  //
+  // Deliberately ABOVE the graph-present gate: it needs no graph (that is the
+  // point -- Inverted short-circuits before the graph check), and public CI
+  // builds with no graph are exactly where the regression surfaces, as a red
+  // corpus row. Below the gate this would be skipped on the only checkout that
+  // runs it.
+  //
+  // Asserted here rather than left to the corpus: the manifest's inverted
+  // twin-row pair is only a tripwire on seeds where the axes actually move
+  // placement, and the pinned seed is not one -- it stayed byte-identical
+  // through the whole period the axes leaked.
+  {
+    RandoSettings inv;
+    Settings_SetDefaults(&inv);
+    inv.world_state = kWorldState_Inverted;
+    inv.flute_shuffle = kFluteShuffle_Random;
+    inv.whirlpool_shuffle = 1;
+    OWSC(Settings_OwWarpForcedOff(&inv), "Inverted must force the warp axes off");
+    OWSC(!Settings_OwWarpActive(&inv),
+         "Inverted+both-axes must not read as an active warp seed");
+    OwWarpLayout iv;
+    // Must SUCCEED (identity layout), not hit the missing-graph refusal --
+    // that refusal firing here is exactly the assetless CI red this guards.
+    OWSC(OwWarp_Compute(&inv, 0xC0FFEEu, 3, &iv),
+         "Inverted warp compute must return the identity layout, not refuse");
+    OWSC(iv.active == 0, "Inverted must not produce an active warp layout");
+    for (uint32 i = 0; i < kRandoOwWhirlpoolsCount && i < kOwWarpWhirlpoolMax;
+         i++)
+      OWSC(iv.wp_partner[i] == (uint8)i,
+           "Inverted whirlpools must stay vanilla (identity)");
+  }
+
+  if (!kRandoOwGraphPresent) {
+    fprintf(stderr,
+            "[OwWarp_SelfCheck] Inverted force-off OK; rest SKIPPED (graph "
+            "absent)\n");
+    return;
+  }
   // audit-2 LOW-4: the selection buffers (used/sector_has/pool) are sized
   // 64; a future upstream flute_data expansion past that would overflow
   // silently without this loud bound.
